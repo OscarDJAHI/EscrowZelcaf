@@ -11,8 +11,10 @@
 #   output_folder: originally worked around a v6.10.0 bug (token defined but not
 #     written); 6.10.1-next fixes it natively, so this is now belt-and-suspenders.
 #   document_output_language: user preference is French (a --yes update reset it).
+#   communication_language: user preference is French (asked 2026-07-15).
 #   project_name: keep "Escrow" (a --yes update reset it to the dir name).
 [core]
 output_folder = "_bmad-output"
+communication_language = "French"
 document_output_language = "French"
 project_name = "Escrow"

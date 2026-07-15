@@ -1,0 +1,393 @@
+<title>Evidence Upload — Architecture expliquée</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root{
+    --paper:#eceef2; --card:#f6f7f9; --ink:#20242c; --ink-soft:#4a5160; --ink-faint:#79808f;
+    --rule:#d4d8e0; --accent:#4658b8; --accent-soft:#e4e8fa; --seal:#b06a2c; --seal-soft:#f3e6d6;
+    --ok:#2f8f6b; --ok-soft:#dcefe6; --hole:#c0503f; --hole-soft:#f5e1dc;
+    --shadow:0 1px 2px rgba(20,25,40,.06),0 8px 24px rgba(20,25,40,.06);
+    --serif:'Iowan Old Style','Palatino Linotype',Palatino,Georgia,'Times New Roman',serif;
+    --sans:system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;
+    --mono:ui-monospace,'SF Mono',Menlo,Consolas,'Liberation Mono',monospace;
+  }
+  @media (prefers-color-scheme:dark){
+    :root{
+      --paper:#14171d; --card:#1b1f27; --ink:#e7eaf0; --ink-soft:#aeb6c4; --ink-faint:#79818f;
+      --rule:#2b303b; --accent:#8b9bf0; --accent-soft:#232a44; --seal:#d59a5c; --seal-soft:#33291d;
+      --ok:#5cc39a; --ok-soft:#1a2b25; --hole:#e2836f; --hole-soft:#2e211d;
+      --shadow:0 1px 2px rgba(0,0,0,.3),0 8px 28px rgba(0,0,0,.35);
+    }
+  }
+  :root[data-theme="light"]{
+    --paper:#eceef2; --card:#f6f7f9; --ink:#20242c; --ink-soft:#4a5160; --ink-faint:#79808f;
+    --rule:#d4d8e0; --accent:#4658b8; --accent-soft:#e4e8fa; --seal:#b06a2c; --seal-soft:#f3e6d6;
+    --ok:#2f8f6b; --ok-soft:#dcefe6; --hole:#c0503f; --hole-soft:#f5e1dc;
+    --shadow:0 1px 2px rgba(20,25,40,.06),0 8px 24px rgba(20,25,40,.06);
+  }
+  :root[data-theme="dark"]{
+    --paper:#14171d; --card:#1b1f27; --ink:#e7eaf0; --ink-soft:#aeb6c4; --ink-faint:#79818f;
+    --rule:#2b303b; --accent:#8b9bf0; --accent-soft:#232a44; --seal:#d59a5c; --seal-soft:#33291d;
+    --ok:#5cc39a; --ok-soft:#1a2b25; --hole:#e2836f; --hole-soft:#2e211d;
+    --shadow:0 1px 2px rgba(0,0,0,.3),0 8px 28px rgba(0,0,0,.35);
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  @media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}*{animation:none!important;transition:none!important}}
+  body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--sans);line-height:1.6;
+    font-size:17px;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:940px;margin:0 auto;padding:0 24px}
+  a{color:var(--accent);text-decoration:none}
+  a:hover{text-decoration:underline}
+  :focus-visible{outline:2px solid var(--accent);outline-offset:3px;border-radius:3px}
+
+  /* Header */
+  header.masthead{border-bottom:1px solid var(--rule);padding:56px 0 40px;margin-bottom:8px}
+  .eyebrow{font-family:var(--mono);font-size:12.5px;letter-spacing:.14em;text-transform:uppercase;
+    color:var(--seal);margin:0 0 18px;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+  .eyebrow .dot{width:5px;height:5px;border-radius:50%;background:var(--seal)}
+  h1{font-family:var(--serif);font-weight:600;font-size:clamp(34px,5.5vw,52px);line-height:1.08;
+    letter-spacing:-.015em;margin:0 0 18px;text-wrap:balance}
+  .lede{font-size:20px;color:var(--ink-soft);max-width:64ch;margin:0 0 26px;line-height:1.5}
+  .meta{display:flex;gap:8px 22px;flex-wrap:wrap;font-size:13.5px;color:var(--ink-faint);
+    font-family:var(--mono)}
+  .meta b{color:var(--ink-soft);font-weight:500}
+
+  /* TOC */
+  nav.toc{background:var(--card);border:1px solid var(--rule);border-radius:14px;padding:20px 24px;
+    margin:34px 0 8px;box-shadow:var(--shadow)}
+  nav.toc h2{font-family:var(--mono);font-size:12px;letter-spacing:.14em;text-transform:uppercase;
+    color:var(--ink-faint);margin:0 0 14px;font-weight:600}
+  nav.toc ol{margin:0;padding:0;list-style:none;display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:4px 26px}
+  nav.toc li{counter-increment:toc;display:flex;gap:12px;align-items:baseline;padding:5px 0;
+    border-bottom:1px solid transparent}
+  nav.toc li::before{content:counter(toc,decimal-leading-zero);font-family:var(--mono);font-size:12px;
+    color:var(--seal);flex:none}
+  nav.toc ol{counter-reset:toc}
+
+  section{padding:44px 0;border-bottom:1px solid var(--rule)}
+  section:last-of-type{border-bottom:none}
+  h2.sec{font-family:var(--serif);font-weight:600;font-size:clamp(25px,3.4vw,33px);letter-spacing:-.01em;
+    margin:0 0 6px;text-wrap:balance;scroll-margin-top:20px}
+  .kicker{font-family:var(--mono);font-size:12.5px;letter-spacing:.12em;text-transform:uppercase;
+    color:var(--accent);margin:0 0 12px;font-weight:500}
+  p{margin:0 0 16px;max-width:70ch}
+  .muted{color:var(--ink-soft)}
+  strong{font-weight:650;color:var(--ink)}
+  code{font-family:var(--mono);font-size:.86em;background:var(--accent-soft);color:var(--ink);
+    padding:.12em .38em;border-radius:5px}
+
+  /* Cast / actors */
+  .cast{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:14px;margin:26px 0}
+  .actor{background:var(--card);border:1px solid var(--rule);border-radius:12px;padding:16px 18px}
+  .actor .role{font-family:var(--mono);font-size:11.5px;letter-spacing:.08em;text-transform:uppercase;
+    color:var(--seal);margin:0 0 4px}
+  .actor .name{font-family:var(--serif);font-size:19px;font-weight:600;margin:0 0 6px}
+  .actor .want{font-size:14.5px;color:var(--ink-soft);margin:0;line-height:1.45}
+
+  /* AD cards */
+  .ad{background:var(--card);border:1px solid var(--rule);border-left:3px solid var(--accent);
+    border-radius:0 12px 12px 0;padding:18px 22px;margin:16px 0;box-shadow:var(--shadow)}
+  .ad.adopted{border-left-color:var(--seal)}
+  .ad-head{display:flex;gap:12px;align-items:baseline;flex-wrap:wrap;margin-bottom:12px}
+  .ad-id{font-family:var(--mono);font-size:13px;font-weight:600;color:var(--accent);
+    background:var(--accent-soft);padding:.2em .5em;border-radius:6px;flex:none}
+  .ad.adopted .ad-id{color:var(--seal);background:var(--seal-soft)}
+  .ad-title{font-family:var(--serif);font-size:19px;font-weight:600;line-height:1.25;margin:0}
+  .tag{font-family:var(--mono);font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;
+    padding:.22em .5em;border-radius:5px;flex:none;align-self:center}
+  .tag.adopted{background:var(--seal-soft);color:var(--seal)}
+  .tag.coached{background:var(--accent-soft);color:var(--accent)}
+  .ad dl{margin:0;display:grid;grid-template-columns:auto 1fr;gap:6px 14px;font-size:15px}
+  .ad dt{font-family:var(--mono);font-size:11px;letter-spacing:.05em;text-transform:uppercase;
+    color:var(--ink-faint);padding-top:3px}
+  .ad dd{margin:0;color:var(--ink-soft)}
+  .ad dd.rule{color:var(--ink)}
+  .binds{color:var(--ink-faint);font-family:var(--mono);font-size:12.5px}
+
+  /* Figures */
+  figure{margin:26px 0;background:var(--card);border:1px solid var(--rule);border-radius:14px;
+    padding:22px;box-shadow:var(--shadow);overflow-x:auto}
+  figure svg{display:block;max-width:100%;height:auto;margin:0 auto}
+  figcaption{font-size:13.5px;color:var(--ink-faint);margin-top:14px;text-align:center;font-style:italic}
+  .svg-label{font-family:var(--sans);font-size:13px;fill:var(--ink)}
+  .svg-sub{font-family:var(--mono);font-size:10.5px;fill:var(--ink-faint)}
+  .svg-box{fill:var(--card);stroke:var(--rule);stroke-width:1.5}
+  .svg-box-accent{fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5}
+  .svg-box-seal{fill:var(--seal-soft);stroke:var(--seal);stroke-width:1.5}
+  .svg-arrow{stroke:var(--ink-faint);stroke-width:1.5;fill:none}
+  .svg-arrowhead{fill:var(--ink-faint)}
+
+  /* Reviewer holes */
+  .holes{display:flex;flex-direction:column;gap:12px;margin:24px 0}
+  .hole{background:var(--card);border:1px solid var(--rule);border-radius:12px;padding:16px 20px;
+    display:grid;grid-template-columns:auto 1fr;gap:4px 16px;align-items:start}
+  .hole .sev{font-family:var(--mono);font-size:11px;font-weight:600;padding:.24em .5em;border-radius:6px;
+    align-self:start;white-space:nowrap}
+  .sev.red{background:var(--hole-soft);color:var(--hole)}
+  .sev.amber{background:var(--seal-soft);color:var(--seal)}
+  .hole h4{margin:0 0 4px;font-size:16px;font-family:var(--serif);font-weight:600}
+  .hole p{margin:0 0 6px;font-size:14.5px;color:var(--ink-soft);max-width:none}
+  .hole .fix{font-size:14px;color:var(--ink)}
+  .hole .fix b{color:var(--ok)}
+
+  /* stack table */
+  .tbl{width:100%;border-collapse:collapse;font-size:15px;margin:18px 0}
+  .tbl th,.tbl td{text-align:left;padding:10px 14px;border-bottom:1px solid var(--rule)}
+  .tbl th{font-family:var(--mono);font-size:11px;letter-spacing:.08em;text-transform:uppercase;
+    color:var(--ink-faint);font-weight:600}
+  .tbl td code{background:none;padding:0;color:var(--accent)}
+  .tbl .v{font-family:var(--mono);font-size:13.5px;color:var(--ink);font-variant-numeric:tabular-nums}
+  .badge-new{font-family:var(--mono);font-size:10px;color:var(--ok);background:var(--ok-soft);
+    padding:.15em .4em;border-radius:4px;margin-left:6px}
+
+  /* takeaways */
+  .lessons{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px;margin:24px 0}
+  .lesson{background:var(--card);border:1px solid var(--rule);border-radius:12px;padding:18px 20px}
+  .lesson .n{font-family:var(--serif);font-size:26px;color:var(--seal);line-height:1;margin-bottom:8px}
+  .lesson h4{margin:0 0 6px;font-size:16px}
+  .lesson p{font-size:14.5px;color:var(--ink-soft);margin:0;max-width:none}
+
+  .callout{background:var(--accent-soft);border-radius:12px;padding:18px 22px;margin:22px 0;
+    border:1px solid color-mix(in srgb,var(--accent) 25%,transparent);font-size:15.5px}
+  .callout strong{color:var(--ink)}
+
+  footer{padding:40px 0 70px;color:var(--ink-faint);font-size:13.5px;font-family:var(--mono)}
+  .theme-toggle{position:fixed;top:16px;right:16px;background:var(--card);border:1px solid var(--rule);
+    color:var(--ink-soft);font-family:var(--mono);font-size:12px;padding:7px 12px;border-radius:20px;
+    cursor:pointer;box-shadow:var(--shadow);z-index:10}
+  .theme-toggle:hover{color:var(--ink)}
+  @media(max-width:560px){
+    .hole,.ad dl{grid-template-columns:1fr}
+    .ad dt{padding-top:8px}
+  }
+</style>
+
+<button class="theme-toggle" id="tt" aria-label="Basculer le thème">◐ thème</button>
+
+<header class="masthead">
+  <div class="wrap">
+    <p class="eyebrow"><span class="dot"></span> Colonne vertébrale d'architecture <span class="dot"></span> Escrow B2B ZLECAf <span class="dot"></span> POC</p>
+    <h1>Dépôt de preuves&nbsp;: l'architecture, décision par décision</h1>
+    <p class="lede">Comment une fonctionnalité de <strong>preuve contradictoire</strong> se greffe sur une plateforme de séquestre existante — et comment une revue adversariale a rebouché sept trous avant la première ligne de code.</p>
+    <p class="meta"><span><b>Feature</b> Evidence Upload</span><span><b>Altitude</b> feature → epics</span><span><b>Statut</b> final · 2026-07-15</span><span><b>11</b> décisions · <b>22</b> exigences</span></p>
+  </div>
+</header>
+
+<div class="wrap">
+
+  <nav class="toc" aria-label="Sommaire">
+    <h2>Ce que couvre ce document</h2>
+    <ol>
+      <li><a href="#contexte">Le métier : la preuve, pivot de la confiance</a></li>
+      <li><a href="#paradigme">Le paradigme : couches + un port</a></li>
+      <li><a href="#decisions">Les 11 invariants (AD)</a></li>
+      <li><a href="#diagrammes">Les diagrammes structurants</a></li>
+      <li><a href="#revue">La revue adversariale : 7 trous</a></li>
+      <li><a href="#stack">La stack, vérifiée sur le web</a></li>
+      <li><a href="#lecons">Ce que ce POC t'apprend</a></li>
+    </ol>
+  </nav>
+
+  <section id="contexte">
+    <p class="kicker">01 — Le contexte escrow</p>
+    <h2 class="sec">La preuve est le pivot de la confiance</h2>
+    <p>Dans un séquestre (escrow) B2B transfrontalier, un tiers de confiance <strong>bloque les fonds</strong> de l'acheteur jusqu'à ce que le vendeur ait tenu sa part. Quand les deux parties sont en désaccord — marchandise abîmée, non livrée, non conforme — c'est un <strong>arbitre</strong> qui tranche. Et un arbitre ne tranche bien que sur des <strong>preuves</strong>.</p>
+    <p>La plateforme existante gérait déjà l'argent (une machine à états <code>INITIATED → FUNDS_LOCKED → SHIPPED → RELEASED</code>, branches <code>DISPUTED → RELEASED/REFUNDED</code>) mais <strong>aucune table de pièces jointes</strong>. Cette fonctionnalité comble ce vide : attacher des photos et documents à une transaction, et faire de la présence d'<strong>au moins une preuve</strong> la condition d'ouverture d'un litige.</p>
+    <div class="cast">
+      <div class="actor"><p class="role">🛒 Acheteur</p><p class="name">Amina</p><p class="want">Grossiste à Nairobi. Prouver la non-conformité pour être remboursée.</p></div>
+      <div class="actor"><p class="role">📦 Vendeur</p><p class="name">Thabo</p><p class="want">Producteur à Johannesburg. Prouver la conformité et l'expédition pour être payé.</p></div>
+      <div class="actor"><p class="role">⚖️ Arbitre</p><p class="name">Koffi</p><p class="want">Disposer d'un dossier neutre et complet, et y verser ses propres pièces.</p></div>
+      <div class="actor"><p class="role">🚚 Livreur</p><p class="name">Partenaire machine</p><p class="want">Pousser une preuve horodatée de l'état de la marchandise, via API signée (HMAC).</p></div>
+    </div>
+    <div class="callout"><strong>Principe du contradictoire</strong> — comme au procès, <em>toutes</em> les parties voient <em>toutes</em> les pièces. C'est ce qui rend l'arbitrage équitable, et c'est un invariant de visibilité que l'architecture doit garantir (AD-3).</div>
+  </section>
+
+  <section id="paradigme">
+    <p class="kicker">02 — Le paradigme</p>
+    <h2 class="sec">Ratifier l'existant, ajouter un seul port</h2>
+    <p>C'est un projet <strong>brownfield</strong> : le backend Spring Boot et le frontend Vue existent. La règle d'or de l'architecture n'est pas d'inventer, mais de <strong>ratifier les conventions déjà là</strong> et de ne créer un invariant que là où deux développeurs pourraient diverger.</p>
+    <p>Le backend suit une <strong>architecture en couches</strong> (<code>domain → repository → service → web</code>). La seule nouveauté structurelle est un <strong>port hexagonal</strong> : l'interface <code>EvidenceStorage</code>, qui isole le stockage binaire du reste. Les endpoints ne connaissent qu'une <strong>clé opaque</strong>, jamais MinIO — ce qui rend une future bascule vers un autre stockage S3 quasi gratuite.</p>
+    <div class="callout"><strong>Pourquoi un port ?</strong> Le PRD disait « disque local (POC) », la tech-stack disait « S3/MinIO ». Plutôt que de trancher pour toujours, on isole le choix derrière une interface. La décision du jour (MinIO) peut changer sans toucher une seule ligne des controllers.</div>
+  </section>
+
+  <section id="decisions">
+    <p class="kicker">03 — Le cœur durable</p>
+    <h2 class="sec">Onze décisions qu'un développeur ne pourrait pas deviner</h2>
+    <p class="muted">Une décision d'architecture (AD) fixe ce que du code déjà conforme ne révélerait pas. Chacune porte trois choses : ce qu'elle <strong>lie</strong>, la <strong>divergence</strong> qu'elle empêche, et la <strong>règle</strong> à suivre. Les <span style="color:var(--seal)">cuivrées</span> sont imposées par le code existant ; les <span style="color:var(--accent)">indigo</span> ont été tranchées en coaching.</p>
+
+    <div class="ad"><div class="ad-head"><span class="ad-id">AD-1</span><p class="ad-title">Ouverture de litige composite et atomique</p><span class="tag coached">coaché</span></div>
+      <dl><dt>Empêche</dt><dd>un litige <code>DISPUTED</code> sans aucune preuve ; un rejeu offline scindé en deux entrées désynchronisables.</dd>
+      <dt>Règle</dt><dd class="rule">Un seul endpoint <code>POST /escrow/{id}/dispute</code> (multipart <code>files[]</code> 1..N + <code>comment</code>) ouvre le litige <em>et</em> attache la preuve dans <strong>une seule transaction</strong>.</dd>
+      <dt>Lie</dt><dd class="binds">FR-6, FR-15</dd></dl></div>
+
+    <div class="ad adopted"><div class="ad-head"><span class="ad-id">AD-2</span><p class="ad-title">Fenêtre de dépôt fondée sur l'état, pas sur l'événement</p><span class="tag adopted">adopté</span></div>
+      <dl><dt>Empêche</dt><dd>un dépôt sur une transaction figée financièrement ; deux endpoints aux règles divergentes.</dd>
+      <dt>Règle</dt><dd class="rule">Dépôt/retrait autorisés ssi <code>state ∈ {FUNDS_LOCKED, SHIPPED, DISPUTED}</code>. Verrou dès l'état terminal — peu importe l'événement qui y a mené.</dd>
+      <dt>Lie</dt><dd class="binds">FR-1, FR-7, FR-8</dd></dl></div>
+
+    <div class="ad adopted"><div class="ad-head"><span class="ad-id">AD-3</span><p class="ad-title">Un contrôle d'appartenance unique (anti-IDOR)</p><span class="tag adopted">adopté</span></div>
+      <dl><dt>Empêche</dt><dd>la référence directe d'objet non contrôlée — télécharger la pièce d'une transaction dont on n'est pas partie.</dd>
+      <dt>Règle</dt><dd class="rule">Tous les endpoints réutilisent le <em>même</em> contrôle « X est-il partie de Y ? ». Le téléchargement vérifie en plus que <code>{eid}.transaction_id == {id}</code> de l'URL.</dd>
+      <dt>Lie</dt><dd class="binds">FR-1, FR-5, FR-7, FR-9, FR-11, FR-12</dd></dl></div>
+
+    <div class="ad adopted"><div class="ad-head"><span class="ad-id">AD-4</span><p class="ad-title">Retrait logique uniquement, avec plancher</p><span class="tag adopted">adopté</span></div>
+      <dl><dt>Empêche</dt><dd>la perte d'une preuve ; un litige « vidé » de ses pièces ; le retrait de la pièce d'un tiers.</dd>
+      <dt>Règle</dt><dd class="rule">Aucune suppression physique (<code>ACTIVE → WITHDRAWN</code>). En <code>DISPUTED</code>, un retrait est refusé s'il amène le total de pièces actives <strong>toutes parties confondues</strong> sous 1.</dd>
+      <dt>Lie</dt><dd class="binds">FR-12, FR-13, FR-14, NFR-3</dd></dl></div>
+
+    <div class="ad adopted"><div class="ad-head"><span class="ad-id">AD-5</span><p class="ad-title">Audit dans la même transaction</p><span class="tag adopted">adopté</span></div>
+      <dl><dt>Empêche</dt><dd>la divergence du schéma d'audit ; une écriture d'audit hors de la transaction métier.</dd>
+      <dt>Règle</dt><dd class="rule">Chaque dépôt/retrait écrit dans <code>audit_logs</code> en propagation <code>MANDATORY</code> (commit atomique). Le <code>payload</code> JSONB porte l'action — pas de nouvelle colonne.</dd>
+      <dt>Lie</dt><dd class="binds">FR-13, NFR-3</dd></dl></div>
+
+    <div class="ad adopted"><div class="ad-head"><span class="ad-id">AD-6</span><p class="ad-title">Stockage binaire derrière un port à clé opaque</p><span class="tag adopted">adopté</span></div>
+      <dl><dt>Empêche</dt><dd>le couplage des controllers au backend de stockage ; une migration impossible sans casser l'API.</dd>
+      <dt>Règle</dt><dd class="rule">Tout passe par l'interface <code>EvidenceStorage</code>. Clé opaque <code>{tx}/{uuid}</code>, jamais dérivée du nom fourni. Seul l'adaptateur connaît MinIO.</dd>
+      <dt>Lie</dt><dd class="binds">NFR-1</dd></dl></div>
+
+    <div class="ad coached"><div class="ad-head"><span class="ad-id">AD-7</span><p class="ad-title">Validation serveur stricte à l'ingestion</p><span class="tag coached">coaché</span></div>
+      <dl><dt>Empêche</dt><dd>un type mensongé (extension/Content-Type) ; le path traversal ; le XSS stocké ; un fichier vide/oversize.</dd>
+      <dt>Règle</dt><dd class="rule">Content-sniffing du MIME réel (Apache Tika) confronté à l'extension ; taille <code>0 &lt; s ≤ 10 Mo</code> arbitrée par le service ; restitution en <code>Content-Disposition: attachment</code>, jamais inline.</dd>
+      <dt>Lie</dt><dd class="binds">FR-3, FR-4, NFR-2</dd></dl></div>
+
+    <div class="ad coached"><div class="ad-head"><span class="ad-id">AD-8</span><p class="ad-title">HMAC partenaire durci : clé dédiée + anti-rejeu</p><span class="tag coached">coaché</span></div>
+      <dl><dt>Empêche</dt><dd>le rejeu d'une requête interceptée ; la réutilisation du secret webhook sortant ; un dépôt sur une transaction tierce.</dd>
+      <dt>Règle</dt><dd class="rule">Signature couvrant corps+timestamp, clé dédiée entrante. Anti-rejeu figé : fenêtre <strong>±5 min</strong>, nonce unique <strong>par key-id</strong>, rétention ≥ fenêtre.</dd>
+      <dt>Lie</dt><dd class="binds">FR-5, NFR-5</dd></dl></div>
+
+    <div class="ad coached"><div class="ad-head"><span class="ad-id">AD-9</span><p class="ad-title">Hors-ligne : une entrée de file portant le binaire</p><span class="tag coached">coaché</span></div>
+      <dl><dt>Empêche</dt><dd>le dépassement du quota localStorage ; une ouverture de litige offline scindée ; la perte silencieuse d'un fichier.</dd>
+      <dt>Règle</dt><dd class="rule">La file offline migre vers <strong>IndexedDB</strong> pour porter des <code>Blob</code> (≤10 Mo). Une ouverture offline = une seule entrée, rejouée en multipart vers l'endpoint composite.</dd>
+      <dt>Lie</dt><dd class="binds">FR-15, NFR-4</dd></dl></div>
+
+    <div class="ad coached"><div class="ad-head"><span class="ad-id">AD-10</span><p class="ad-title">Synchro : réconciliation transitoire vs permanent</p><span class="tag coached">coaché</span></div>
+      <dl><dt>Empêche</dt><dd>une boucle de retry infinie ; un état optimiste mensonger ; la perte silencieuse d'un fichier en attente.</dd>
+      <dt>Règle</dt><dd class="rule">Classer l'échec par <strong>code applicatif</strong>, pas par classe HTTP. Transitoire (réseau, 5xx, 409-lock) ⇒ re-tenter ; permanent (énuméré) ⇒ annuler l'optimiste, garder le binaire, notifier, stopper.</dd>
+      <dt>Lie</dt><dd class="binds">FR-16</dd></dl></div>
+
+    <div class="ad coached"><div class="ad-head"><span class="ad-id">AD-11</span><p class="ad-title">Horodatage : serveur source de vérité</p><span class="tag coached">coaché</span></div>
+      <dl><dt>Empêche</dt><dd>un ordre chronologique faussé par des horloges clientes divergentes.</dd>
+      <dt>Règle</dt><dd class="rule"><code>created_at</code> = heure serveur à la réception (clé du tri). L'heure client de capture est conservée dans l'audit, jamais utilisée pour l'ordre.</dd>
+      <dt>Lie</dt><dd class="binds">FR-10</dd></dl></div>
+  </section>
+
+  <section id="diagrammes">
+    <p class="kicker">04 — La forme, portée par les diagrammes</p>
+    <h2 class="sec">Trois vues qui valent mille mots</h2>
+
+    <figure>
+      <svg viewBox="0 0 760 300" role="img" aria-label="Direction des dépendances : web vers service vers repository, port et audit ; seul l'adaptateur connaît MinIO">
+        <defs><marker id="ah" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path class="svg-arrowhead" d="M0,0 L7,3 L0,6 Z"/></marker></defs>
+        <rect class="svg-box-accent" x="20" y="120" width="120" height="52" rx="9"/>
+        <text class="svg-label" x="80" y="143" text-anchor="middle">web</text>
+        <text class="svg-sub" x="80" y="159" text-anchor="middle">Controllers + DTO</text>
+        <rect class="svg-box-accent" x="200" y="120" width="130" height="52" rx="9"/>
+        <text class="svg-label" x="265" y="143" text-anchor="middle">service</text>
+        <text class="svg-sub" x="265" y="159" text-anchor="middle">Evidence/Escrow</text>
+        <rect class="svg-box" x="400" y="30" width="150" height="50" rx="9"/>
+        <text class="svg-label" x="475" y="60" text-anchor="middle">repository</text>
+        <rect class="svg-box" x="400" y="120" width="150" height="52" rx="9"/>
+        <text class="svg-label" x="475" y="143" text-anchor="middle">AuditService</text>
+        <text class="svg-sub" x="475" y="159" text-anchor="middle">audit_logs</text>
+        <rect class="svg-box-seal" x="400" y="210" width="150" height="52" rx="9"/>
+        <text class="svg-label" x="475" y="233" text-anchor="middle">port EvidenceStorage</text>
+        <text class="svg-sub" x="475" y="249" text-anchor="middle">clé opaque</text>
+        <rect class="svg-box" x="610" y="210" width="130" height="52" rx="9"/>
+        <text class="svg-label" x="675" y="233" text-anchor="middle">MinIO / S3</text>
+        <text class="svg-sub" x="675" y="249" text-anchor="middle">adapter</text>
+        <path class="svg-arrow" d="M140,146 L196,146" marker-end="url(#ah)"/>
+        <path class="svg-arrow" d="M330,140 Q370,120 396,70" marker-end="url(#ah)"/>
+        <path class="svg-arrow" d="M330,146 L396,146" marker-end="url(#ah)"/>
+        <path class="svg-arrow" d="M330,152 Q370,180 396,228" marker-end="url(#ah)"/>
+        <path class="svg-arrow" d="M550,236 L606,236" marker-end="url(#ah)"/>
+      </svg>
+      <figcaption>Les dépendances ne pointent que vers le bas et la droite. Seul l'adaptateur touche MinIO — c'est ce qui rend le stockage remplaçable.</figcaption>
+    </figure>
+
+    <figure>
+      <svg viewBox="0 0 760 210" role="img" aria-label="Machine à états : fenêtre de dépôt ouverte sur FUNDS_LOCKED, SHIPPED et DISPUTED ; verrouillée sur RELEASED et REFUNDED">
+        <defs><marker id="ah2" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path class="svg-arrowhead" d="M0,0 L7,3 L0,6 Z"/></marker></defs>
+        <rect class="svg-box" x="14" y="80" width="118" height="46" rx="9"/><text class="svg-label" x="73" y="108" text-anchor="middle">INITIATED</text>
+        <rect class="svg-box-accent" x="162" y="80" width="130" height="46" rx="9"/><text class="svg-label" x="227" y="108" text-anchor="middle">FUNDS_LOCKED</text>
+        <rect class="svg-box-accent" x="322" y="80" width="110" height="46" rx="9"/><text class="svg-label" x="377" y="108" text-anchor="middle">SHIPPED</text>
+        <rect class="svg-box-accent" x="322" y="150" width="110" height="46" rx="9"/><text class="svg-label" x="377" y="178" text-anchor="middle">DISPUTED</text>
+        <rect class="svg-box-seal" x="600" y="45" width="140" height="46" rx="9"/><text class="svg-label" x="670" y="73" text-anchor="middle">RELEASED 🔒</text>
+        <rect class="svg-box-seal" x="600" y="150" width="140" height="46" rx="9"/><text class="svg-label" x="670" y="178" text-anchor="middle">REFUNDED 🔒</text>
+        <path class="svg-arrow" d="M132,103 L158,103" marker-end="url(#ah2)"/>
+        <path class="svg-arrow" d="M292,103 L318,103" marker-end="url(#ah2)"/>
+        <path class="svg-arrow" d="M432,100 Q520,80 596,70" marker-end="url(#ah2)"/>
+        <path class="svg-arrow" d="M377,126 L377,148" marker-end="url(#ah2)"/>
+        <path class="svg-arrow" d="M227,126 Q260,170 320,173" marker-end="url(#ah2)"/>
+        <path class="svg-arrow" d="M432,173 L596,173" marker-end="url(#ah2)"/>
+        <path class="svg-arrow" d="M432,168 Q520,120 596,88" marker-end="url(#ah2)"/>
+        <text class="svg-sub" x="150" y="30" >Fenêtre de dépôt ouverte</text>
+        <rect x="14" y="18" width="16" height="12" rx="2" class="svg-box-accent"/>
+        <text class="svg-sub" x="420" y="30">Verrouillé (état terminal)</text>
+        <rect x="384" y="18" width="16" height="12" rx="2" class="svg-box-seal"/>
+      </svg>
+      <figcaption>AD-2 en image : les trois états indigo acceptent les preuves ; les deux états scellés les refusent. Le verrou est sur l'<em>état</em>, pas sur l'événement.</figcaption>
+    </figure>
+  </section>
+
+  <section id="revue">
+    <p class="kicker">05 — La méthode BMad en action</p>
+    <h2 class="sec">Une revue adversariale a trouvé sept trous</h2>
+    <p>Avant de figer l'architecture, deux relecteurs automatiques l'ont attaquée. Le plus incisif construit des <strong>paires d'implémentations toutes deux conformes à chaque règle</strong>, mais qui bâtissent quand même de façon incompatible. Voici ce qu'il a débusqué — et qui est <strong>déjà corrigé</strong> dans la spine.</p>
+    <div class="holes">
+      <div class="hole"><span class="sev red">H1 · dur</span><div><h4>Une preuve, ou plusieurs ?</h4><p>AD-9 disait « le(s) binaire(s) » (pluriel), AD-1 disait « fichier » (singulier). Amina attache 3 photos hors-ligne → au rejeu, l'endpoint composite n'en accepte qu'une → 2 photos perdues silencieusement.</p><p class="fix"><b>Corrigé :</b> AD-1 accepte désormais <code>files[]</code> 1..N.</p></div></div>
+      <div class="hole"><span class="sev red">H2 · dur</span><div><h4>L'heure de capture n'avait pas de canal</h4><p>AD-5 exige l'heure client dans l'audit d'un dépôt offline différé — mais la requête composite ne déclarait aucun champ pour la porter. Le serveur ne peut enregistrer ce qu'il ne reçoit pas.</p><p class="fix"><b>Corrigé :</b> champ multipart optionnel <code>clientCapturedAt</code>.</p></div></div>
+      <div class="hole"><span class="sev red">H3 · dur</span><div><h4>« 4xx = permanent » était faux</h4><p>Un <code>409</code> de verrou optimiste (deux appareils synchronisent) est <em>transitoire</em> : un retry réussirait. La règle le gelait à tort, indistinguable d'un vrai « déjà résolu ».</p><p class="fix"><b>Corrigé :</b> AD-10 classe par code applicatif, pas par classe HTTP.</p></div></div>
+      <div class="hole"><span class="sev red">H4 · sécurité</span><div><h4>Fenêtre anti-rejeu non spécifiée</h4><p>Si les nonces sont purgés à 5 min mais le timestamp accepté à ±15 min, une requête rejouée entre les deux passe. Deux implémentations « conformes » divergeaient.</p><p class="fix"><b>Corrigé :</b> AD-8 fige fenêtre ±5 min, nonce par key-id, rétention ≥ fenêtre.</p></div></div>
+      <div class="hole"><span class="sev amber">H5 · moyen</span><div><h4>Le plancher comptait-il les pièces du tiers ?</h4><p>Si le livreur dépose une preuve, l'acheteur peut-il retirer la sienne et laisser le litige « couvert » par la seule pièce d'un tiers ? Ambigu.</p><p class="fix"><b>Corrigé :</b> AD-4 précise « ≥1 active toutes parties confondues ».</p></div></div>
+      <div class="hole"><span class="sev amber">H6 · moyen</span><div><h4>10 Mo : 400 ou 413 ?</h4><p>Selon la limite multipart de Spring, un fichier de 12 Mo rendait un 400 (géré) ou un 413 (hors de l'enveloppe d'erreur standard) — le client offline classait alors des statuts différents.</p><p class="fix"><b>Corrigé :</b> AD-7 mappe l'exception → 400, enveloppe uniforme.</p></div></div>
+      <div class="hole"><span class="sev amber">H7 · convention</span><div><h4>Les noms de champs multipart n'étaient pas figés</h4><p>Un dev nomme le champ <code>file</code>, un autre <code>files[]</code> → 400 au rejeu. Rien dans la spine ne les liait.</p><p class="fix"><b>Corrigé :</b> une convention fige <code>files[]</code>, <code>comment</code>, <code>clientCapturedAt</code>.</p></div></div>
+    </div>
+    <div class="callout">La rubrique a aussi noté une dimension oubliée : <strong>aucune stratégie de test</strong>. Or trois décisions modifient du code déjà couvert. La spine a gagné une section « invariants de test » (étendre <code>EscrowStateMachineTest</code> et <code>HmacSignerTest</code>, tester le rollback atomique d'AD-1).</div>
+  </section>
+
+  <section id="stack">
+    <p class="kicker">06 — La stack</p>
+    <h2 class="sec">Chaque version vérifiée, pas citée de mémoire</h2>
+    <p>L'architecture épingle des versions — et le workflow impose de les <strong>vérifier sur le web</strong> au moment de l'écriture, jamais de confiance. Deux surprises&nbsp;: Spring Boot 3.x est passé en fin de vie, et le dépôt open-source de MinIO a été archivé.</p>
+    <table class="tbl">
+      <thead><tr><th>Composant</th><th>Version</th><th>Note</th></tr></thead>
+      <tbody>
+        <tr><td>Java</td><td class="v">21</td><td class="muted">existant</td></tr>
+        <tr><td>Spring Boot</td><td class="v">3.3.5</td><td class="muted">⚠ ligne 3.x désormais EOL → dette différée</td></tr>
+        <tr><td>PostgreSQL</td><td class="v">16</td><td class="muted">existant, JSONB pour l'audit</td></tr>
+        <tr><td>Apache Tika <code>tika-core</code></td><td class="v">3.3.1<span class="badge-new">nouveau</span></td><td class="muted">content-sniffing (la 4.0 est en beta)</td></tr>
+        <tr><td>AWS SDK Java v2 <code>s3</code></td><td class="v">2.47.6<span class="badge-new">nouveau</span></td><td class="muted">client S3 portable (v1 EOL fin 2025)</td></tr>
+        <tr><td>MinIO (conteneur)</td><td class="v">RELEASE.2025-10-15<span class="badge-new">nouveau</span></td><td class="muted">⚠ OSS archivé avr. 2026 → mitigé par le port AD-6</td></tr>
+      </tbody>
+    </table>
+    <div class="callout"><strong>Le port a déjà payé.</strong> MinIO archivé aurait été un problème — sauf qu'AD-6 isole le stockage derrière une interface et un client S3 standard. Basculer vers Garage, SeaweedFS ou AWS S3 managé ne touche que l'adaptateur.</div>
+  </section>
+
+  <section id="lecons">
+    <p class="kicker">07 — Ce qu'il faut retenir</p>
+    <h2 class="sec">Ce que ce POC t'apprend</h2>
+    <div class="lessons">
+      <div class="lesson"><div class="n">§</div><h4>Escrow : la preuve avant l'argent</h4><p>Un séquestre ne libère les fonds que sur consentement ou arbitrage. Sans preuve traçable et contradictoire, l'arbitre ne peut pas trancher — d'où le litige impossible « à vide ».</p></div>
+      <div class="lesson"><div class="n">◈</div><h4>L'invariant, pas l'implémentation</h4><p>Une bonne architecture ne dit pas « écris ce code », elle dit « ne diverge pas ici ». 11 règles suffisent ; le reste appartient au code une fois écrit.</p></div>
+      <div class="lesson"><div class="n">⚔</div><h4>La revue adversariale gagne son coût</h4><p>Sept incompatibilités trouvées <em>avant</em> le code — chacune aurait été un bug de production sur le chemin le plus fragile : litige ouvert hors-ligne puis synchronisé.</p></div>
+      <div class="lesson"><div class="n">⟲</div><h4>Le brownfield se ratifie</h4><p>Le vrai travail a d'abord été de <em>lire</em> le code existant : conventions d'audit, HMAC, contrôle d'appartenance. On étend, on ne réinvente pas.</p></div>
+    </div>
+    <div class="callout"><strong>Étape suivante&nbsp;:</strong> décomposer cette colonne vertébrale en <em>epics &amp; stories</em>. Chaque story citera les AD qui la gouvernent (colonne « Governed by » de la carte Capability→Architecture), pour que l'implémentation reste alignée sur ces onze invariants.</div>
+  </section>
+
+  <footer>
+    ARCHITECTURE-SPINE.md · Evidence Upload · Escrow B2B ZLECAf — POC · généré via le workflow bmad-architecture, 2026-07-15
+  </footer>
+</div>
+
+<script>
+  (function(){
+    var tt=document.getElementById('tt');
+    tt.addEventListener('click',function(){
+      var cur=document.documentElement.getAttribute('data-theme');
+      var sysDark=window.matchMedia('(prefers-color-scheme:dark)').matches;
+      var next = cur ? (cur==='dark'?'light':'dark') : (sysDark?'light':'dark');
+      document.documentElement.setAttribute('data-theme',next);
+    });
+  })();
+</script>

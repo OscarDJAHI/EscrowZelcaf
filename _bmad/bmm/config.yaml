@@ -11,6 +11,6 @@ project_knowledge: "{project-root}/Docs"
 # Core Configuration Values
 user_name: Oscard
 project_name: Escrow_claude
-communication_language: English
-document_output_language: English
+communication_language: French
+document_output_language: French
 output_folder: _bmad-output

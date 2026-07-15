@@ -29,12 +29,12 @@ Cette fonctionnalité comble ce vide. Elle permet aux parties d'une transaction 
 - **Visibilité contradictoire** : chaque partie et l'arbitre voient toutes les pièces.
 - **Consultation, téléchargement, retrait logique** (« marquée retirée »).
 - **Dépôt hors-ligne** via la PWA (file d'attente + synchro).
-- **Stockage disque local** (POC).
+- **Stockage objet MinIO (S3-compatible)** dès le POC, derrière une couche d'accès isolée `EvidenceStorage` (voir architecture).
 
 **Hors périmètre (POC) — voir §9 Évolutions**
 - Le livreur comme acteur interactif complet (rôle `CARRIER` avec écrans dédiés).
 - Scan antivirus / anti-malware des fichiers.
-- Stockage objet (S3) et chiffrement par fichier au repos.
+- **Chiffrement par fichier au repos** (le stockage objet MinIO/S3-compatible est, lui, **dans** le périmètre — voir architecture).
 - Purge / rétention automatique.
 - OCR / analyse automatique des documents douaniers.
 
@@ -103,7 +103,7 @@ Koffi consulte **toutes les pièces des deux parties**, dans l'ordre chronologiq
 
 ## 6. Exigences non-fonctionnelles (NFR)
 
-- **NFR-1 (Stockage)** — Les fichiers sont stockés sur **disque local** dans un répertoire configurable. La couche d'accès doit être isolée pour permettre une migration future vers un stockage objet sans changer le contrat d'API.
+- **NFR-1 (Stockage)** — Les fichiers sont stockés dans un **stockage objet MinIO (S3-compatible)** — bucket configurable — dès le POC. L'accès passe par une couche isolée (`EvidenceStorage`) : les endpoints ne connaissent qu'une **clé opaque**, jamais le backend de stockage, pour permettre une bascule (S3 managé, chiffrement) sans changer le contrat d'API.
 - **NFR-2 (Sécurité)** — Validation **côté serveur** du type réel (content sniffing) et de la taille (jamais seulement côté client) ; **assainissement** des noms de fichiers et **prévention du *path traversal*** (nom de stockage généré, jamais dérivé du nom fourni) ; accès aux binaires **contrôlé par autorisation** (pas d'URL publique devinable, contrôle d'appartenance — FR-11) ; les fichiers sont servis en **`Content-Disposition: attachment`** (jamais *inline*) pour éviter tout XSS stocké via PDF/SVG.
 - **NFR-3 (Intégrité & audit)** — Immuabilité des pièces (retrait logique uniquement) et cohérence transactionnelle (ACID) avec l'écriture d'audit, dans l'esprit de la plateforme existante.
 - **NFR-4 (Résilience hors-ligne / bande passante)** — Le dépôt doit fonctionner sur réseau instable/limité (contexte ZLECAf) : file d'attente, payload maîtrisé. Compression/miniatures = optionnel (voir hypothèses).
@@ -134,7 +134,7 @@ Koffi consulte **toutes les pièces des deux parties**, dans l'ordre chronologiq
 
 1. **Livreur en acteur complet** (rôle `CARRIER` : compte, écran d'upload, permissions).
 2. **Scan antivirus / anti-malware** à l'ingestion (lève NFR-6).
-3. **Stockage objet** S3-compatible + **chiffrement par fichier** au repos.
+3. **Chiffrement par fichier au repos** (le stockage objet MinIO/S3-compatible est déjà en place dès le POC).
 4. **Rétention / purge** conforme (durées légales par juridiction ZLECAf).
 5. **OCR / extraction** automatique des documents douaniers.
 

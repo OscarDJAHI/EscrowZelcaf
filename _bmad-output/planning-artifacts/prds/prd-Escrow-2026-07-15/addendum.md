@@ -25,11 +25,12 @@ Aucune table de pièces jointes n'existe aujourd'hui. Proposition d'une table `e
 
 Index suggéré : `(transaction_id, created_at)` pour la consultation chronologique (FR-10).
 
-## 2. Stockage disque (POC)
+## 2. Stockage objet MinIO / S3-compatible (POC)
 
-- Répertoire racine **configurable** (ex. `app.evidence.storage-path=/var/escrow/evidence`).
-- Arborescence : `{root}/{transaction_id}/{uuid}.{ext}` — nom de fichier généré (UUID), extension dérivée du MIME validé (assainissement — NFR-2).
-- Couche d'accès derrière une interface (`EvidenceStorage`) pour permettre une bascule future vers un stockage objet sans toucher aux endpoints (NFR-1).
+- **Décision d'architecture (2026-07-15)** : stockage objet **MinIO (S3-compatible)** dès le POC, conteneur ajouté à `docker-compose`. Remplace la piste « disque local » initiale (aligné sur la tech-stack cible).
+- Bucket **configurable** (ex. `app.evidence.bucket=escrow-evidence`, endpoint/credentials via variables d'environnement `${...:default}`).
+- Clé d'objet générée : `{transaction_id}/{uuid}` — jamais dérivée du nom fourni (assainissement / anti-path-traversal — NFR-2). L'extension/MIME validé sert au `Content-Type` de restitution.
+- Couche d'accès derrière l'interface (`EvidenceStorage`) : les endpoints ne manipulent qu'une **clé opaque**, pour permettre une bascule (S3 managé, chiffrement par fichier) sans toucher aux endpoints (NFR-1).
 
 ## 3. Endpoints REST proposés
 
@@ -65,4 +66,4 @@ Partenaire livreur (HMAC) :
 
 - **Livreur en acteur interactif complet** — écarté pour le POC (coût élevé, 4e écran) au profit de l'intégration partenaire API (Option 2). Réutilise l'infra `companies`/webhook/HMAC.
 - **Suppression physique des pièces** — écartée au profit du retrait logique, pour préserver l'immuabilité et la piste d'audit.
-- **Stockage objet (S3) d'emblée** — écarté pour le POC (disque local suffit), mais l'interface de stockage est prévue pour la bascule.
+- **Disque local d'emblée** — écarté (2026-07-15) au profit de **MinIO (S3-compatible)** dès le POC, pour éviter une refonte de stockage entre POC et prod ; l'interface `EvidenceStorage` isole malgré tout le backend.
