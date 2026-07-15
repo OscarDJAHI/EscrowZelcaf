@@ -1,0 +1,44 @@
+spring:
+  application:
+    name: escrow-core
+
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/escrow}
+    username: ${SPRING_DATASOURCE_USERNAME:escrow}
+    password: ${SPRING_DATASOURCE_PASSWORD:escrow}
+
+  jpa:
+    hibernate:
+      ddl-auto: none              # schema is owned by Flyway migrations
+    open-in-view: false
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
+
+  flyway:
+    enabled: true
+    baseline-on-migrate: true
+
+  rabbitmq:
+    host: ${SPRING_RABBITMQ_HOST:localhost}
+    port: ${SPRING_RABBITMQ_PORT:5672}
+    username: ${SPRING_RABBITMQ_USERNAME:guest}
+    password: ${SPRING_RABBITMQ_PASSWORD:guest}
+    # Keep API responsive if the broker is unreachable at startup.
+    connection-timeout: 3000ms
+
+escrow:
+  jwt:
+    # Override in every real environment. Must be >= 32 bytes for HS256.
+    secret: ${ESCROW_JWT_SECRET:change-me-in-production-please-32-bytes-minimum-secret}
+    ttl-seconds: 86400
+
+server:
+  port: ${SERVER_PORT:8080}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info

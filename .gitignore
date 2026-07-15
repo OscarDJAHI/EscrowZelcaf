@@ -1,0 +1,17 @@
+.DS_Store
+*.log
+
+# Dependencies & build output
+node_modules/
+frontend/dist/
+backend/target/
+
+# Local tooling scratch / personal settings
+.playwright-mcp/
+.claude/settings.local.json
+_bmad/config.toml.bak
+
+# bmad-loop runtime state
+.bmad-loop/runs/
+.bmad-loop/cache/
+.bmad-loop/policy.toml

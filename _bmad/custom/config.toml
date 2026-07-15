@@ -1,0 +1,18 @@
+# Team / enterprise overrides for _bmad/config.toml.
+# Committed to the repo — applies to every developer on the project.
+# Tables deep-merge over base config; keyed entries merge by key.
+# Example: override an agent descriptor, or add a new agent.
+#
+# [agents.bmad-agent-pm]
+# description = "Prefers short, bulleted PRDs over narrative drafts."
+
+# Durable core overrides — pinned here so installer re-runs / updates (which
+# regenerate config.toml from install answers) can't clobber them.
+#   output_folder: originally worked around a v6.10.0 bug (token defined but not
+#     written); 6.10.1-next fixes it natively, so this is now belt-and-suspenders.
+#   document_output_language: user preference is French (a --yes update reset it).
+#   project_name: keep "Escrow" (a --yes update reset it to the dir name).
+[core]
+output_folder = "_bmad-output"
+document_output_language = "French"
+project_name = "Escrow"

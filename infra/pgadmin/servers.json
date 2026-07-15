@@ -1,0 +1,13 @@
+{
+  "Servers": {
+    "1": {
+      "Name": "Escrow POC",
+      "Group": "Servers",
+      "Host": "postgres",
+      "Port": 5432,
+      "MaintenanceDB": "escrow",
+      "Username": "escrow",
+      "SSLMode": "prefer"
+    }
+  }
+}

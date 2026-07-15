@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-label="ZLECAf Escrow logo">
+  <defs>
+    <clipPath id="round">
+      <rect width="512" height="512" rx="96" ry="96" />
+    </clipPath>
+  </defs>
+  <g clip-path="url(#round)">
+    <rect width="512" height="512" fill="#0f766e" />
+    <rect x="0" y="416" width="512" height="96" fill="#f59e0b" />
+    <text
+      x="256"
+      y="300"
+      font-family="'Segoe UI', Helvetica, Arial, sans-serif"
+      font-size="248"
+      font-weight="800"
+      fill="#ffffff"
+      text-anchor="middle"
+    >Z</text>
+  </g>
+</svg>
