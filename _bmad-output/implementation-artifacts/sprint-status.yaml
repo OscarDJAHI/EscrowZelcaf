@@ -50,7 +50,7 @@ story_location: "{project-root}/_bmad-output/implementation-artifacts"
 development_status:
   # Epic 1 — Socle : dépôt & consultation contradictoire des preuves
   epic-1: in-progress
-  1-1-fondations-de-stockage-des-preuves: ready-for-dev
+  1-1-fondations-de-stockage-des-preuves: done
   1-2-deposer-une-piece-sur-une-transaction: backlog
   1-3-consulter-la-liste-chronologique-des-preuves: backlog
   1-4-telecharger-une-preuve-en-toute-securite: backlog

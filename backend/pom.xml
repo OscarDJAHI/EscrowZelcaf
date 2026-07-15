@@ -19,7 +19,31 @@
 
     <properties>
         <java.version>21</java.version>
+        <!-- The AWS SDK's Apache5 HTTP client needs httpclient5 >= 5.4 (TlsSocketStrategy).
+             The Spring Boot parent would otherwise downgrade it to 5.3.1 and the S3
+             client fails at construction. These are the versions the AWS SDK BOM
+             resolves to on its own; nothing else here depends on httpclient5. -->
+        <httpclient5.version>5.6.2</httpclient5.version>
+        <httpcore5.version>5.4.3</httpcore5.version>
+        <!-- Testcontainers 1.19.8 (from the Boot parent) speaks Docker API v1.32, which
+             Docker Engine 29+ rejects (minimum 1.44), so no container can start. -->
+        <testcontainers.version>1.21.4</testcontainers.version>
     </properties>
+
+    <dependencyManagement>
+        <dependencies>
+            <!-- AWS SDK v2 BOM: aligns the S3 client with its transitive modules.
+                 Testcontainers comes from the Boot parent, at the version pinned
+                 in <properties> above. -->
+            <dependency>
+                <groupId>software.amazon.awssdk</groupId>
+                <artifactId>bom</artifactId>
+                <version>2.47.6</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
 
     <dependencies>
         <dependency>
@@ -90,6 +114,12 @@
             <scope>runtime</scope>
         </dependency>
 
+        <!-- S3-compatible object storage (MinIO) for evidence binaries -->
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>s3</artifactId>
+        </dependency>
+
         <!-- Jackson JSR-310 already provided; hypersistence for JSONB mapping -->
         <dependency>
             <groupId>io.hypersistence</groupId>
@@ -112,6 +142,19 @@
         <dependency>
             <groupId>com.h2database</groupId>
             <artifactId>h2</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <!-- Testcontainers: real MinIO for the storage round-trip proof. Versions
+             come from the Boot parent's testcontainers BOM, overridden to 1.21.4
+             in <properties> — do not drop that override, see the note there. -->
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>minio</artifactId>
             <scope>test</scope>
         </dependency>
     </dependencies>

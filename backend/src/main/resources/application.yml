@@ -34,6 +34,14 @@ escrow:
     secret: ${ESCROW_JWT_SECRET:change-me-in-production-please-32-bytes-minimum-secret}
     ttl-seconds: 86400
 
+  storage:
+    # S3-compatible object storage (MinIO) holding the evidence binaries.
+    # Override the credentials in every real environment.
+    endpoint: ${ESCROW_STORAGE_ENDPOINT:http://localhost:9000}
+    bucket: ${ESCROW_STORAGE_BUCKET:escrow-evidence}
+    access-key: ${ESCROW_STORAGE_ACCESS_KEY:minioadmin}
+    secret-key: ${ESCROW_STORAGE_SECRET_KEY:minioadmin}
+
 server:
   port: ${SERVER_PORT:8080}
 
