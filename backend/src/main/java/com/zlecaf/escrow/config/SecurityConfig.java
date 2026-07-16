@@ -3,6 +3,7 @@ package com.zlecaf.escrow.config;
 import com.zlecaf.escrow.security.JwtAuthFilter;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpMethod;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
@@ -38,8 +39,10 @@ public class SecurityConfig {
                 // Simulated partner webhook callbacks (HMAC-signed, not JWT-auth'd).
                 .requestMatchers("/api/v1/webhooks/incoming/**").permitAll()
                 // Machine partner deposit (auth carried entirely by the HMAC signature,
-                // not JWT). No other endpoint is opened by this matcher.
-                .requestMatchers("/api/v1/partner/**").permitAll()
+                // not JWT). Pinned to exactly POST /api/v1/partner/escrow/*/evidence so
+                // no other /api/v1/partner/** route is ever opened by default — anything
+                // else falls through to anyRequest().authenticated().
+                .requestMatchers(HttpMethod.POST, "/api/v1/partner/escrow/*/evidence").permitAll()
                 .requestMatchers("/actuator/health").permitAll()
                 // OpenAPI spec + Swagger UI (POC: open for easy API exploration).
                 .requestMatchers("/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()

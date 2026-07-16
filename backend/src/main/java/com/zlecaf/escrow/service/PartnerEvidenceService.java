@@ -5,7 +5,9 @@ import com.zlecaf.escrow.domain.PartnerHmacKey;
 import com.zlecaf.escrow.domain.PartnerKeyNonce;
 import com.zlecaf.escrow.repository.PartnerHmacKeyRepository;
 import com.zlecaf.escrow.repository.PartnerKeyNonceRepository;
+import com.zlecaf.escrow.web.ApiExceptions.BadRequestException;
 import com.zlecaf.escrow.web.ApiExceptions.UnauthorizedException;
+import org.hibernate.exception.ConstraintViolationException;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -61,6 +63,14 @@ public class PartnerEvidenceService {
     public List<EvidenceFile> deposit(String keyId, String signature, String timestamp, String nonce,
                                       Long txId, List<MultipartFile> files, String comment,
                                       String clientCapturedAt) {
+        // Fail-fast on a nonce that cannot fit the nonce column (VARCHAR(255)):
+        // reject it BEFORE any signature verification or ingest, so an over-long
+        // nonce never drives the (expensive) per-file hashing and never reaches a
+        // flush-time truncation surfacing as a misleading 401/500.
+        if (nonce != null && nonce.length() > MAX_NONCE_LENGTH) {
+            throw new BadRequestException("Nonce exceeds the maximum allowed length");
+        }
+
         // Only ACTIVE keys resolve, so revocation (active=false) is immediate. The
         // 401 message is deliberately generic (see AUTH_FAILED): distinguishing
         // "unknown key" from "bad signature" would let an attacker enumerate which
@@ -89,10 +99,42 @@ public class PartnerEvidenceService {
         try {
             nonceRepository.save(new PartnerKeyNonce(keyId, nonce));
         } catch (DataIntegrityViolationException e) {
-            throw new UnauthorizedException(AUTH_FAILED);
+            // ONLY the nonce unique-constraint conflict is a replay (401). Any other
+            // integrity violation (a bug, an unrelated constraint) must NOT be masked
+            // as an auth failure — it propagates and surfaces as a 500.
+            if (isNonceReplay(e)) {
+                throw new UnauthorizedException(AUTH_FAILED);
+            }
+            throw e;
         }
 
         return evidence;
+    }
+
+    /** {@code partner_key_nonces.nonce} column width (VARCHAR(255)). */
+    private static final int MAX_NONCE_LENGTH = 255;
+
+    /** Constraint whose violation identifies a genuine nonce replay (case-insensitive). */
+    private static final String NONCE_UNIQUE_CONSTRAINT = "uq_partner_key_nonces_key_nonce";
+
+    /**
+     * True iff the integrity violation was caused by the nonce unique constraint.
+     * Walks the ENTIRE cause chain for a Hibernate {@link ConstraintViolationException}
+     * naming {@code uq_partner_key_nonces_key_nonce} (case-insensitively). The whole
+     * chain is scanned — not stopped at the first {@code ConstraintViolationException}
+     * — so a genuine nonce replay wrapped behind an unrelated integrity cause is still
+     * recognised. A missing chain or null/other constraint name is treated as NOT a
+     * replay (fail-safe: the violation propagates → 500); the real-DB concurrency test
+     * proves a genuine nonce conflict IS detected here.
+     */
+    private static boolean isNonceReplay(DataIntegrityViolationException e) {
+        for (Throwable cause = e; cause != null; cause = cause.getCause()) {
+            if (cause instanceof ConstraintViolationException cve
+                    && NONCE_UNIQUE_CONSTRAINT.equalsIgnoreCase(cve.getConstraintName())) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**

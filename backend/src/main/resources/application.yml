@@ -55,6 +55,12 @@ escrow:
     # Anti-replay window for signed partner deposits: an X-Escrow-Timestamp more
     # than this many seconds away from server time is rejected (401).
     timestamp-tolerance-seconds: ${ESCROW_PARTNER_TIMESTAMP_TOLERANCE_SECONDS:300}
+    # Bounded retention for the partner nonce store: a nonce older than
+    # max(this, timestamp-tolerance-seconds) is safe to purge (its freshness
+    # window has already closed). Default 900 s (>= the 300 s tolerance).
+    nonce-retention-seconds: ${ESCROW_PARTNER_NONCE_RETENTION_SECONDS:900}
+    # How often the scheduled purge runs (fixed delay, milliseconds).
+    nonce-purge-interval-ms: ${ESCROW_PARTNER_NONCE_PURGE_INTERVAL_MS:60000}
 
 server:
   port: ${SERVER_PORT:8080}

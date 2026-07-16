@@ -10,10 +10,12 @@ import com.zlecaf.escrow.web.ApiExceptions.UnauthorizedException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.hibernate.exception.ConstraintViolationException;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.sql.SQLException;
 import java.util.List;
 import java.util.Optional;
 
@@ -133,16 +135,89 @@ class PartnerEvidenceServiceTest {
     }
 
     @Test
-    @DisplayName("A lost INSERT race on the nonce (DataIntegrityViolationException) -> 401")
+    @DisplayName("A lost INSERT race on the nonce unique constraint -> 401 replay")
     void nonceInsertRaceIsUnauthorized() {
         when(keyRepository.findByKeyIdAndActiveTrue(KEY_ID)).thenReturn(Optional.of(activeKey()));
         when(nonceRepository.existsByKeyIdAndNonce(KEY_ID, NONCE)).thenReturn(false);
         when(evidenceService.depositAsPartner(eq(COMPANY_ID), eq(TX_ID), anyList(), any(), any()))
                 .thenReturn(List.of(new EvidenceFile()));
+        // The DIVE carries a Hibernate ConstraintViolationException naming the nonce
+        // unique constraint — the ONLY integrity violation interpreted as a replay.
         when(nonceRepository.save(any(PartnerKeyNonce.class)))
-                .thenThrow(new DataIntegrityViolationException("uq_partner_key_nonces_key_nonce"));
+                .thenThrow(nonceConstraintViolation("uq_partner_key_nonces_key_nonce"));
 
         assertThatThrownBy(() -> service.deposit(KEY_ID, SIGNATURE, TIMESTAMP, NONCE, TX_ID, files, null, null))
                 .isInstanceOf(UnauthorizedException.class);
+    }
+
+    @Test
+    @DisplayName("A DIVE naming the nonce unique constraint (any casing) is a 401 replay")
+    void nonceConstraintCaseInsensitiveIsUnauthorized() {
+        when(keyRepository.findByKeyIdAndActiveTrue(KEY_ID)).thenReturn(Optional.of(activeKey()));
+        when(nonceRepository.existsByKeyIdAndNonce(KEY_ID, NONCE)).thenReturn(false);
+        when(evidenceService.depositAsPartner(eq(COMPANY_ID), eq(TX_ID), anyList(), any(), any()))
+                .thenReturn(List.of(new EvidenceFile()));
+        when(nonceRepository.save(any(PartnerKeyNonce.class)))
+                .thenThrow(nonceConstraintViolation("UQ_PARTNER_KEY_NONCES_KEY_NONCE"));
+
+        assertThatThrownBy(() -> service.deposit(KEY_ID, SIGNATURE, TIMESTAMP, NONCE, TX_ID, files, null, null))
+                .isInstanceOf(UnauthorizedException.class);
+    }
+
+    @Test
+    @DisplayName("A DIVE from a DIFFERENT constraint propagates (not masked as a 401)")
+    void otherIntegrityViolationPropagates() {
+        when(keyRepository.findByKeyIdAndActiveTrue(KEY_ID)).thenReturn(Optional.of(activeKey()));
+        when(nonceRepository.existsByKeyIdAndNonce(KEY_ID, NONCE)).thenReturn(false);
+        when(evidenceService.depositAsPartner(eq(COMPANY_ID), eq(TX_ID), anyList(), any(), any()))
+                .thenReturn(List.of(new EvidenceFile()));
+        // A violation of some OTHER constraint must never be swallowed as an auth
+        // failure — it must surface (→ 500), not a misleading 401.
+        when(nonceRepository.save(any(PartnerKeyNonce.class)))
+                .thenThrow(nonceConstraintViolation("fk_something_else"));
+
+        assertThatThrownBy(() -> service.deposit(KEY_ID, SIGNATURE, TIMESTAMP, NONCE, TX_ID, files, null, null))
+                .isInstanceOf(DataIntegrityViolationException.class)
+                .isNotInstanceOf(UnauthorizedException.class);
+    }
+
+    @Test
+    @DisplayName("A DIVE with no ConstraintViolationException in its chain propagates (not a 401)")
+    void integrityViolationWithoutConstraintNamePropagates() {
+        when(keyRepository.findByKeyIdAndActiveTrue(KEY_ID)).thenReturn(Optional.of(activeKey()));
+        when(nonceRepository.existsByKeyIdAndNonce(KEY_ID, NONCE)).thenReturn(false);
+        when(evidenceService.depositAsPartner(eq(COMPANY_ID), eq(TX_ID), anyList(), any(), any()))
+                .thenReturn(List.of(new EvidenceFile()));
+        when(nonceRepository.save(any(PartnerKeyNonce.class)))
+                .thenThrow(new DataIntegrityViolationException("opaque, no Hibernate cause"));
+
+        assertThatThrownBy(() -> service.deposit(KEY_ID, SIGNATURE, TIMESTAMP, NONCE, TX_ID, files, null, null))
+                .isInstanceOf(DataIntegrityViolationException.class)
+                .isNotInstanceOf(UnauthorizedException.class);
+    }
+
+    @Test
+    @DisplayName("An over-long nonce (>255) is a 400 BEFORE any signature check or ingest")
+    void overlongNonceRejectedBeforeSignatureCheck() {
+        String longNonce = "n".repeat(256);
+
+        assertThatThrownBy(() -> service.deposit(KEY_ID, SIGNATURE, TIMESTAMP, longNonce, TX_ID, files, null, null))
+                .isInstanceOf(BadRequestException.class);
+
+        // The guard runs first: no key lookup, no signature hashing, no ingest, no nonce save.
+        verify(keyRepository, never()).findByKeyIdAndActiveTrue(anyString());
+        verify(signatureVerifier, never()).verify(any(), any(), any(), any(), any(), anyList(), any(), any());
+        verify(evidenceService, never()).depositAsPartner(anyLong(), anyLong(), anyList(), any(), any());
+        verify(nonceRepository, never()).save(any());
+    }
+
+    /**
+     * A {@link DataIntegrityViolationException} wrapping a Hibernate
+     * {@link ConstraintViolationException} that names {@code constraintName} — the
+     * shape Spring produces on a real Postgres unique-constraint conflict.
+     */
+    private static DataIntegrityViolationException nonceConstraintViolation(String constraintName) {
+        return new DataIntegrityViolationException("insert failed",
+                new ConstraintViolationException("could not execute statement", new SQLException(), constraintName));
     }
 }
