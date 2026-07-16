@@ -82,6 +82,27 @@ class EvidenceControllerDownloadTest {
     }
 
     @Test
+    @DisplayName("download falls back to application/octet-stream when the stored mime_type is null (never NPE/500)")
+    void downloadFallsBackToOctetStreamWhenMimeNull() {
+        EvidenceService service = mock(EvidenceService.class);
+        EvidenceController controller = new EvidenceController(service);
+
+        byte[] body = "typeless".getBytes(StandardCharsets.UTF_8);
+        AuthPrincipal actor = new AuthPrincipal(7L, "party@example.com", Role.BUYER);
+        // mime_type is nullable: a null must not reach parseMediaType(null) — it
+        // falls back to a generic binary type, symmetric to the null-size case.
+        EvidenceDownload stub = new EvidenceDownload(
+                new ByteArrayInputStream(body), "receipt.bin", null, (long) body.length);
+        when(service.download(any(AuthPrincipal.class), eq(42L), eq(99L))).thenReturn(stub);
+
+        ResponseEntity<InputStreamResource> response = controller.download(actor, 42L, 99L);
+
+        assertThat(response.getStatusCode().value()).isEqualTo(200);
+        assertThat(response.getHeaders().getContentType()).isEqualTo(MediaType.APPLICATION_OCTET_STREAM);
+        assertThat(readAll(response.getBody())).isEqualTo(body);
+    }
+
+    @Test
     @DisplayName("download closes the already-open storage stream if building the response fails (no connection leak)")
     void downloadClosesStreamWhenResponseBuildFails() {
         EvidenceService service = mock(EvidenceService.class);

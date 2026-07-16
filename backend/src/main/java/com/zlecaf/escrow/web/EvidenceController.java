@@ -81,7 +81,12 @@ public class EvidenceController {
                     .build();
             ResponseEntity.BodyBuilder builder = ResponseEntity.ok()
                     .header(HttpHeaders.CONTENT_DISPOSITION, cd.toString())
-                    .contentType(MediaType.parseMediaType(d.contentType()));
+                    // mime_type is nullable (column has no NOT NULL): fall back to a
+                    // generic binary type rather than NPE/500 on parseMediaType(null),
+                    // symmetric to the nullable size_bytes handling below.
+                    .contentType(d.contentType() != null
+                            ? MediaType.parseMediaType(d.contentType())
+                            : MediaType.APPLICATION_OCTET_STREAM);
             // size_bytes is nullable: only advertise Content-Length when known,
             // otherwise omit the header rather than send a bogus/zero length.
             if (d.sizeBytes() != null) {
