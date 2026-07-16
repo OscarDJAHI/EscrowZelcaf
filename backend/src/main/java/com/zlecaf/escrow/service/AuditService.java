@@ -77,6 +77,25 @@ public class AuditService {
         save(transactionId, actorId, currentState, currentState, payload);
     }
 
+    /**
+     * Log an evidence withdrawal within the caller's transaction (atomic with the
+     * {@code ACTIVE -> WITHDRAWN} flip on the {@code evidence_files} row). Like a
+     * deposit, a withdrawal is not a state change, so
+     * {@code previous == next == currentState}. The payload carries {@code evidenceId}
+     * (which correlates with the {@code EVIDENCE_ADDED} entry that holds the
+     * {@code sha256}) but no hash: withdrawal is a metadata-only operation and must
+     * not read the storage binary to recompute one.
+     */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void recordEvidenceWithdrawn(Long transactionId, Long actorId, ParticipantRole actorRole,
+                                        EscrowState currentState, Long evidenceId) {
+        ObjectNode payload = objectMapper.createObjectNode();
+        payload.put("action", "EVIDENCE_WITHDRAWN");
+        payload.put("actorRole", actorRole == null ? null : actorRole.name());
+        payload.put("evidenceId", evidenceId);
+        save(transactionId, actorId, currentState, currentState, payload);
+    }
+
     private void save(Long transactionId, Long actorId, EscrowState previous, EscrowState next, ObjectNode payload) {
         AuditLog logEntry = new AuditLog();
         logEntry.setTransactionId(transactionId);

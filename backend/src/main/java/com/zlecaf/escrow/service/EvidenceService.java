@@ -13,6 +13,7 @@ import com.zlecaf.escrow.service.storage.EvidenceNotFoundException;
 import com.zlecaf.escrow.service.storage.EvidenceStorage;
 import com.zlecaf.escrow.web.ApiExceptions.BadRequestException;
 import com.zlecaf.escrow.web.ApiExceptions.ConflictException;
+import com.zlecaf.escrow.web.ApiExceptions.ForbiddenException;
 import com.zlecaf.escrow.web.ApiExceptions.NotFoundException;
 import com.zlecaf.escrow.web.dto.EvidenceDtos.EvidenceDto;
 import org.slf4j.Logger;
@@ -47,6 +48,14 @@ public class EvidenceService {
 
     /** Per-file business limit (bytes), arbitrated here, not by the container. */
     static final long MAX_FILE_SIZE = 10_485_760L;
+
+    /**
+     * Dispute evidence floor (FR-6): a DISPUTED transaction must keep at least this
+     * many ACTIVE pieces, so a withdrawal that would drop the count to (or below)
+     * it is refused. Bounded to DISPUTED — outside a dispute there is no evidence
+     * dossier to protect and withdrawal is free, even down to zero.
+     */
+    static final long MIN_ACTIVE_EVIDENCE_IN_DISPUTE = 1;
 
     private final EscrowTransactionRepository transactions;
     private final EvidenceFileRepository evidenceFiles;
@@ -210,10 +219,92 @@ public class EvidenceService {
         }
     }
 
+    /**
+     * Logically withdraws one evidence piece the actor deposited: {@code ACTIVE ->
+     * WITHDRAWN}, never a physical delete (AD-4, the row stays visible in the list).
+     * A metadata-only operation — the storage binary is never read, so withdrawal
+     * does not depend on object-store availability.
+     *
+     * <p>Server-authoritative, in strict order: take the transaction under a
+     * {@code PESSIMISTIC_WRITE} lock (404 if unknown), resolve membership (403 for
+     * a non-party, before any piece lookup), then the <em>sealed</em>
+     * {@code findByIdAndTransactionId} query (404) so a foreign or unknown piece is
+     * indistinguishable — the anti-IDOR guard, never a manual comparison over an
+     * unsealed {@code findById}. Only one's own piece may be withdrawn (403), the
+     * deposit window is reused (409 outside it, Story 2.2 lock), and an
+     * already-withdrawn piece is a 409.
+     *
+     * <p><strong>Why the dispute floor holds under a race.</strong> Two concurrent
+     * withdrawals on the same transaction contend on the <em>same</em> locked row:
+     * the second blocks until the first commits, then recounts
+     * {@code countByTransactionIdAndStatus(txId, ACTIVE)} on the committed state and
+     * sees the decremented total — so the last-remaining-ACTIVE check cannot be
+     * invalidated by a TOCTOU window. The audit entry commits atomically with the
+     * status flip.
+     *
+     * @throws NotFoundException  transaction or piece unknown/foreign (404)
+     * @throws ForbiddenException non-party, or not the piece's owner (403)
+     * @throws ConflictException  withdrawal window closed, piece already withdrawn,
+     *                            or the dispute floor would be breached (409)
+     */
+    @Transactional
+    public EvidenceDto withdraw(AuthPrincipal actor, Long txId, Long evidenceId) {
+        // Pessimistic lock: serialises this withdrawal against concurrent ones (and
+        // state transitions) on the same transaction, so the floor count below is
+        // read on committed state and cannot be undercut by a lost update.
+        EscrowTransaction tx = transactions.findByIdForUpdate(txId)
+                .orElseThrow(() -> new NotFoundException("Transaction " + txId + " not found"));
+
+        ParticipantRole role = access.resolveRole(actor, tx);   // 403 if not a party
+
+        // Sealed anti-IDOR lookup: a foreign or unknown piece is a 404, never a findById.
+        EvidenceFile evidence = evidenceFiles.findByIdAndTransactionId(evidenceId, txId)
+                .orElseThrow(() -> new NotFoundException("Evidence " + evidenceId + " not found"));
+
+        // Own-piece guard: a null uploader (partner upload) is never the actor's.
+        if (evidence.getUploadedByUserId() == null
+                || !evidence.getUploadedByUserId().equals(actor.userId())) {
+            throw new ForbiddenException("You can only withdraw your own evidence");
+        }
+
+        requireWithdrawWindow(tx.getState());                   // 409 if outside window
+
+        if (evidence.getStatus() == EvidenceStatus.WITHDRAWN) {
+            throw new ConflictException("Evidence is already withdrawn");
+        }
+
+        // Dispute floor (FR-6): only in DISPUTED, count ACTIVE across all parties
+        // behind the row lock; refuse a withdrawal that would leave no evidence.
+        // The recount-after-the-lock guarantee assumes READ COMMITTED (Postgres
+        // default): the loser, unblocked once the winner commits, takes a fresh
+        // snapshot and sees the decremented total.
+        if (tx.getState() == EscrowState.DISPUTED
+                && evidenceFiles.countByTransactionIdAndStatus(txId, EvidenceStatus.ACTIVE)
+                        <= MIN_ACTIVE_EVIDENCE_IN_DISPUTE) {
+            throw new ConflictException("Withdrawal would leave the dispute without evidence");
+        }
+
+        evidence.setStatus(EvidenceStatus.WITHDRAWN);
+        evidence.setWithdrawnAt(java.time.Instant.now());       // server time, authoritative
+        evidence.setWithdrawnByUserId(actor.userId());
+        evidence = evidenceFiles.save(evidence);
+
+        auditService.recordEvidenceWithdrawn(txId, actor.userId(), role, tx.getState(), evidence.getId());
+
+        return EvidenceDto.from(evidence);
+    }
+
     private void requireUploadWindow(EscrowState state) {
         if (!state.allowsEvidenceMutation()) {
             throw new ConflictException(
                     "Evidence cannot be deposited while the transaction is " + state);
+        }
+    }
+
+    private void requireWithdrawWindow(EscrowState state) {
+        if (!state.allowsEvidenceMutation()) {
+            throw new ConflictException(
+                    "Evidence cannot be withdrawn while the transaction is " + state);
         }
     }
 

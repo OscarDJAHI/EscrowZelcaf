@@ -90,6 +90,21 @@ public class EvidenceController {
         }
     }
 
+    /**
+     * Logically withdraws one evidence piece the caller deposited. All authority —
+     * membership, sealed anti-IDOR lookup, own-piece guard, state window and the
+     * dispute evidence floor — lives in {@link EvidenceService}; this controller
+     * only adapts HTTP to the service and returns the updated {@link EvidenceDto}
+     * with {@code 200 OK}.
+     */
+    @PostMapping("/{id}/evidence/{evidenceId}/withdraw")
+    public EvidenceDto withdraw(
+            @PathVariable Long id,
+            @PathVariable Long evidenceId,
+            @AuthenticationPrincipal AuthPrincipal actor) {
+        return evidenceService.withdraw(actor, id, evidenceId);
+    }
+
     private static void closeQuietly(InputStream in) {
         try {
             in.close();

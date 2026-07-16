@@ -633,4 +633,198 @@ class EvidenceServiceTest {
         assertThatThrownBy(() -> evidenceService.download(actor, tx.getId(), orphan.getId()))
                 .isInstanceOf(NotFoundException.class);
     }
+
+    // --- Story 2.3: logical withdrawal with a dispute evidence floor ---
+
+    @Test
+    @DisplayName("withdraw flips the actor's own ACTIVE piece to WITHDRAWN and writes an EVIDENCE_WITHDRAWN audit row")
+    void withdrawFlipsStatusStampsMetadataAndAudits() {
+        User buyer = persistUser("buyerW1@example.com", Role.BUYER);
+        User seller = persistUser("sellerW1@example.com", Role.SELLER);
+        EscrowTransaction tx = persistTransaction(buyer.getId(), seller.getId(), EscrowState.FUNDS_LOCKED);
+        AuthPrincipal actor = new AuthPrincipal(buyer.getId(), buyer.getEmail(), Role.BUYER);
+
+        EvidenceFile piece = persistActiveEvidence(tx.getId(), buyer.getId(), UploaderType.BUYER,
+                Instant.parse("2026-07-15T10:00:00Z"));
+
+        EvidenceDto result = evidenceService.withdraw(actor, tx.getId(), piece.getId());
+
+        assertThat(result.status()).isEqualTo(EvidenceStatus.WITHDRAWN);
+
+        EvidenceFile row = evidenceFiles.findById(piece.getId()).orElseThrow();
+        assertThat(row.getStatus()).isEqualTo(EvidenceStatus.WITHDRAWN);
+        assertThat(row.getWithdrawnAt()).isNotNull();
+        assertThat(row.getWithdrawnByUserId()).isEqualTo(buyer.getId());
+
+        List<AuditLog> audit = auditLogs.findByTransactionIdOrderByTimestampAsc(tx.getId());
+        assertThat(audit).hasSize(1);
+        JsonNode payload = audit.get(0).getPayload();
+        assertThat(payload.get("action").asText()).isEqualTo("EVIDENCE_WITHDRAWN");
+        assertThat(payload.get("evidenceId").asLong()).isEqualTo(piece.getId());
+        assertThat(payload.get("actorRole").asText()).isEqualTo("BUYER");
+        assertThat(audit.get(0).getPreviousState()).isEqualTo("FUNDS_LOCKED");
+        assertThat(audit.get(0).getNextState()).isEqualTo("FUNDS_LOCKED");
+    }
+
+    @Test
+    @DisplayName("withdraw succeeds in DISPUTED while other ACTIVE pieces remain (floor not breached)")
+    void withdrawInDisputeSucceedsWhenOtherActiveRemain() {
+        User buyer = persistUser("buyerW2@example.com", Role.BUYER);
+        User seller = persistUser("sellerW2@example.com", Role.SELLER);
+        EscrowTransaction tx = persistTransaction(buyer.getId(), seller.getId(), EscrowState.DISPUTED);
+        AuthPrincipal actor = new AuthPrincipal(buyer.getId(), buyer.getEmail(), Role.BUYER);
+
+        Instant t0 = Instant.parse("2026-07-15T10:00:00Z");
+        EvidenceFile mine = persistActiveEvidence(tx.getId(), buyer.getId(), UploaderType.BUYER, t0);
+        persistActiveEvidence(tx.getId(), buyer.getId(), UploaderType.BUYER, t0.plusSeconds(60));
+
+        EvidenceDto result = evidenceService.withdraw(actor, tx.getId(), mine.getId());
+
+        assertThat(result.status()).isEqualTo(EvidenceStatus.WITHDRAWN);
+        assertThat(evidenceFiles.countByTransactionIdAndStatus(tx.getId(), EvidenceStatus.ACTIVE)).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("withdraw of a third party's piece is a 403 and mutates nothing")
+    void withdrawThirdPartyPieceIsForbidden() {
+        User buyer = persistUser("buyerW3@example.com", Role.BUYER);
+        User seller = persistUser("sellerW3@example.com", Role.SELLER);
+        EscrowTransaction tx = persistTransaction(buyer.getId(), seller.getId(), EscrowState.FUNDS_LOCKED);
+        AuthPrincipal actor = new AuthPrincipal(buyer.getId(), buyer.getEmail(), Role.BUYER);
+
+        // Piece deposited by the seller; the buyer must not be able to withdraw it.
+        EvidenceFile foreign = persistActiveEvidence(tx.getId(), seller.getId(), UploaderType.SELLER,
+                Instant.parse("2026-07-15T10:00:00Z"));
+
+        assertThatThrownBy(() -> evidenceService.withdraw(actor, tx.getId(), foreign.getId()))
+                .isInstanceOf(ForbiddenException.class);
+
+        assertThat(evidenceFiles.findById(foreign.getId()).orElseThrow().getStatus())
+                .isEqualTo(EvidenceStatus.ACTIVE);
+        assertThat(auditLogs.findByTransactionIdOrderByTimestampAsc(tx.getId())).isEmpty();
+    }
+
+    @Test
+    @DisplayName("withdraw of the last ACTIVE piece in DISPUTED hits the evidence floor (409) and mutates nothing")
+    void withdrawLastActiveInDisputeHitsFloor() {
+        User buyer = persistUser("buyerW4@example.com", Role.BUYER);
+        User seller = persistUser("sellerW4@example.com", Role.SELLER);
+        EscrowTransaction tx = persistTransaction(buyer.getId(), seller.getId(), EscrowState.DISPUTED);
+        AuthPrincipal actor = new AuthPrincipal(buyer.getId(), buyer.getEmail(), Role.BUYER);
+
+        // Exactly one ACTIVE piece, owned by the actor: withdrawing it would leave zero.
+        EvidenceFile onlyActive = persistActiveEvidence(tx.getId(), buyer.getId(), UploaderType.BUYER,
+                Instant.parse("2026-07-15T10:00:00Z"));
+
+        assertThatThrownBy(() -> evidenceService.withdraw(actor, tx.getId(), onlyActive.getId()))
+                .isInstanceOf(ConflictException.class);
+
+        assertThat(evidenceFiles.findById(onlyActive.getId()).orElseThrow().getStatus())
+                .isEqualTo(EvidenceStatus.ACTIVE);
+        assertThat(auditLogs.findByTransactionIdOrderByTimestampAsc(tx.getId())).isEmpty();
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = EscrowState.class, names = {"RELEASED", "REFUNDED"})
+    @DisplayName("withdraw in a terminal state is a 409 (Story 2.2 lock) and mutates nothing")
+    void withdrawInTerminalStateConflicts(EscrowState terminalState) {
+        String suffix = terminalState.name().toLowerCase();
+        User buyer = persistUser("buyerW5-" + suffix + "@example.com", Role.BUYER);
+        User seller = persistUser("sellerW5-" + suffix + "@example.com", Role.SELLER);
+        EscrowTransaction tx = persistTransaction(buyer.getId(), seller.getId(), terminalState);
+        AuthPrincipal actor = new AuthPrincipal(buyer.getId(), buyer.getEmail(), Role.BUYER);
+
+        EvidenceFile piece = persistActiveEvidence(tx.getId(), buyer.getId(), UploaderType.BUYER,
+                Instant.parse("2026-07-15T10:00:00Z"));
+
+        assertThatThrownBy(() -> evidenceService.withdraw(actor, tx.getId(), piece.getId()))
+                .isInstanceOf(ConflictException.class);
+
+        assertThat(evidenceFiles.findById(piece.getId()).orElseThrow().getStatus())
+                .isEqualTo(EvidenceStatus.ACTIVE);
+        assertThat(auditLogs.findByTransactionIdOrderByTimestampAsc(tx.getId())).isEmpty();
+    }
+
+    @Test
+    @DisplayName("withdraw of an already-WITHDRAWN piece is a 409 and writes no new audit")
+    void withdrawAlreadyWithdrawnConflicts() {
+        User buyer = persistUser("buyerW6@example.com", Role.BUYER);
+        User seller = persistUser("sellerW6@example.com", Role.SELLER);
+        EscrowTransaction tx = persistTransaction(buyer.getId(), seller.getId(), EscrowState.FUNDS_LOCKED);
+        AuthPrincipal actor = new AuthPrincipal(buyer.getId(), buyer.getEmail(), Role.BUYER);
+
+        Instant t0 = Instant.parse("2026-07-15T10:00:00Z");
+        EvidenceFile withdrawn = persistEvidence(tx.getId(), buyer.getId(), UploaderType.BUYER,
+                t0, EvidenceStatus.WITHDRAWN, t0.plusSeconds(30), buyer.getId());
+
+        assertThatThrownBy(() -> evidenceService.withdraw(actor, tx.getId(), withdrawn.getId()))
+                .isInstanceOf(ConflictException.class);
+
+        assertThat(evidenceFiles.findById(withdrawn.getId()).orElseThrow().getStatus())
+                .isEqualTo(EvidenceStatus.WITHDRAWN);
+        assertThat(auditLogs.findByTransactionIdOrderByTimestampAsc(tx.getId())).isEmpty();
+    }
+
+    @Test
+    @DisplayName("withdraw of a piece belonging to another transaction is a 404 (anti-IDOR)")
+    void withdrawForeignPieceIsNotFound() {
+        User buyer = persistUser("buyerW7@example.com", Role.BUYER);
+        User seller = persistUser("sellerW7@example.com", Role.SELLER);
+        EscrowTransaction txA = persistTransaction(buyer.getId(), seller.getId(), EscrowState.FUNDS_LOCKED);
+        EscrowTransaction txB = persistTransaction(buyer.getId(), seller.getId(), EscrowState.FUNDS_LOCKED);
+        AuthPrincipal actor = new AuthPrincipal(buyer.getId(), buyer.getEmail(), Role.BUYER);
+
+        // Piece lives on txA; the caller is a party to both but asks via txB's id.
+        EvidenceFile onA = persistActiveEvidence(txA.getId(), buyer.getId(), UploaderType.BUYER,
+                Instant.parse("2026-07-15T10:00:00Z"));
+
+        assertThatThrownBy(() -> evidenceService.withdraw(actor, txB.getId(), onA.getId()))
+                .isInstanceOf(NotFoundException.class);
+
+        assertThat(evidenceFiles.findById(onA.getId()).orElseThrow().getStatus())
+                .isEqualTo(EvidenceStatus.ACTIVE);
+    }
+
+    @Test
+    @DisplayName("withdraw of my last own piece in DISPUTED succeeds while a counterparty piece holds the floor (FR-6 counts all parties)")
+    void withdrawInDisputeSucceedsWhenCounterpartyPieceRemains() {
+        User buyer = persistUser("buyerW8@example.com", Role.BUYER);
+        User seller = persistUser("sellerW8@example.com", Role.SELLER);
+        EscrowTransaction tx = persistTransaction(buyer.getId(), seller.getId(), EscrowState.DISPUTED);
+        AuthPrincipal actor = new AuthPrincipal(buyer.getId(), buyer.getEmail(), Role.BUYER);
+
+        Instant t0 = Instant.parse("2026-07-15T10:00:00Z");
+        // My only piece; the seller holds the other ACTIVE piece. Withdrawing mine
+        // leaves me at zero but the dispute at one — the floor counts ALL parties,
+        // so it must NOT be scoped to the actor's own pieces.
+        EvidenceFile mine = persistActiveEvidence(tx.getId(), buyer.getId(), UploaderType.BUYER, t0);
+        persistActiveEvidence(tx.getId(), seller.getId(), UploaderType.SELLER, t0.plusSeconds(60));
+
+        EvidenceDto result = evidenceService.withdraw(actor, tx.getId(), mine.getId());
+
+        assertThat(result.status()).isEqualTo(EvidenceStatus.WITHDRAWN);
+        assertThat(evidenceFiles.countByTransactionIdAndStatus(tx.getId(), EvidenceStatus.ACTIVE)).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("withdraw by a non-party (neither buyer nor seller) is a 403 and mutates nothing")
+    void withdrawByNonPartyIsForbidden() {
+        User buyer = persistUser("buyerW9@example.com", Role.BUYER);
+        User seller = persistUser("sellerW9@example.com", Role.SELLER);
+        User stranger = persistUser("strangerW9@example.com", Role.BUYER);
+        EscrowTransaction tx = persistTransaction(buyer.getId(), seller.getId(), EscrowState.FUNDS_LOCKED);
+        // A user who is party to no side of this transaction: resolveRole must 403
+        // before the own-piece guard is ever reached.
+        AuthPrincipal actor = new AuthPrincipal(stranger.getId(), stranger.getEmail(), Role.BUYER);
+
+        EvidenceFile piece = persistActiveEvidence(tx.getId(), buyer.getId(), UploaderType.BUYER,
+                Instant.parse("2026-07-15T10:00:00Z"));
+
+        assertThatThrownBy(() -> evidenceService.withdraw(actor, tx.getId(), piece.getId()))
+                .isInstanceOf(ForbiddenException.class);
+
+        assertThat(evidenceFiles.findById(piece.getId()).orElseThrow().getStatus())
+                .isEqualTo(EvidenceStatus.ACTIVE);
+        assertThat(auditLogs.findByTransactionIdOrderByTimestampAsc(tx.getId())).isEmpty();
+    }
 }

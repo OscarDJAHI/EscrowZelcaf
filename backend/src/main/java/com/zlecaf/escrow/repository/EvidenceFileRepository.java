@@ -1,6 +1,7 @@
 package com.zlecaf.escrow.repository;
 
 import com.zlecaf.escrow.domain.EvidenceFile;
+import com.zlecaf.escrow.domain.EvidenceStatus;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 import java.util.List;
@@ -26,4 +27,13 @@ public interface EvidenceFileRepository extends JpaRepository<EvidenceFile, Long
      * elsewhere. Membership is never inferred from an unsealed {@code findById}.
      */
     Optional<EvidenceFile> findByIdAndTransactionId(Long id, Long transactionId);
+
+    /**
+     * Counts the evidence rows of a transaction in a given status. Read behind the
+     * transaction's pessimistic row lock, it backs the dispute evidence floor
+     * (FR-6): a withdrawal that would drop the {@code ACTIVE} count below the
+     * minimum is refused, and because both contending withdrawals serialise on
+     * the same locked transaction row, the loser recounts the committed state.
+     */
+    long countByTransactionIdAndStatus(Long transactionId, EvidenceStatus status);
 }
