@@ -301,7 +301,7 @@ class EscrowDisputeServiceTest {
     // --- 400: reused ingestion validation rolls back the transition (AR-13 + AD-1) ---
 
     @Test
-    @DisplayName("An invalid file rolls the whole opening back: no DISPUTED, no evidence, no success audit")
+    @DisplayName("An invalid file rolls the whole opening back (no DISPUTED, no evidence, no success audit) but leaves a durable REJECTED audit")
     void openDisputeInvalidFileRollsBack() {
         User buyer = persistUser("dispbuyer4@example.com", Role.BUYER);
         User seller = persistUser("dispseller4@example.com", Role.SELLER);
@@ -318,14 +318,19 @@ class EscrowDisputeServiceTest {
 
         assertThat(stateOf(tx.getId())).isEqualTo(EscrowState.FUNDS_LOCKED);
         assertThat(evidenceFor(tx.getId())).isEmpty();
-        // The transition's recordSuccess joined the (now rolled-back) transaction.
-        assertThat(auditFor(tx.getId())).isEmpty();
+        // The transition's recordSuccess joined the (now rolled-back) transaction,
+        // but the deposit-stage failure is durably recorded via REQUIRES_NEW: a
+        // rejected opening leaves the same audit trail as an illegal transition.
+        List<AuditLog> audit = auditFor(tx.getId());
+        assertThat(audit).hasSize(1);
+        assertThat(isRejected(audit.get(0))).isTrue();
+        assertThat(audit.stream().anyMatch(EscrowDisputeServiceTest::isTransitionSuccess)).isFalse();
     }
 
     // --- 500: object-store failure rolls back atomically (AD-1 gate, non-negotiable) ---
 
     @Test
-    @DisplayName("A storage failure during deposit rolls back the transition: tx stays FUNDS_LOCKED, no evidence, no success audit")
+    @DisplayName("A storage failure during deposit rolls back the transition (tx stays FUNDS_LOCKED, no evidence, no success audit) but leaves a durable REJECTED audit")
     void openDisputeStorageFailureRollsBackTransition() {
         User buyer = persistUser("dispbuyer5@example.com", Role.BUYER);
         User seller = persistUser("dispseller5@example.com", Role.SELLER);
@@ -349,8 +354,12 @@ class EscrowDisputeServiceTest {
         // Atomicity: the transition committed nothing because the deposit failed.
         assertThat(stateOf(tx.getId())).isEqualTo(EscrowState.FUNDS_LOCKED);
         assertThat(evidenceFor(tx.getId())).isEmpty();
-        assertThat(auditFor(tx.getId()).stream().anyMatch(EscrowDisputeServiceTest::isTransitionSuccess)).isFalse();
-        assertThat(auditFor(tx.getId())).isEmpty();
+        // No SUCCESS audit (rolled back), but the deposit-stage failure is durably
+        // recorded via REQUIRES_NEW — a storage outage no longer vanishes silently.
+        List<AuditLog> audit = auditFor(tx.getId());
+        assertThat(audit.stream().anyMatch(EscrowDisputeServiceTest::isTransitionSuccess)).isFalse();
+        assertThat(audit).hasSize(1);
+        assertThat(isRejected(audit.get(0))).isTrue();
     }
 
     // --- 409: state not openable (illegal transition, recordFailure written) ---

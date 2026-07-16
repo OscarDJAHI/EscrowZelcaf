@@ -172,7 +172,19 @@ public class EscrowService {
         // the transition so any rejection here rolls the transition back too within
         // this single unit of work (DISPUTED is already inside deposit's upload
         // window, so the deposit itself is legal).
-        List<EvidenceFile> evidence = evidenceService.deposit(actor, txId, files, comment, clientCapturedAt);
+        List<EvidenceFile> evidence;
+        try {
+            evidence = evidenceService.deposit(actor, txId, files, comment, clientCapturedAt);
+        } catch (RuntimeException ex) {
+            // A deposit-stage failure (bad file 400, storage down 500) rolls the
+            // whole composite back — including the recordSuccess above. Durably
+            // record the rejected attempt in a separate transaction (REQUIRES_NEW)
+            // so this leaves the same audit trail as an illegal/unauthorized
+            // transition, rather than vanishing silently.
+            auditService.recordFailure(txId, actor.userId(), role, EscrowEvent.OPEN_DISPUTE, previous,
+                    "Evidence deposit failed: " + ex.getMessage());
+            throw ex;
+        }
 
         publishAfterCommit(tx, previous, next, EscrowEvent.OPEN_DISPUTE, actor.userId());
 
