@@ -83,16 +83,38 @@ export function isTerminal(state) {
 /**
  * All events that *could* be triggered from `state` by someone holding `role`,
  * ignoring whether that particular user is a party to the transaction.
+ *
+ * OPEN_DISPUTE is deliberately excluded here: the backend no longer accepts it
+ * on the generic POST /{id}/event endpoint (it 400s — opening a dispute now
+ * requires evidence via the composite POST /{id}/dispute). Its entry is kept in
+ * TRANSITIONS as the single source of allowed roles (read by `canOpenDispute`),
+ * but it must never be offered as a plain event button.
  */
 export function getAllowedEvents(state, role) {
   const transitions = TRANSITIONS[state] || {}
   return Object.entries(transitions)
+    .filter(([event]) => event !== 'OPEN_DISPUTE')
     .filter(([, definition]) => definition.roles.includes(role))
     .map(([event, definition]) => ({
       event,
       next: definition.next,
       label: EVENT_LABELS[event] || event,
     }))
+}
+
+/**
+ * Whether `user` may open a dispute on `transaction` right now. Reads the
+ * allowed roles from the OPEN_DISPUTE transition (single source of truth) and
+ * enforces party membership: BUYER must match buyerEmail, SELLER must match
+ * sellerEmail. ADMIN never opens disputes (arbitration only).
+ */
+export function canOpenDispute(transaction, user) {
+  if (!transaction || !user) return false
+  const roles = TRANSITIONS[transaction.state]?.OPEN_DISPUTE?.roles
+  if (!roles || !roles.includes(user.role)) return false
+  if (user.role === 'BUYER') return transaction.buyerEmail === user.email
+  if (user.role === 'SELLER') return transaction.sellerEmail === user.email
+  return false
 }
 
 /**

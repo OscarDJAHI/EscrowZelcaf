@@ -10,7 +10,8 @@ import StepperEscrow from '@/components/StepperEscrow.vue'
 import AuditTimeline from '@/components/AuditTimeline.vue'
 import EvidenceDeposit from '@/components/EvidenceDeposit.vue'
 import EvidenceList from '@/components/EvidenceList.vue'
-import { getAllowedEventsForTransaction } from '@/utils/stateMachine'
+import OpenDisputeForm from '@/components/OpenDisputeForm.vue'
+import { canOpenDispute, getAllowedEventsForTransaction } from '@/utils/stateMachine'
 
 const DEPOSIT_STATES = ['FUNDS_LOCKED', 'SHIPPED', 'DISPUTED']
 
@@ -27,11 +28,13 @@ const offlineQueue = useOfflineQueueStore()
 
 const sendingEvent = ref(null)
 const actionError = ref('')
+const showDisputeForm = ref(false)
 
 const transaction = computed(() => escrowStore.currentDetail?.transaction || null)
 const auditLogs = computed(() => escrowStore.currentDetail?.auditLogs || [])
 const allowedEvents = computed(() => getAllowedEventsForTransaction(transaction.value, auth.user))
 const canDeposit = computed(() => DEPOSIT_STATES.includes(transaction.value?.state))
+const canOpen = computed(() => canOpenDispute(transaction.value, auth.user))
 
 const counterparty = computed(() => {
   if (!transaction.value || !auth.user) return ''
@@ -80,6 +83,15 @@ async function trigger(event) {
   } finally {
     sendingEvent.value = null
   }
+}
+
+function onDisputeOpened() {
+  // Reload the full detail (transaction + audit history) AND the evidence: the
+  // store already flipped the transaction to DISPUTED, but the audit timeline
+  // and the attachment(s) filed with the opening only appear after a reload.
+  showDisputeForm.value = false
+  load()
+  loadEvidence()
 }
 
 function onSync() {
@@ -137,7 +149,10 @@ onBeforeUnmount(() => {
           you're back online.
         </div>
 
-        <div v-if="allowedEvents.length" class="mt-6 flex flex-wrap gap-3 border-t border-gray-100 pt-4">
+        <div
+          v-if="allowedEvents.length || canOpen"
+          class="mt-6 flex flex-wrap gap-3 border-t border-gray-100 pt-4"
+        >
           <button
             v-for="action in allowedEvents"
             :key="action.event"
@@ -148,10 +163,26 @@ onBeforeUnmount(() => {
           >
             {{ sendingEvent === action.event ? 'Sending…' : action.label }}
           </button>
+          <button
+            v-if="canOpen"
+            type="button"
+            class="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white shadow hover:bg-red-700"
+            @click="showDisputeForm = !showDisputeForm"
+          >
+            Open dispute
+          </button>
         </div>
         <p v-else class="mt-6 border-t border-gray-100 pt-4 text-sm text-gray-400">
           No actions available for your role at this stage.
         </p>
+
+        <div v-if="canOpen && showDisputeForm" class="mt-4 rounded-xl border border-red-100 bg-red-50/40 p-4">
+          <OpenDisputeForm
+            :transaction-id="id"
+            @opened="onDisputeOpened"
+            @cancel="showDisputeForm = false"
+          />
+        </div>
 
         <p v-if="actionError" class="mt-3 text-sm text-red-600">{{ actionError }}</p>
       </div>

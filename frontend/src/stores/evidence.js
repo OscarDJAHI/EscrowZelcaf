@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { downloadEvidence, listEvidence, uploadEvidence } from '@/api/evidence'
+import { downloadEvidence, listEvidence, uploadEvidence, withdrawEvidence } from '@/api/evidence'
 
 export const useEvidenceStore = defineStore('evidence', {
   state: () => ({
@@ -49,6 +49,18 @@ export const useEvidenceStore = defineStore('evidence', {
       } finally {
         this.uploading = false
       }
+    },
+
+    /**
+     * Logically withdraws one of the current user's active evidence items.
+     * Online only. On success the returned EvidenceDto (status: WITHDRAWN)
+     * replaces the matching item in place — the row stays at its chronological
+     * position with its badge flipped. Errors propagate to the component.
+     */
+    async withdrawEvidence(id, evidenceId) {
+      const dto = await withdrawEvidence(id, evidenceId)
+      this.items = this.items.map((i) => (i.id === dto.id ? dto : i))
+      return dto
     },
 
     /**

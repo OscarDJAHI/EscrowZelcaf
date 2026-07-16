@@ -13,8 +13,15 @@ const evidenceStore = useEvidenceStore()
 
 const downloadingId = ref(null)
 const downloadError = ref('')
+const withdrawingId = ref(null)
+const withdrawError = ref('')
 
 const items = computed(() => evidenceStore.items)
+
+/** Withdraw is only offered on the current user's own active evidence. */
+function canWithdraw(item) {
+  return item.status === 'ACTIVE' && item.uploadedByUserId === auth.user?.id
+}
 
 function deposedBy(item) {
   return uploaderLabel(item, auth.user?.id)
@@ -64,12 +71,25 @@ async function download(item) {
     downloadingId.value = null
   }
 }
+
+async function withdraw(item) {
+  withdrawError.value = ''
+  withdrawingId.value = item.id
+  try {
+    await evidenceStore.withdrawEvidence(props.transactionId, item.id)
+  } catch (err) {
+    withdrawError.value = await errorMessage(err, 'Unable to withdraw this evidence.')
+  } finally {
+    withdrawingId.value = null
+  }
+}
 </script>
 
 <template>
   <div>
     <p v-if="evidenceStore.error" class="text-sm text-red-600">{{ evidenceStore.error }}</p>
     <p v-if="downloadError" class="mb-3 text-sm text-red-600">{{ downloadError }}</p>
+    <p v-if="withdrawError" class="mb-3 text-sm text-red-600">{{ withdrawError }}</p>
 
     <p
       v-if="!evidenceStore.loading && items.length === 0"
@@ -104,7 +124,16 @@ async function download(item) {
           </span>
         </div>
 
-        <div class="mt-3 flex justify-end">
+        <div class="mt-3 flex justify-end gap-2">
+          <button
+            v-if="canWithdraw(item)"
+            type="button"
+            :disabled="withdrawingId === item.id"
+            class="rounded-lg border border-red-300 px-3 py-1.5 text-sm font-medium text-red-700 hover:bg-red-50 disabled:opacity-60"
+            @click="withdraw(item)"
+          >
+            {{ withdrawingId === item.id ? 'Withdrawing…' : 'Withdraw' }}
+          </button>
           <button
             type="button"
             :disabled="downloadingId === item.id"

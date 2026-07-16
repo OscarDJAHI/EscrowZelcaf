@@ -3,6 +3,7 @@ import {
   createTransaction,
   fetchTransactionDetail,
   fetchTransactions,
+  openDispute,
   sendTransactionEvent,
 } from '@/api/escrow'
 import { useOfflineQueueStore } from './offlineQueue'
@@ -106,6 +107,29 @@ export const useEscrowStore = defineStore('escrow', {
       if (index !== -1) this.transactions[index] = updated
 
       return updated
+    },
+
+    /**
+     * Opens a dispute on a transaction. Builds the multipart FormData with the
+     * frozen part names (AD-13: repeated `files`, required `comment`) and posts
+     * to the composite endpoint. Online only — never queued offline. On success
+     * the displayed transaction flips to DISPUTED (mirrors `sendTransactionEvent`).
+     * Returns the DisputeOpenedDto so the caller can react.
+     */
+    async openDispute(id, { files, comment }) {
+      const form = new FormData()
+      for (const f of files) form.append('files', f) // exact repeated key 'files'
+      form.append('comment', comment) // required here (>=10 chars, validated client + server)
+
+      const dto = await openDispute(id, form)
+
+      if (this.currentDetail?.transaction && String(this.currentDetail.transaction.id) === String(id)) {
+        this.currentDetail.transaction = dto.transaction
+      }
+      const index = this.transactions.findIndex((t) => String(t.id) === String(id))
+      if (index !== -1) this.transactions[index] = dto.transaction
+
+      return dto
     },
   },
 })

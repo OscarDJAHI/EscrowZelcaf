@@ -24,3 +24,19 @@ export function fetchTransactionDetail(id) {
 export function sendTransactionEvent(id, event) {
   return apiClient.post(`/api/v1/escrow/${id}/event`, { event }).then((res) => res.data)
 }
+
+/**
+ * Opens a dispute via the composite endpoint (evidence is mandatory).
+ * Multipart parts: `files` (repeated) and `comment`. The explicit Content-Type
+ * lets axios compute the multipart boundary (the shared client defaults to JSON).
+ * @param {string|number} id
+ * @param {FormData} formData
+ * @returns {Promise<{transaction: object, evidence: Array}>} DisputeOpenedDto
+ */
+export function openDispute(id, formData) {
+  return apiClient
+    .post(`/api/v1/escrow/${id}/dispute`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })
+    .then((res) => res.data)
+}

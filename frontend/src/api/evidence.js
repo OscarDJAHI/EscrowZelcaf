@@ -30,3 +30,16 @@ export function downloadEvidence(id, evidenceId) {
     .get(`/api/v1/escrow/${id}/evidence/${evidenceId}/download`, { responseType: 'blob' })
     .then((res) => res.data)
 }
+
+/**
+ * Logically withdraws one of the current user's active evidence items.
+ * No request body; the server flips the status to WITHDRAWN.
+ * @param {string|number} id
+ * @param {string|number} evidenceId
+ * @returns {Promise<object>} the updated EvidenceDto (status: WITHDRAWN)
+ */
+export function withdrawEvidence(id, evidenceId) {
+  return apiClient
+    .post(`/api/v1/escrow/${id}/evidence/${evidenceId}/withdraw`)
+    .then((res) => res.data)
+}
