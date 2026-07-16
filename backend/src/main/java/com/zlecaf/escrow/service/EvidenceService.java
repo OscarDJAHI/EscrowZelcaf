@@ -9,6 +9,7 @@ import com.zlecaf.escrow.domain.UploaderType;
 import com.zlecaf.escrow.repository.EscrowTransactionRepository;
 import com.zlecaf.escrow.repository.EvidenceFileRepository;
 import com.zlecaf.escrow.security.AuthPrincipal;
+import com.zlecaf.escrow.service.storage.EvidenceNotFoundException;
 import com.zlecaf.escrow.service.storage.EvidenceStorage;
 import com.zlecaf.escrow.web.ApiExceptions.BadRequestException;
 import com.zlecaf.escrow.web.ApiExceptions.ConflictException;
@@ -19,6 +20,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.OffsetDateTime;
@@ -161,6 +163,43 @@ public class EvidenceService {
         access.resolveRole(actor, tx);   // 403 if not a party; role ignored for a read
         return evidenceFiles.findByTransactionIdOrderByCreatedAtAscIdAsc(txId)
                 .stream().map(EvidenceDto::from).toList();
+    }
+
+    /**
+     * Opens the original binary of one evidence piece for a party to download.
+     * Server-authoritative, in strict order: load the transaction (404), resolve
+     * membership (403, before any piece lookup), then the <em>sealed</em>
+     * {@code findByIdAndTransactionId} query (404) so a foreign or unknown piece
+     * is indistinguishable — the anti-IDOR guard, never a manual comparison over
+     * an unsealed {@code findById}. No status filter: a WITHDRAWN piece is still
+     * downloadable (restitution is not masking). The stream comes only from the
+     * {@link EvidenceStorage} port; a missing object translates to a 404. The
+     * returned {@link InputStream} outlives this transaction and is consumed by
+     * the web layer, so it is never read into memory here.
+     *
+     * @throws NotFoundException transaction or piece unknown, or binary absent (404)
+     * @throws com.zlecaf.escrow.web.ApiExceptions.ForbiddenException non-party (403)
+     */
+    @Transactional(readOnly = true)
+    public EvidenceDownload download(AuthPrincipal actor, Long txId, Long evidenceId) {
+        EscrowTransaction tx = transactions.findById(txId)
+                .orElseThrow(() -> new NotFoundException("Transaction " + txId + " not found"));
+        access.resolveRole(actor, tx);   // 403 if not a party; role ignored for a read
+        EvidenceFile evidence = evidenceFiles.findByIdAndTransactionId(evidenceId, txId)
+                .orElseThrow(() -> new NotFoundException("Evidence " + evidenceId + " not found"));
+        // Read every metadata field BEFORE opening the stream. size_bytes/mime_type
+        // are nullable at the schema level; any failure here (e.g. a null size_bytes
+        // unboxing) must surface before a live storage stream exists, so it can never
+        // leak an unclosed connection.
+        String filename = evidence.getOriginalFilename();
+        String contentType = evidence.getMimeType();
+        long sizeBytes = evidence.getSizeBytes();
+        try {
+            InputStream content = storage.load(evidence.getStorageKey());
+            return new EvidenceDownload(content, filename, contentType, sizeBytes);
+        } catch (EvidenceNotFoundException e) {
+            throw new NotFoundException("Evidence binary not found for " + evidenceId);
+        }
     }
 
     private void requireUploadWindow(EscrowState state) {

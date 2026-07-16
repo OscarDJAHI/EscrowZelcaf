@@ -13,6 +13,7 @@ import com.zlecaf.escrow.domain.User;
 import com.zlecaf.escrow.repository.AuditLogRepository;
 import com.zlecaf.escrow.repository.EvidenceFileRepository;
 import com.zlecaf.escrow.security.AuthPrincipal;
+import com.zlecaf.escrow.service.storage.EvidenceNotFoundException;
 import com.zlecaf.escrow.service.storage.EvidenceStorage;
 import com.zlecaf.escrow.web.ApiExceptions.ConflictException;
 import com.zlecaf.escrow.web.ApiExceptions.ForbiddenException;
@@ -105,9 +106,16 @@ class EvidenceServiceTest {
         public InputStream load(String storageKey) {
             byte[] bytes = objects.get(storageKey);
             if (bytes == null) {
-                throw new IllegalStateException("No object under key " + storageKey);
+                // Mirror the real port contract so the storage-miss → 404
+                // translation stays exercised by the honest round-trip harness.
+                throw new EvidenceNotFoundException(storageKey, null);
             }
             return new ByteArrayInputStream(bytes);
+        }
+
+        /** Preloads a binary under an explicit key so a persisted row can be downloaded. */
+        void seed(String storageKey, byte[] content) {
+            objects.put(storageKey, content.clone());
         }
     }
 
@@ -119,6 +127,8 @@ class EvidenceServiceTest {
     private EvidenceFileRepository evidenceFiles;
     @Autowired
     private AuditLogRepository auditLogs;
+    @Autowired
+    private EvidenceStorage storage;
 
     private static byte[] pdfBytes() {
         return ("%PDF-1.4\n1 0 obj<</Type/Catalog>>endobj\ntrailer<</Root 1 0 R>>\n%%EOF")
@@ -491,6 +501,126 @@ class EvidenceServiceTest {
         AuthPrincipal actor = new AuthPrincipal(buyer.getId(), buyer.getEmail(), Role.BUYER);
 
         assertThatThrownBy(() -> evidenceService.list(actor, 999_999L))
+                .isInstanceOf(NotFoundException.class);
+    }
+
+    // --- Story 1.4: secure download ---
+
+    private byte[] drain(InputStream in) {
+        try (InputStream s = in) {
+            return s.readAllBytes();
+        } catch (java.io.IOException e) {
+            throw new IllegalStateException(e);
+        }
+    }
+
+    @Test
+    @DisplayName("download returns the stored binary identical byte-for-byte, with filename/mime/size")
+    void downloadRoundTripsBinaryIdentically() {
+        User buyer = persistUser("buyerD1@example.com", Role.BUYER);
+        User seller = persistUser("sellerD1@example.com", Role.SELLER);
+        EscrowTransaction tx = persistTransaction(buyer.getId(), seller.getId(), EscrowState.FUNDS_LOCKED);
+        AuthPrincipal actor = new AuthPrincipal(buyer.getId(), buyer.getEmail(), Role.BUYER);
+
+        // Deposit, then download: an honest round-trip through the real storage port.
+        MockMultipartFile file = new MockMultipartFile("files", "receipt.pdf", "application/pdf", pdfBytes());
+        EvidenceFile deposited = evidenceService.deposit(actor, tx.getId(), List.of(file), null, null).get(0);
+
+        EvidenceDownload d = evidenceService.download(actor, tx.getId(), deposited.getId());
+
+        assertThat(d.filename()).isEqualTo("receipt.pdf");
+        assertThat(d.contentType()).isEqualTo("application/pdf");
+        assertThat(d.sizeBytes()).isEqualTo((long) pdfBytes().length);
+        assertThat(drain(d.content())).isEqualTo(pdfBytes());
+    }
+
+    @Test
+    @DisplayName("download serves a WITHDRAWN piece normally (restitution is not masking)")
+    void downloadServesWithdrawnPiece() {
+        User buyer = persistUser("buyerD2@example.com", Role.BUYER);
+        User seller = persistUser("sellerD2@example.com", Role.SELLER);
+        EscrowTransaction tx = persistTransaction(buyer.getId(), seller.getId(), EscrowState.DISPUTED);
+        AuthPrincipal actor = new AuthPrincipal(buyer.getId(), buyer.getEmail(), Role.BUYER);
+
+        Instant t0 = Instant.parse("2026-07-15T10:00:00Z");
+        EvidenceFile withdrawn = persistEvidence(tx.getId(), seller.getId(), UploaderType.SELLER,
+                t0, EvidenceStatus.WITHDRAWN, t0.plusSeconds(30), seller.getId());
+        // The row references a storage key; preload its binary so the port can serve it.
+        ((InMemoryEvidenceStorage) storage).seed(withdrawn.getStorageKey(), pdfBytes());
+
+        EvidenceDownload d = evidenceService.download(actor, tx.getId(), withdrawn.getId());
+
+        assertThat(drain(d.content())).isEqualTo(pdfBytes());
+    }
+
+    @Test
+    @DisplayName("download of a piece belonging to another transaction is a 404 (anti-IDOR)")
+    void downloadForeignEvidenceIsNotFound() {
+        User buyer = persistUser("buyerD3@example.com", Role.BUYER);
+        User seller = persistUser("sellerD3@example.com", Role.SELLER);
+        EscrowTransaction txA = persistTransaction(buyer.getId(), seller.getId(), EscrowState.FUNDS_LOCKED);
+        EscrowTransaction txB = persistTransaction(buyer.getId(), seller.getId(), EscrowState.FUNDS_LOCKED);
+        AuthPrincipal actor = new AuthPrincipal(buyer.getId(), buyer.getEmail(), Role.BUYER);
+
+        // Piece lives on txA; the caller is a party to both but asks via txB's id.
+        EvidenceFile onA = persistActiveEvidence(txA.getId(), buyer.getId(), UploaderType.BUYER,
+                Instant.parse("2026-07-15T10:00:00Z"));
+
+        assertThatThrownBy(() -> evidenceService.download(actor, txB.getId(), onA.getId()))
+                .isInstanceOf(NotFoundException.class);
+    }
+
+    @Test
+    @DisplayName("download of an unknown piece is a 404")
+    void downloadUnknownEvidenceIsNotFound() {
+        User buyer = persistUser("buyerD4@example.com", Role.BUYER);
+        User seller = persistUser("sellerD4@example.com", Role.SELLER);
+        EscrowTransaction tx = persistTransaction(buyer.getId(), seller.getId(), EscrowState.FUNDS_LOCKED);
+        AuthPrincipal actor = new AuthPrincipal(buyer.getId(), buyer.getEmail(), Role.BUYER);
+
+        assertThatThrownBy(() -> evidenceService.download(actor, tx.getId(), 999_999L))
+                .isInstanceOf(NotFoundException.class);
+    }
+
+    @Test
+    @DisplayName("download by a non-party is a 403, before any piece lookup")
+    void downloadNonPartyIsForbidden() {
+        User buyer = persistUser("buyerD5@example.com", Role.BUYER);
+        User seller = persistUser("sellerD5@example.com", Role.SELLER);
+        User stranger = persistUser("strangerD5@example.com", Role.BUYER);
+        EscrowTransaction tx = persistTransaction(buyer.getId(), seller.getId(), EscrowState.FUNDS_LOCKED);
+        AuthPrincipal actor = new AuthPrincipal(stranger.getId(), stranger.getEmail(), Role.BUYER);
+
+        EvidenceFile piece = persistActiveEvidence(tx.getId(), buyer.getId(), UploaderType.BUYER,
+                Instant.parse("2026-07-15T10:00:00Z"));
+
+        assertThatThrownBy(() -> evidenceService.download(actor, tx.getId(), piece.getId()))
+                .isInstanceOf(ForbiddenException.class);
+    }
+
+    @Test
+    @DisplayName("download on an unknown transaction is a 404")
+    void downloadUnknownTransactionIsNotFound() {
+        User buyer = persistUser("buyerD6@example.com", Role.BUYER);
+        AuthPrincipal actor = new AuthPrincipal(buyer.getId(), buyer.getEmail(), Role.BUYER);
+
+        assertThatThrownBy(() -> evidenceService.download(actor, 999_999L, 1L))
+                .isInstanceOf(NotFoundException.class);
+    }
+
+    @Test
+    @DisplayName("download translates a missing storage object to a 404")
+    void downloadMissingBinaryIsNotFound() {
+        User buyer = persistUser("buyerD7@example.com", Role.BUYER);
+        User seller = persistUser("sellerD7@example.com", Role.SELLER);
+        EscrowTransaction tx = persistTransaction(buyer.getId(), seller.getId(), EscrowState.FUNDS_LOCKED);
+        AuthPrincipal actor = new AuthPrincipal(buyer.getId(), buyer.getEmail(), Role.BUYER);
+
+        // Metadata row persisted but no binary was ever seeded under its storage key.
+        EvidenceFile orphan = persistActiveEvidence(tx.getId(), buyer.getId(), UploaderType.BUYER,
+                Instant.parse("2026-07-15T10:00:00Z"));
+
+        assertThatThrownBy(() -> evidenceService.download(actor, tx.getId(), orphan.getId()))
                 .isInstanceOf(NotFoundException.class);
     }
 }

@@ -1,8 +1,12 @@
 package com.zlecaf.escrow.web;
 
 import com.zlecaf.escrow.security.AuthPrincipal;
+import com.zlecaf.escrow.service.EvidenceDownload;
 import com.zlecaf.escrow.service.EvidenceService;
 import com.zlecaf.escrow.web.dto.EvidenceDtos.EvidenceDto;
+import org.springframework.core.io.InputStreamResource;
+import org.springframework.http.ContentDisposition;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -15,6 +19,9 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.io.IOException;
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 
 /**
@@ -47,5 +54,47 @@ public class EvidenceController {
     @GetMapping("/{id}/evidence")
     public List<EvidenceDto> list(@AuthenticationPrincipal AuthPrincipal actor, @PathVariable Long id) {
         return evidenceService.list(actor, id);
+    }
+
+    /**
+     * Streams the original binary of one evidence piece back to a party. All
+     * authority — membership, sealed anti-IDOR lookup, storage access — lives in
+     * {@link EvidenceService}; this controller only wires the response. The binary
+     * is always served as an <strong>attachment</strong> (a download, never an
+     * in-browser render): {@link ContentDisposition} RFC 5987 encoding neutralises
+     * header injection and forces a download of stored content rather than letting
+     * the browser render it (anti-XSS, NFR-2). The service owns the storage stream;
+     * Spring consumes it after this method returns.
+     */
+    @GetMapping("/{id}/evidence/{evidenceId}/download")
+    public ResponseEntity<InputStreamResource> download(
+            @AuthenticationPrincipal AuthPrincipal actor,
+            @PathVariable Long id,
+            @PathVariable Long evidenceId) {
+        EvidenceDownload d = evidenceService.download(actor, id, evidenceId);
+        // The service has already opened a live storage stream. If building the
+        // response throws (e.g. an unparseable stored content-type), close it here:
+        // Spring only closes the stream once it owns the InputStreamResource.
+        try {
+            ContentDisposition cd = ContentDisposition.attachment()
+                    .filename(d.filename(), StandardCharsets.UTF_8)
+                    .build();
+            return ResponseEntity.ok()
+                    .header(HttpHeaders.CONTENT_DISPOSITION, cd.toString())
+                    .contentType(MediaType.parseMediaType(d.contentType()))
+                    .contentLength(d.sizeBytes())
+                    .body(new InputStreamResource(d.content()));
+        } catch (RuntimeException ex) {
+            closeQuietly(d.content());
+            throw ex;
+        }
+    }
+
+    private static void closeQuietly(InputStream in) {
+        try {
+            in.close();
+        } catch (IOException ignored) {
+            // best-effort: already unwinding a failure
+        }
     }
 }
