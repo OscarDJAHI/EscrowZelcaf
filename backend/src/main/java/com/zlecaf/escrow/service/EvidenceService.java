@@ -18,6 +18,7 @@ import com.zlecaf.escrow.web.ApiExceptions.NotFoundException;
 import com.zlecaf.escrow.web.dto.EvidenceDtos.EvidenceDto;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
@@ -93,6 +94,12 @@ public class EvidenceService {
                                       String comment, String clientCapturedAt) {
         if (files == null || files.isEmpty()) {
             throw new BadRequestException("At least one file is required");
+        }
+        // Batch cardinality cap, enforced BEFORE any byte buffering (Pass 1) so a
+        // hostile over-plafond batch cannot exhaust memory.
+        if (files.size() > PlatformLimits.MAX_FILES_PER_DEPOSIT) {
+            throw new BadRequestException(
+                    "A deposit accepts at most " + PlatformLimits.MAX_FILES_PER_DEPOSIT + " files");
         }
 
         // Pessimistic lock: serialises the deposit against concurrent state
@@ -178,7 +185,10 @@ public class EvidenceService {
         EscrowTransaction tx = transactions.findById(txId)
                 .orElseThrow(() -> new NotFoundException("Transaction " + txId + " not found"));
         access.resolveRole(actor, tx);   // 403 if not a party; role ignored for a read
-        return evidenceFiles.findByTransactionIdOrderByCreatedAtAscIdAsc(txId)
+        // Hard cap the read (unsorted Pageable → LIMIT only; ordering stays from
+        // the method name). Bounds memory without paginating: still a JSON array.
+        return evidenceFiles.findByTransactionIdOrderByCreatedAtAscIdAsc(
+                        txId, PageRequest.of(0, PlatformLimits.MAX_LIST_RESULTS))
                 .stream().map(EvidenceDto::from).toList();
     }
 
@@ -194,14 +204,22 @@ public class EvidenceService {
      * returned {@link InputStream} outlives this transaction and is consumed by
      * the web layer, so it is never read into memory here.
      *
+     * <p><strong>Why writable.</strong> The download is audited ({@code
+     * EVIDENCE_DOWNLOADED}) atomically with the access authorization, so the
+     * transaction is {@code @Transactional} (writable) — an {@code INSERT} in a
+     * {@code readOnly} connection would fail. The audit is written only AFTER a
+     * successful {@code storage.load}, so a storage failure (502) rolls the whole
+     * thing back and no phantom download-audit remains.
+     *
      * @throws NotFoundException transaction or piece unknown, or binary absent (404)
      * @throws com.zlecaf.escrow.web.ApiExceptions.ForbiddenException non-party (403)
+     * @throws com.zlecaf.escrow.service.storage.EvidenceStorageException storage failure (502)
      */
-    @Transactional(readOnly = true)
+    @Transactional
     public EvidenceDownload download(AuthPrincipal actor, Long txId, Long evidenceId) {
         EscrowTransaction tx = transactions.findById(txId)
                 .orElseThrow(() -> new NotFoundException("Transaction " + txId + " not found"));
-        access.resolveRole(actor, tx);   // 403 if not a party; role ignored for a read
+        ParticipantRole role = access.resolveRole(actor, tx);   // 403 if not a party
         EvidenceFile evidence = evidenceFiles.findByIdAndTransactionId(evidenceId, txId)
                 .orElseThrow(() -> new NotFoundException("Evidence " + evidenceId + " not found"));
         // Read every metadata field BEFORE opening the stream. size_bytes/mime_type
@@ -211,12 +229,25 @@ public class EvidenceService {
         String filename = evidence.getOriginalFilename();
         String contentType = evidence.getMimeType();
         long sizeBytes = evidence.getSizeBytes();
+        InputStream content;
         try {
-            InputStream content = storage.load(evidence.getStorageKey());
-            return new EvidenceDownload(content, filename, contentType, sizeBytes);
+            content = storage.load(evidence.getStorageKey());
         } catch (EvidenceNotFoundException e) {
             throw new NotFoundException("Evidence binary not found for " + evidenceId);
         }
+        // Audited only after a successful load: an EvidenceStorageException (502)
+        // thrown above never reaches here, so no download audit is written and the
+        // transaction rolls back cleanly.
+        try {
+            auditService.recordEvidenceDownloaded(txId, actor.userId(), role, tx.getState(), evidence.getId());
+        } catch (RuntimeException e) {
+            // The stream is already open; if the audit write fails the transaction
+            // rolls back and the stream is never handed to the controller. Close it
+            // here so a failed download cannot leak a live storage connection.
+            try { content.close(); } catch (IOException ignored) { /* best-effort */ }
+            throw e;
+        }
+        return new EvidenceDownload(content, filename, contentType, sizeBytes);
     }
 
     /**

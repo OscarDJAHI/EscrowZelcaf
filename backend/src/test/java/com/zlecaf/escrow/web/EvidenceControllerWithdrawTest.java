@@ -100,7 +100,8 @@ class EvidenceControllerWithdrawTest {
     private static EvidenceDto stubWithdrawn() {
         return new EvidenceDto(99L, 42L, 7L, UploaderType.BUYER, "receipt.pdf",
                 "application/pdf", 1234L, "proof", EvidenceStatus.WITHDRAWN,
-                Instant.parse("2026-07-15T10:00:00Z"));
+                Instant.parse("2026-07-15T10:00:00Z"),
+                Instant.parse("2026-07-15T10:05:00Z"), 7L);
     }
 
     /** Resolves {@code @AuthenticationPrincipal AuthPrincipal} to a fixed actor

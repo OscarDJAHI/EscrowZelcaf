@@ -1,0 +1,79 @@
+package com.zlecaf.escrow.web;
+
+import com.zlecaf.escrow.domain.Role;
+import com.zlecaf.escrow.security.AuthPrincipal;
+import com.zlecaf.escrow.service.EvidenceService;
+import com.zlecaf.escrow.service.storage.EvidenceStorageException;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+import org.springframework.core.MethodParameter;
+import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.web.bind.support.WebDataBinderFactory;
+import org.springframework.web.context.request.NativeWebRequest;
+import org.springframework.web.method.support.HandlerMethodArgumentResolver;
+import org.springframework.web.method.support.ModelAndViewContainer;
+
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import static org.springframework.test.web.servlet.setup.MockMvcBuilders.standaloneSetup;
+
+/**
+ * Web-layer proof that a storage-neutral {@link EvidenceStorageException} raised
+ * by the service maps to a {@code 502 Bad Gateway} in the standard error
+ * envelope, with a fixed neutral message and no SDK detail leaked. The controller
+ * is stood up with a mocked {@link EvidenceService} and the
+ * {@link GlobalExceptionHandler} advice — the only thing under test is the
+ * exception → status mapping.
+ */
+class EvidenceStorageErrorMappingTest {
+
+    private static final AuthPrincipal ACTOR = new AuthPrincipal(7L, "party@example.com", Role.BUYER);
+
+    private EvidenceService service;
+    private MockMvc mvc;
+
+    @BeforeEach
+    void setUp() {
+        service = mock(EvidenceService.class);
+        mvc = standaloneSetup(new EvidenceController(service))
+                .setControllerAdvice(new GlobalExceptionHandler())
+                .setCustomArgumentResolvers(fixedPrincipal(ACTOR))
+                .build();
+    }
+
+    @Test
+    @DisplayName("502: an EvidenceStorageException on download maps to a 502 envelope with a neutral message")
+    void storageFailureMapsTo502() throws Exception {
+        when(service.download(any(), any(), any()))
+                .thenThrow(new EvidenceStorageException("42/abc", new RuntimeException("boom")));
+
+        mvc.perform(get("/api/v1/escrow/42/evidence/99/download"))
+                .andExpect(status().isBadGateway())
+                .andExpect(jsonPath("$.status").value(502))
+                .andExpect(jsonPath("$.error").value("Bad Gateway"))
+                .andExpect(jsonPath("$.message").value("Stockage de preuves indisponible"))
+                .andExpect(jsonPath("$.timestamp").exists());
+    }
+
+    /** Resolves {@code @AuthenticationPrincipal AuthPrincipal} to a fixed actor
+     *  so the slice needs no security context. */
+    private static HandlerMethodArgumentResolver fixedPrincipal(AuthPrincipal principal) {
+        return new HandlerMethodArgumentResolver() {
+            @Override
+            public boolean supportsParameter(MethodParameter parameter) {
+                return AuthPrincipal.class.equals(parameter.getParameterType());
+            }
+
+            @Override
+            public Object resolveArgument(MethodParameter parameter, ModelAndViewContainer mavContainer,
+                                          NativeWebRequest webRequest, WebDataBinderFactory binderFactory) {
+                return principal;
+            }
+        };
+    }
+}

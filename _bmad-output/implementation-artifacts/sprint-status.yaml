@@ -82,8 +82,8 @@ development_status:
 
   # Epic 5 — Durcissement transverse (contrat d'API preuves)
   # Cross-cutting; EXÉCUTÉ entre Epic 2 et Epic 3 (l'ordre d'id ≠ ordre d'exécution).
-  epic-5: in-progress
-  5-1-durcissement-contrat-api-preuves: backlog
+  epic-5: done
+  5-1-durcissement-contrat-api-preuves: done
   epic-5-retrospective: optional
 
 action_items:
@@ -98,7 +98,7 @@ action_items:
   - epic: 1
     action: "Durcissement contrat d'API : pagination liste preuves + liste audit, et borne sur files[] (bundle avant volume prod)"
     owner: "deferred-work ledger"
-    status: in-progress
+    status: done
   - epic: 1
     action: "Maintenir les notes opérationnelles bmad-loop en mémoire projet (acceptation bypass une fois, reprise après kill, runs par story)"
     owner: "Oscard"
@@ -106,7 +106,7 @@ action_items:
   - epic: 2
     action: "Story de durcissement transverse avant Epic 3 : bundle des 6 reports ouverts (pagination/plafond liste preuves+audit, borne files[], audit du download, enveloppe d'erreur S3, métadonnées de retrait au DTO, course UI loadSeq)"
     owner: "session dev nouvelle story"
-    status: in-progress
+    status: done
   - epic: 2
     action: "Validation manuelle end-to-end de la stack (docker compose : dépôt/litige/retrait UI+API) — planifiée à la fin de toutes les epics"
     owner: "Oscard"

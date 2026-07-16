@@ -96,6 +96,24 @@ public class AuditService {
         save(transactionId, actorId, currentState, currentState, payload);
     }
 
+    /**
+     * Log an evidence download within the caller's transaction (atomic with the
+     * access authorization, MANDATORY so it never runs on its own). A download is
+     * not a state change, so {@code previous == next == currentState}. The payload
+     * carries {@code evidenceId} but no hash: download reads the binary to stream
+     * it, not to attest it. Written only after a successful {@code storage.load},
+     * so a storage failure rolls this back — no phantom download audit remains.
+     */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void recordEvidenceDownloaded(Long transactionId, Long actorId, ParticipantRole actorRole,
+                                         EscrowState currentState, Long evidenceId) {
+        ObjectNode payload = objectMapper.createObjectNode();
+        payload.put("action", "EVIDENCE_DOWNLOADED");
+        payload.put("actorRole", actorRole == null ? null : actorRole.name());
+        payload.put("evidenceId", evidenceId);
+        save(transactionId, actorId, currentState, currentState, payload);
+    }
+
     private void save(Long transactionId, Long actorId, EscrowState previous, EscrowState next, ObjectNode payload) {
         AuditLog logEntry = new AuditLog();
         logEntry.setTransactionId(transactionId);

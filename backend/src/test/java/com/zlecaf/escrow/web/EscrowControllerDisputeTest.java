@@ -141,7 +141,7 @@ class EscrowControllerDisputeTest {
         TransactionDto tx = new TransactionDto(42L, 7L, 8L, "buyer@e.com", "seller@e.com",
                 new BigDecimal("100.00"), "USD", EscrowState.DISPUTED, "desc", null, null);
         EvidenceDto evidence = new EvidenceDto(99L, 42L, 7L, UploaderType.BUYER, "receipt.pdf",
-                "application/pdf", 1234L, COMMENT, EvidenceStatus.ACTIVE, null);
+                "application/pdf", 1234L, COMMENT, EvidenceStatus.ACTIVE, null, null, null);
         return new DisputeOpenedDto(tx, List.of(evidence));
     }
 

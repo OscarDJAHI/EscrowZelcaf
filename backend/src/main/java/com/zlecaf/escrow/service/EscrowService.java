@@ -10,6 +10,7 @@ import com.zlecaf.escrow.web.ApiExceptions.NotFoundException;
 import com.zlecaf.escrow.web.dto.EscrowDtos.*;
 import com.zlecaf.escrow.web.dto.EvidenceDtos.EvidenceDto;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
@@ -147,6 +148,13 @@ public class EscrowService {
         if (comment == null || comment.trim().length() < 10) {
             throw new BadRequestException("A comment of at least 10 characters is required to open a dispute");
         }
+        // Same shared file cap as a plain deposit, enforced BEFORE the state
+        // transition (and before any byte buffering) so an over-plafond batch
+        // never leaves a half-open dispute.
+        if (files.size() > PlatformLimits.MAX_FILES_PER_DEPOSIT) {
+            throw new BadRequestException(
+                    "A deposit accepts at most " + PlatformLimits.MAX_FILES_PER_DEPOSIT + " files");
+        }
 
         EscrowTransaction tx = transactions.findByIdForUpdate(txId)
                 .orElseThrow(() -> new NotFoundException("Transaction " + txId + " not found"));
@@ -176,7 +184,7 @@ public class EscrowService {
         try {
             evidence = evidenceService.deposit(actor, txId, files, comment, clientCapturedAt);
         } catch (RuntimeException ex) {
-            // A deposit-stage failure (bad file 400, storage down 500) rolls the
+            // A deposit-stage failure (bad file 400, storage down 502) rolls the
             // whole composite back — including the recordSuccess above. Durably
             // record the rejected attempt in a separate transaction (REQUIRES_NEW)
             // so this leaves the same audit trail as an illegal/unauthorized
@@ -199,7 +207,10 @@ public class EscrowService {
         // Membership check: throws ForbiddenException for non-parties. The
         // resolved role is irrelevant for a read, so it is intentionally ignored.
         transactionAccess.resolveRole(actor, tx);
-        List<AuditLogDto> trail = auditLogs.findByTransactionIdOrderByTimestampAscIdAsc(txId)
+        // Hard cap the audit trail read (unsorted Pageable → LIMIT only; ordering
+        // stays from the method name). Same bound as the evidence list.
+        List<AuditLogDto> trail = auditLogs.findByTransactionIdOrderByTimestampAscIdAsc(
+                        txId, PageRequest.of(0, PlatformLimits.MAX_LIST_RESULTS))
                 .stream().map(AuditLogDto::from).toList();
         return new TransactionDetailDto(toDto(tx, resolveParties(tx)), trail);
     }

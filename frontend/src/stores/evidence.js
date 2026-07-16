@@ -59,6 +59,15 @@ export const useEvidenceStore = defineStore('evidence', {
      */
     async withdrawEvidence(id, evidenceId) {
       const dto = await withdrawEvidence(id, evidenceId)
+      // Invalidate any in-flight loadEvidence: its stale response (which predates
+      // this withdrawal and would show the piece as ACTIVE) must bail on the
+      // `seq !== this.loadSeq` guard rather than overwrite the flip below.
+      this.loadSeq++
+      // The invalidated load will bail before its `finally` clears `loading`
+      // (its `seq === this.loadSeq` guard is now false) and no replacement load
+      // is started here, so this withdrawal owns the terminal loading state —
+      // clear it to avoid stranding the spinner / any :disabled="loading" control.
+      this.loading = false
       this.items = this.items.map((i) => (i.id === dto.id ? dto : i))
       return dto
     },

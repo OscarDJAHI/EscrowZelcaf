@@ -1,6 +1,7 @@
 package com.zlecaf.escrow.web;
 
 import com.zlecaf.escrow.service.TransitionException;
+import com.zlecaf.escrow.service.storage.EvidenceStorageException;
 import com.zlecaf.escrow.web.ApiExceptions.*;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -65,6 +66,13 @@ public class GlobalExceptionHandler {
         // A required multipart part or request parameter is absent: return the
         // standard 400 envelope rather than Spring's default error body.
         return body(HttpStatus.BAD_REQUEST, ex.getMessage());
+    }
+
+    @ExceptionHandler(EvidenceStorageException.class)
+    public ResponseEntity<Map<String, Object>> onEvidenceStorage(EvidenceStorageException ex) {
+        // Object store unreachable/failed (not a missing object): report a 502 in
+        // the standard envelope. No SDK detail is leaked — a fixed, neutral message.
+        return body(HttpStatus.BAD_GATEWAY, "Stockage de preuves indisponible");
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)

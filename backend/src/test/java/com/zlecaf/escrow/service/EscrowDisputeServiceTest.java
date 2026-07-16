@@ -2,6 +2,7 @@ package com.zlecaf.escrow.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.zlecaf.escrow.domain.AuditLog;
 import com.zlecaf.escrow.domain.EscrowEvent;
 import com.zlecaf.escrow.domain.EscrowState;
@@ -20,6 +21,7 @@ import com.zlecaf.escrow.service.storage.EvidenceStorage;
 import com.zlecaf.escrow.web.ApiExceptions.BadRequestException;
 import com.zlecaf.escrow.web.ApiExceptions.ForbiddenException;
 import com.zlecaf.escrow.web.dto.EscrowDtos.DisputeOpenedDto;
+import com.zlecaf.escrow.web.dto.EscrowDtos.TransactionDetailDto;
 import com.zlecaf.escrow.web.dto.EvidenceDtos.EvidenceDto;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -42,10 +44,12 @@ import java.io.ByteArrayInputStream;
 import java.io.InputStream;
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import org.springframework.web.multipart.MultipartFile;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -494,5 +498,57 @@ class EscrowDisputeServiceTest {
         // No evidence-less dispute: the transaction stays FUNDS_LOCKED, nothing audited.
         assertThat(stateOf(tx.getId())).isEqualTo(EscrowState.FUNDS_LOCKED);
         assertThat(auditFor(tx.getId())).isEmpty();
+    }
+
+    // --- Story 5.1: shared file cap on dispute opening + audit-trail cap ---
+
+    @Test
+    @DisplayName("Opening a dispute with more than MAX_FILES_PER_DEPOSIT files is a 400 before any transition or buffering")
+    void openDisputeOverFileCapIsBadRequest() {
+        User buyer = persistUser("dispcap1@example.com", Role.BUYER);
+        User seller = persistUser("dispcap1s@example.com", Role.SELLER);
+        EscrowTransaction tx = persistTransaction(buyer.getId(), seller.getId(), EscrowState.FUNDS_LOCKED);
+        AuthPrincipal actor = new AuthPrincipal(buyer.getId(), buyer.getEmail(), Role.BUYER);
+
+        List<MultipartFile> files = new ArrayList<>();
+        for (int i = 0; i <= PlatformLimits.MAX_FILES_PER_DEPOSIT; i++) {
+            files.add(pdf("f" + i + ".pdf"));
+        }
+
+        assertThatThrownBy(() -> escrowService.openDispute(actor, tx.getId(),
+                files, "the item never arrived", null))
+                .isInstanceOf(BadRequestException.class);
+
+        // No transition, no evidence, no audit: rejected before the state change.
+        assertThat(stateOf(tx.getId())).isEqualTo(EscrowState.FUNDS_LOCKED);
+        assertThat(evidenceFor(tx.getId())).isEmpty();
+        assertThat(auditFor(tx.getId())).isEmpty();
+    }
+
+    @Test
+    @DisplayName("getDetail hard-caps the audit trail at MAX_LIST_RESULTS rows even when more exist")
+    void getDetailCapsAuditTrail() {
+        User buyer = persistUser("detcap1@example.com", Role.BUYER);
+        User seller = persistUser("detcap1s@example.com", Role.SELLER);
+        EscrowTransaction tx = persistTransaction(buyer.getId(), seller.getId(), EscrowState.FUNDS_LOCKED);
+        AuthPrincipal actor = new AuthPrincipal(buyer.getId(), buyer.getEmail(), Role.BUYER);
+
+        ObjectMapper om = new ObjectMapper();
+        int over = PlatformLimits.MAX_LIST_RESULTS + 5;
+        for (int i = 0; i < over; i++) {
+            AuditLog log = new AuditLog();
+            log.setTransactionId(tx.getId());
+            log.setActionBy(buyer.getId());
+            log.setPreviousState("FUNDS_LOCKED");
+            log.setNextState("FUNDS_LOCKED");
+            ObjectNode payload = om.createObjectNode();
+            payload.put("action", "EVIDENCE_ADDED");
+            log.setPayload(payload);
+            auditLogs.save(log);
+        }
+
+        TransactionDetailDto detail = escrowService.getDetail(actor, tx.getId());
+
+        assertThat(detail.auditLogs()).hasSize(PlatformLimits.MAX_LIST_RESULTS);
     }
 }

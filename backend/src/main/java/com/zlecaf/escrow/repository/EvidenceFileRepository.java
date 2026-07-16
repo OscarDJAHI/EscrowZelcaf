@@ -2,6 +2,7 @@ package com.zlecaf.escrow.repository;
 
 import com.zlecaf.escrow.domain.EvidenceFile;
 import com.zlecaf.escrow.domain.EvidenceStatus;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 import java.util.List;
@@ -18,6 +19,14 @@ public interface EvidenceFileRepository extends JpaRepository<EvidenceFile, Long
      * instant), so the list order is stable and monotonic with insertion.
      */
     List<EvidenceFile> findByTransactionIdOrderByCreatedAtAscIdAsc(Long transactionId);
+
+    /**
+     * Bounded overload of the chronological list: the ordering still derives from
+     * the method name, so the {@link Pageable} must be UNSORTED — it contributes
+     * only the {@code LIMIT} (e.g. {@code PageRequest.of(0, MAX_LIST_RESULTS)}).
+     * Caps the read without changing the response shape (stays a {@code List}).
+     */
+    List<EvidenceFile> findByTransactionIdOrderByCreatedAtAscIdAsc(Long transactionId, Pageable page);
 
     /**
      * Sealed lookup keyed on <em>both</em> the evidence id and its owning

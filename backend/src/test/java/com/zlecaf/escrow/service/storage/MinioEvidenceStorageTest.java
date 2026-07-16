@@ -140,4 +140,23 @@ class MinioEvidenceStorageTest {
         // flushed; S3 DeleteObject is idempotent, so this must not throw.
         storage.delete("42/never-stored");
     }
+
+    @Test
+    @DisplayName("A non-miss infra failure (unreachable endpoint) is wrapped as a storage-neutral EvidenceStorageException")
+    void infraFailureWrapsAsStorageException() {
+        // Point the adapter at a refused endpoint so putObject fails with an SDK
+        // client error (not a NoSuchKeyException): the adapter must translate it
+        // to a storage-neutral EvidenceStorageException, never let the S3 type out.
+        S3Client broken = S3Client.builder()
+                .endpointOverride(URI.create("http://localhost:1"))
+                .credentialsProvider(StaticCredentialsProvider.create(
+                        AwsBasicCredentials.create("x", "y")))
+                .forcePathStyle(true)
+                .region(Region.US_EAST_1)
+                .build();
+        MinioEvidenceStorage brokenStorage = new MinioEvidenceStorage(broken, BUCKET);
+
+        assertThatThrownBy(() -> brokenStorage.store(1L, fixedBytes(16), "application/pdf"))
+                .isInstanceOf(EvidenceStorageException.class);
+    }
 }

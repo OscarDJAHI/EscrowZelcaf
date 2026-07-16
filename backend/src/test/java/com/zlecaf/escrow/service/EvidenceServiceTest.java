@@ -34,6 +34,7 @@ import org.springframework.context.annotation.Import;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.mock.web.MockMultipartFile;
+import org.springframework.web.multipart.MultipartFile;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -43,6 +44,7 @@ import java.io.InputStream;
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -826,5 +828,124 @@ class EvidenceServiceTest {
         assertThat(evidenceFiles.findById(piece.getId()).orElseThrow().getStatus())
                 .isEqualTo(EvidenceStatus.ACTIVE);
         assertThat(auditLogs.findByTransactionIdOrderByTimestampAsc(tx.getId())).isEmpty();
+    }
+
+    // --- Story 5.1: contract hardening (list cap, file cap, download audit, DTO attribution) ---
+
+    @Test
+    @DisplayName("list is hard-capped at MAX_LIST_RESULTS rows even when more evidence exists")
+    void listIsCappedAtMaxResults() {
+        User buyer = persistUser("buyerCap@example.com", Role.BUYER);
+        User seller = persistUser("sellerCap@example.com", Role.SELLER);
+        EscrowTransaction tx = persistTransaction(buyer.getId(), seller.getId(), EscrowState.FUNDS_LOCKED);
+        AuthPrincipal actor = new AuthPrincipal(buyer.getId(), buyer.getEmail(), Role.BUYER);
+
+        Instant t0 = Instant.parse("2026-07-15T10:00:00Z");
+        int over = PlatformLimits.MAX_LIST_RESULTS + 1;
+        for (int i = 0; i < over; i++) {
+            EvidenceFile e = new EvidenceFile();
+            e.setTransactionId(tx.getId());
+            e.setUploadedByUserId(buyer.getId());
+            e.setUploaderType(UploaderType.BUYER);
+            e.setPartnerCompanyId(null);
+            e.setOriginalFilename("evidence.pdf");
+            e.setMimeType("application/pdf");
+            e.setSizeBytes(123L);
+            e.setStorageKey(tx.getId() + "/" + UUID.randomUUID());
+            e.setComment("proof");
+            e.setStatus(EvidenceStatus.ACTIVE);
+            e.setCreatedAt(t0.plusSeconds(i));
+            em.persist(e);
+        }
+        em.flush();
+
+        assertThat(evidenceService.list(actor, tx.getId())).hasSize(PlatformLimits.MAX_LIST_RESULTS);
+    }
+
+    @Test
+    @DisplayName("A deposit of more than MAX_FILES_PER_DEPOSIT files is rejected 400 (before buffering) and writes nothing")
+    void depositOverFileCapRejected() {
+        User buyer = persistUser("buyerFcap@example.com", Role.BUYER);
+        User seller = persistUser("sellerFcap@example.com", Role.SELLER);
+        EscrowTransaction tx = persistTransaction(buyer.getId(), seller.getId(), EscrowState.FUNDS_LOCKED);
+        AuthPrincipal actor = new AuthPrincipal(buyer.getId(), buyer.getEmail(), Role.BUYER);
+
+        List<MultipartFile> files = new ArrayList<>();
+        for (int i = 0; i <= PlatformLimits.MAX_FILES_PER_DEPOSIT; i++) {
+            files.add(pdf("f" + i + ".pdf"));
+        }
+
+        assertThatThrownBy(() -> evidenceService.deposit(actor, tx.getId(), files, null, null))
+                .isInstanceOf(BadRequestException.class);
+
+        assertThat(evidenceFiles.count()).isZero();
+        assertThat(auditLogs.findByTransactionIdOrderByTimestampAsc(tx.getId())).isEmpty();
+    }
+
+    @Test
+    @DisplayName("A deposit of exactly MAX_FILES_PER_DEPOSIT files succeeds")
+    void depositAtFileCapSucceeds() {
+        User buyer = persistUser("buyerFcapOk@example.com", Role.BUYER);
+        User seller = persistUser("sellerFcapOk@example.com", Role.SELLER);
+        EscrowTransaction tx = persistTransaction(buyer.getId(), seller.getId(), EscrowState.FUNDS_LOCKED);
+        AuthPrincipal actor = new AuthPrincipal(buyer.getId(), buyer.getEmail(), Role.BUYER);
+
+        List<MultipartFile> files = new ArrayList<>();
+        for (int i = 0; i < PlatformLimits.MAX_FILES_PER_DEPOSIT; i++) {
+            files.add(pdf("f" + i + ".pdf"));
+        }
+
+        List<EvidenceFile> result = evidenceService.deposit(actor, tx.getId(), files, null, null);
+
+        assertThat(result).hasSize(PlatformLimits.MAX_FILES_PER_DEPOSIT);
+        assertThat(evidenceFiles.count()).isEqualTo(PlatformLimits.MAX_FILES_PER_DEPOSIT);
+    }
+
+    @Test
+    @DisplayName("download writes an EVIDENCE_DOWNLOADED audit row (actor, role, evidence id)")
+    void downloadWritesDownloadAudit() {
+        User buyer = persistUser("buyerDaudit@example.com", Role.BUYER);
+        User seller = persistUser("sellerDaudit@example.com", Role.SELLER);
+        EscrowTransaction tx = persistTransaction(buyer.getId(), seller.getId(), EscrowState.FUNDS_LOCKED);
+        AuthPrincipal actor = new AuthPrincipal(buyer.getId(), buyer.getEmail(), Role.BUYER);
+
+        MockMultipartFile file = new MockMultipartFile("files", "receipt.pdf", "application/pdf", pdfBytes());
+        EvidenceFile deposited = evidenceService.deposit(actor, tx.getId(), List.of(file), null, null).get(0);
+
+        EvidenceDownload d = evidenceService.download(actor, tx.getId(), deposited.getId());
+        drain(d.content()); // consume the stream as the web layer would
+
+        List<AuditLog> audit = auditLogs.findByTransactionIdOrderByTimestampAsc(tx.getId());
+        AuditLog download = audit.stream()
+                .filter(a -> "EVIDENCE_DOWNLOADED".equals(a.getPayload().path("action").asText()))
+                .findFirst().orElseThrow();
+        assertThat(download.getActionBy()).isEqualTo(buyer.getId());
+        assertThat(download.getPayload().get("actorRole").asText()).isEqualTo("BUYER");
+        assertThat(download.getPayload().get("evidenceId").asLong()).isEqualTo(deposited.getId());
+        assertThat(download.getPreviousState()).isEqualTo("FUNDS_LOCKED");
+        assertThat(download.getNextState()).isEqualTo("FUNDS_LOCKED");
+    }
+
+    @Test
+    @DisplayName("EvidenceDto exposes withdrawnAt/withdrawnByUserId after a withdraw; both null for an ACTIVE piece")
+    void dtoExposesWithdrawalAttribution() {
+        User buyer = persistUser("buyerDto@example.com", Role.BUYER);
+        User seller = persistUser("sellerDto@example.com", Role.SELLER);
+        EscrowTransaction tx = persistTransaction(buyer.getId(), seller.getId(), EscrowState.FUNDS_LOCKED);
+        AuthPrincipal actor = new AuthPrincipal(buyer.getId(), buyer.getEmail(), Role.BUYER);
+
+        Instant t0 = Instant.parse("2026-07-15T10:00:00Z");
+        EvidenceFile toWithdraw = persistActiveEvidence(tx.getId(), buyer.getId(), UploaderType.BUYER, t0);
+        EvidenceFile staysActive = persistActiveEvidence(tx.getId(), buyer.getId(), UploaderType.BUYER, t0.plusSeconds(60));
+
+        EvidenceDto withdrawnDto = evidenceService.withdraw(actor, tx.getId(), toWithdraw.getId());
+        assertThat(withdrawnDto.withdrawnAt()).isNotNull();
+        assertThat(withdrawnDto.withdrawnByUserId()).isEqualTo(buyer.getId());
+
+        EvidenceDto activeDto = evidenceService.list(actor, tx.getId()).stream()
+                .filter(dto -> dto.id().equals(staysActive.getId()))
+                .findFirst().orElseThrow();
+        assertThat(activeDto.withdrawnAt()).isNull();
+        assertThat(activeDto.withdrawnByUserId()).isNull();
     }
 }

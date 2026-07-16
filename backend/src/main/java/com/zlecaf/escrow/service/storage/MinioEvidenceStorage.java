@@ -2,6 +2,7 @@ package com.zlecaf.escrow.service.storage;
 
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
+import software.amazon.awssdk.core.exception.SdkException;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
@@ -44,7 +45,13 @@ public class MinioEvidenceStorage implements EvidenceStorage {
                 .key(storageKey)
                 .contentType(contentType)
                 .build();
-        s3Client.putObject(request, RequestBody.fromBytes(content));
+        try {
+            s3Client.putObject(request, RequestBody.fromBytes(content));
+        } catch (SdkException e) {
+            // Infra failure (outage/timeout/protocol) — surface a storage-neutral
+            // exception so the service/web layer never sees an S3 type (502).
+            throw new EvidenceStorageException(storageKey, e);
+        }
         return storageKey;
     }
 
@@ -59,6 +66,10 @@ public class MinioEvidenceStorage implements EvidenceStorage {
         } catch (NoSuchKeyException e) {
             // Translated here so callers never need an S3 type to handle a miss.
             throw new EvidenceNotFoundException(storageKey, e);
+        } catch (SdkException e) {
+            // Any non-miss infra failure maps to a storage-neutral 502 exception,
+            // distinct from the 404 "object absent" above.
+            throw new EvidenceStorageException(storageKey, e);
         }
     }
 
@@ -67,9 +78,13 @@ public class MinioEvidenceStorage implements EvidenceStorage {
         // S3 DeleteObject is idempotent: removing an absent key returns 204, not
         // an error — exactly the no-op-on-missing contract the port requires for
         // the rollback-cleanup path.
-        s3Client.deleteObject(DeleteObjectRequest.builder()
-                .bucket(bucket)
-                .key(storageKey)
-                .build());
+        try {
+            s3Client.deleteObject(DeleteObjectRequest.builder()
+                    .bucket(bucket)
+                    .key(storageKey)
+                    .build());
+        } catch (SdkException e) {
+            throw new EvidenceStorageException(storageKey, e);
+        }
     }
 }

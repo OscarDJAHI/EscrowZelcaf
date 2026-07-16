@@ -21,7 +21,9 @@ public final class EvidenceDtos {
             Long sizeBytes,
             String comment,
             EvidenceStatus status,
-            Instant createdAt) {
+            Instant createdAt,
+            Instant withdrawnAt,
+            Long withdrawnByUserId) {
 
         public static EvidenceDto from(EvidenceFile e) {
             return new EvidenceDto(
@@ -34,7 +36,9 @@ public final class EvidenceDtos {
                     e.getSizeBytes(),
                     e.getComment(),
                     e.getStatus(),
-                    e.getCreatedAt());
+                    e.getCreatedAt(),
+                    e.getWithdrawnAt(),
+                    e.getWithdrawnByUserId());
         }
     }
 }
