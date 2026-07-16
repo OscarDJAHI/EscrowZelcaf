@@ -30,9 +30,7 @@ import java.security.NoSuchAlgorithmException;
 import java.time.OffsetDateTime;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
-import java.util.EnumSet;
 import java.util.List;
-import java.util.Set;
 
 /**
  * Orchestrates evidence deposit: server-authoritative membership, state-window
@@ -49,10 +47,6 @@ public class EvidenceService {
 
     /** Per-file business limit (bytes), arbitrated here, not by the container. */
     static final long MAX_FILE_SIZE = 10_485_760L;
-
-    /** Deposit is permitted only while the transaction sits in this window. */
-    private static final Set<EscrowState> UPLOAD_WINDOW =
-            EnumSet.of(EscrowState.FUNDS_LOCKED, EscrowState.SHIPPED, EscrowState.DISPUTED);
 
     private final EscrowTransactionRepository transactions;
     private final EvidenceFileRepository evidenceFiles;
@@ -217,7 +211,7 @@ public class EvidenceService {
     }
 
     private void requireUploadWindow(EscrowState state) {
-        if (!UPLOAD_WINDOW.contains(state)) {
+        if (!state.allowsEvidenceMutation()) {
             throw new ConflictException(
                     "Evidence cannot be deposited while the transaction is " + state);
         }

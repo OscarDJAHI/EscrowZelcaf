@@ -106,6 +106,40 @@ class EscrowStateMachineTest {
                 .isInstanceOf(TransitionException.class);
     }
 
+    // --- Evidence mutation window (deposit/withdraw lock, FR-8 / AD-2) ---
+
+    @Test
+    @DisplayName("allowsEvidenceMutation is true for the open window states")
+    void mutationAllowedInOpenWindow() {
+        assertThat(FUNDS_LOCKED.allowsEvidenceMutation()).isTrue();
+        assertThat(SHIPPED.allowsEvidenceMutation()).isTrue();
+        assertThat(DISPUTED.allowsEvidenceMutation()).isTrue();
+    }
+
+    @Test
+    @DisplayName("allowsEvidenceMutation is false outside the open window")
+    void mutationForbiddenOutsideWindow() {
+        assertThat(INITIATED.allowsEvidenceMutation()).isFalse();
+        assertThat(RELEASED.allowsEvidenceMutation()).isFalse();
+        assertThat(REFUNDED.allowsEvidenceMutation()).isFalse();
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = EscrowState.class, names = {"RELEASED", "REFUNDED"})
+    @DisplayName("Terminal states freeze evidence mutation regardless of path")
+    void terminalStatesFreezeEvidenceMutation(EscrowState terminal) {
+        assertThat(terminal.isTerminal()).isTrue();
+        assertThat(terminal.allowsEvidenceMutation()).isFalse();
+    }
+
+    @ParameterizedTest
+    @EnumSource(EscrowState.class)
+    @DisplayName("No terminal state ever allows evidence mutation (invariant over all states)")
+    void noTerminalStateAllowsMutation(EscrowState state) {
+        // Fail-closed guard: a future terminal state must never be mutation-open.
+        assertThat(state.isTerminal() && state.allowsEvidenceMutation()).isFalse();
+    }
+
     // --- allowedEvents (drives the UI) ---
 
     @Test

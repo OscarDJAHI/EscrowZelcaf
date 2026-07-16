@@ -13,7 +13,11 @@ public enum EscrowState {
     SHIPPED,
     /** Funds released to the seller (terminal). */
     RELEASED,
-    /** A party opened a dispute; process frozen pending arbitration. */
+    /**
+     * A party opened a dispute; funds are frozen pending arbitration. Evidence
+     * mutation stays open (see {@link #allowsEvidenceMutation()}) so parties can
+     * still file counter-proof until the transaction reaches a terminal state.
+     */
     DISPUTED,
     /** Funds refunded to the buyer (terminal). */
     REFUNDED;
@@ -21,5 +25,10 @@ public enum EscrowState {
     /** Terminal states admit no further transitions. */
     public boolean isTerminal() {
         return this == RELEASED || this == REFUNDED;
+    }
+
+    /** Source de vérité unique : dépôt ET retrait de preuve permis ssi vrai (FR-8, AD-2). */
+    public boolean allowsEvidenceMutation() {
+        return this == FUNDS_LOCKED || this == SHIPPED || this == DISPUTED;
     }
 }

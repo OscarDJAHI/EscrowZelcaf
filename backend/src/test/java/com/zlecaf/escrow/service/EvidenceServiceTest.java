@@ -22,6 +22,8 @@ import com.zlecaf.escrow.web.ApiExceptions.NotFoundException;
 import com.zlecaf.escrow.web.dto.EvidenceDtos.EvidenceDto;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.jdbc.AutoConfigureTestDatabase;
 import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
@@ -231,12 +233,14 @@ class EvidenceServiceTest {
         assertThat(auditLogs.findByTransactionIdOrderByTimestampAsc(tx.getId())).isEmpty();
     }
 
-    @Test
+    @ParameterizedTest
+    @EnumSource(value = EscrowState.class, names = {"INITIATED", "RELEASED", "REFUNDED"})
     @DisplayName("Depositing outside the state window is a ConflictException and writes nothing")
-    void closedStateWindowConflicts() {
-        User buyer = persistUser("buyer3@example.com", Role.BUYER);
-        User seller = persistUser("seller3@example.com", Role.SELLER);
-        EscrowTransaction tx = persistTransaction(buyer.getId(), seller.getId(), EscrowState.RELEASED);
+    void closedStateWindowConflicts(EscrowState closedState) {
+        String suffix = closedState.name().toLowerCase();
+        User buyer = persistUser("buyer3-" + suffix + "@example.com", Role.BUYER);
+        User seller = persistUser("seller3-" + suffix + "@example.com", Role.SELLER);
+        EscrowTransaction tx = persistTransaction(buyer.getId(), seller.getId(), closedState);
         AuthPrincipal actor = new AuthPrincipal(buyer.getId(), buyer.getEmail(), Role.BUYER);
 
         assertThatThrownBy(() -> evidenceService.deposit(actor, tx.getId(),
