@@ -6,6 +6,7 @@ import com.zlecaf.escrow.web.ApiExceptions.*;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.MissingRequestHeaderException;
 import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
@@ -54,6 +55,13 @@ public class GlobalExceptionHandler {
         return body(HttpStatus.FORBIDDEN, ex.getMessage());
     }
 
+    @ExceptionHandler(UnauthorizedException.class)
+    public ResponseEntity<Map<String, Object>> onUnauthorized(UnauthorizedException ex) {
+        // Partner signature auth failure (unknown/inactive key, bad signature,
+        // stale timestamp, replayed nonce): 401 in the standard envelope.
+        return body(HttpStatus.UNAUTHORIZED, ex.getMessage());
+    }
+
     @ExceptionHandler(MaxUploadSizeExceededException.class)
     public ResponseEntity<Map<String, Object>> onMaxUploadSize(MaxUploadSizeExceededException ex) {
         // Container multipart cap breached: report as a client size error (400),
@@ -61,10 +69,11 @@ public class GlobalExceptionHandler {
         return body(HttpStatus.BAD_REQUEST, "Uploaded file exceeds the maximum permitted size");
     }
 
-    @ExceptionHandler({MissingServletRequestPartException.class, MissingServletRequestParameterException.class})
+    @ExceptionHandler({MissingServletRequestPartException.class, MissingServletRequestParameterException.class,
+            MissingRequestHeaderException.class})
     public ResponseEntity<Map<String, Object>> onMissingPart(Exception ex) {
-        // A required multipart part or request parameter is absent: return the
-        // standard 400 envelope rather than Spring's default error body.
+        // A required multipart part, request parameter or request header is absent:
+        // return the standard 400 envelope rather than Spring's default error body.
         return body(HttpStatus.BAD_REQUEST, ex.getMessage());
     }
 

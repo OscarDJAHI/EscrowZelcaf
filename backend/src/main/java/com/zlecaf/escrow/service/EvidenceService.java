@@ -93,16 +93,9 @@ public class EvidenceService {
     @Transactional
     public List<EvidenceFile> deposit(AuthPrincipal actor, Long txId, List<MultipartFile> files,
                                       String comment, String clientCapturedAt) {
-        if (files == null || files.isEmpty()) {
-            throw new BadRequestException("At least one file is required");
-        }
-        // Batch cardinality cap, enforced BEFORE any byte buffering (Pass 1) so a
-        // hostile over-plafond batch cannot exhaust memory.
-        if (files.size() > PlatformLimits.MAX_FILES_PER_DEPOSIT) {
-            throw new BadRequestException(
-                    "A deposit accepts at most " + PlatformLimits.MAX_FILES_PER_DEPOSIT + " files");
-        }
-
+        // Reject an empty or over-cap batch BEFORE taking the row lock or reading
+        // any bytes — the original (pre-refactor) precedence and the memory guard.
+        requireDepositableBatch(files);
         // Pessimistic lock: serialises the deposit against concurrent state
         // transitions, so the window check below cannot be invalidated by a
         // RELEASE/REFUND committing between the read and this transaction's commit.
@@ -111,6 +104,57 @@ public class EvidenceService {
 
         ParticipantRole role = access.resolveRole(actor, tx);   // 403 if not a party
         requireUploadWindow(tx.getState());                     // 409 if outside window
+
+        // Human attribution: the acting user owns the row and the audit entry.
+        Attribution attribution =
+                new Attribution(toUploaderType(role), actor.userId(), null, actor.userId(), role);
+        return ingest(tx, files, comment, clientCapturedAt, attribution);
+    }
+
+    /**
+     * Deposits one or more files on behalf of a machine partner (Story 3.2). The
+     * caller ({@code PartnerEvidenceService}) has already authenticated the request
+     * by HMAC signature; here the <em>company</em> behind the key is authorised as a
+     * party and the same reused ingestion core writes the evidence with a
+     * {@code CARRIER_PARTNER} attribution ({@code partner_company_id} set,
+     * {@code uploaded_by_user_id} null, audit actor/role null). No ingestion rule is
+     * duplicated: validation, storage, rollback cleanup and the MANDATORY audit are
+     * exactly those of the user path.
+     *
+     * @throws NotFoundException   transaction unknown (404)
+     * @throws com.zlecaf.escrow.web.ApiExceptions.ForbiddenException company not a party (403)
+     * @throws ConflictException   deposit window closed for the current state (409)
+     * @throws BadRequestException empty batch, bad file type/size, or bad
+     *                             {@code clientCapturedAt} (400)
+     */
+    @Transactional
+    public List<EvidenceFile> depositAsPartner(Long companyId, Long txId, List<MultipartFile> files,
+                                               String comment, String clientCapturedAt) {
+        requireDepositableBatch(files); // gate before the lock (PartnerEvidenceService also gates before hashing)
+        EscrowTransaction tx = transactions.findByIdForUpdate(txId)
+                .orElseThrow(() -> new NotFoundException("Transaction " + txId + " not found"));
+
+        access.requireCompanyParticipant(tx, companyId);       // 403 if company not a party
+        requireUploadWindow(tx.getState());                     // 409 if outside window
+
+        Attribution attribution =
+                new Attribution(UploaderType.CARRIER_PARTNER, null, companyId, null, null);
+        return ingest(tx, files, comment, clientCapturedAt, attribution);
+    }
+
+    /**
+     * Reusable ingestion core shared by the user ({@link #deposit}) and partner
+     * ({@link #depositAsPartner}) paths, parameterised only by {@link Attribution}.
+     * The caller has already loaded the (locked) transaction and enforced its
+     * membership and state-window rules; everything the two paths have in common —
+     * batch cardinality, all-or-nothing validation, opaque storage, persistence,
+     * rollback cleanup and the MANDATORY {@code EVIDENCE_ADDED} audit — lives here so
+     * no ingestion rule is ever duplicated.
+     */
+    private List<EvidenceFile> ingest(EscrowTransaction tx, List<MultipartFile> files,
+                                      String comment, String clientCapturedAt, Attribution attribution) {
+        Long txId = tx.getId();
+        requireDepositableBatch(files); // defense-in-depth: both callers already gate this
 
         String capturedAt = normalizeCapturedAt(clientCapturedAt); // 400 if not ISO-8601
 
@@ -137,7 +181,6 @@ public class EvidenceService {
         // storage is NOT transactional, so a store() that succeeded before a later
         // failure would leave an orphaned binary; a rollback-time cleanup deletes
         // exactly the keys written by this transaction. ---
-        UploaderType uploaderType = toUploaderType(role);
         List<String> storedKeys = new ArrayList<>(files.size());
         registerRollbackCleanup(storedKeys);
         List<EvidenceFile> saved = new ArrayList<>(files.size());
@@ -152,9 +195,9 @@ public class EvidenceService {
 
             EvidenceFile evidence = new EvidenceFile();
             evidence.setTransactionId(txId);
-            evidence.setUploadedByUserId(actor.userId());
-            evidence.setUploaderType(uploaderType);
-            evidence.setPartnerCompanyId(null);
+            evidence.setUploadedByUserId(attribution.uploadedByUserId());
+            evidence.setUploaderType(attribution.uploaderType());
+            evidence.setPartnerCompanyId(attribution.partnerCompanyId());
             evidence.setOriginalFilename(sanitizeFilename(files.get(i).getOriginalFilename()));
             evidence.setMimeType(mime);
             evidence.setSizeBytes((long) bytes.length);
@@ -163,12 +206,41 @@ public class EvidenceService {
             evidence.setStatus(EvidenceStatus.ACTIVE);
             evidence = evidenceFiles.save(evidence);
 
-            auditService.recordEvidenceAdded(txId, actor.userId(), role, tx.getState(),
-                    evidence.getId(), sha256Hex(bytes), capturedAt);
+            auditService.recordEvidenceAdded(txId, attribution.auditActorId(), attribution.auditRole(),
+                    tx.getState(), evidence.getId(), sha256Hex(bytes), capturedAt);
 
             saved.add(evidence);
         }
         return saved;
+    }
+
+    /**
+     * Attribution carrier that lets one ingestion core write either a human or a
+     * partner row: the user path passes the acting user (row owner + audit actor);
+     * the partner path passes the company id with null user/audit-actor/role, which
+     * the {@code ck_evidence_attribution} CHECK (V3) requires for {@code CARRIER_PARTNER}.
+     */
+    private record Attribution(UploaderType uploaderType, Long uploadedByUserId,
+                               Long partnerCompanyId, Long auditActorId, ParticipantRole auditRole) {}
+
+    /**
+     * Rejects an empty batch or one over {@link PlatformLimits#MAX_FILES_PER_DEPOSIT}
+     * BEFORE any byte buffering. Exposed so the partner path
+     * ({@code PartnerEvidenceService}) can enforce the cap ahead of signature
+     * hashing, closing a pre-auth amplification vector where a known (public)
+     * key-id would otherwise force the server to read and SHA-256 an unbounded
+     * number of file parts before the cap was ever consulted.
+     *
+     * @throws BadRequestException empty batch or more than the permitted file count (400).
+     */
+    public static void requireDepositableBatch(List<MultipartFile> files) {
+        if (files == null || files.isEmpty()) {
+            throw new BadRequestException("At least one file is required");
+        }
+        if (files.size() > PlatformLimits.MAX_FILES_PER_DEPOSIT) {
+            throw new BadRequestException(
+                    "A deposit accepts at most " + PlatformLimits.MAX_FILES_PER_DEPOSIT + " files");
+        }
     }
 
     /**

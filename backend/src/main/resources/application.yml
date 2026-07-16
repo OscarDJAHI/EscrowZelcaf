@@ -51,6 +51,11 @@ escrow:
     access-key: ${ESCROW_STORAGE_ACCESS_KEY:minioadmin}
     secret-key: ${ESCROW_STORAGE_SECRET_KEY:minioadmin}
 
+  partner:
+    # Anti-replay window for signed partner deposits: an X-Escrow-Timestamp more
+    # than this many seconds away from server time is rejected (401).
+    timestamp-tolerance-seconds: ${ESCROW_PARTNER_TIMESTAMP_TOLERANCE_SECONDS:300}
+
 server:
   port: ${SERVER_PORT:8080}
 

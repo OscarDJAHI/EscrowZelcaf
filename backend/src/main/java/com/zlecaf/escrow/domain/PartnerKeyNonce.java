@@ -28,6 +28,18 @@ public class PartnerKeyNonce {
     @Column(name = "seen_at", nullable = false, updatable = false)
     private Instant seenAt;
 
+    /** JPA requires a no-arg constructor. */
+    public PartnerKeyNonce() {}
+
+    /**
+     * Records a freshly consumed nonce for {@code keyId}. {@code seenAt} is stamped
+     * by {@link #onCreate()} at persist time, so it is never set by the caller.
+     */
+    public PartnerKeyNonce(String keyId, String nonce) {
+        this.keyId = keyId;
+        this.nonce = nonce;
+    }
+
     @PrePersist
     void onCreate() {
         if (seenAt == null) seenAt = Instant.now();

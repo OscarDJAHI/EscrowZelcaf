@@ -1,8 +1,11 @@
 package com.zlecaf.escrow.service;
 
+import com.zlecaf.escrow.domain.Company;
 import com.zlecaf.escrow.domain.EscrowTransaction;
 import com.zlecaf.escrow.domain.ParticipantRole;
 import com.zlecaf.escrow.domain.Role;
+import com.zlecaf.escrow.domain.User;
+import com.zlecaf.escrow.repository.UserRepository;
 import com.zlecaf.escrow.security.AuthPrincipal;
 import com.zlecaf.escrow.web.ApiExceptions.ForbiddenException;
 import org.springframework.stereotype.Component;
@@ -16,6 +19,12 @@ import org.springframework.stereotype.Component;
  */
 @Component
 public class TransactionAccess {
+
+    private final UserRepository users;
+
+    public TransactionAccess(UserRepository users) {
+        this.users = users;
+    }
 
     /**
      * Resolves the capacity in which {@code actor} relates to {@code tx}.
@@ -35,5 +44,31 @@ public class TransactionAccess {
             return ParticipantRole.SELLER;
         }
         throw new ForbiddenException("You are not a party to this transaction");
+    }
+
+    /**
+     * Authorises a machine partner deposit: the company behind the inbound HMAC key
+     * must be a party (buyer OR seller) to {@code tx}. A transaction is keyed on
+     * {@code users.id}, not company ids, so each party's user is loaded and its
+     * {@link User#getCompany()} compared to {@code companyId}. Centralised here so
+     * partner and user access rules never diverge (anti-IDOR at company scope).
+     *
+     * @throws ForbiddenException if neither party's company matches {@code companyId} (403).
+     */
+    public void requireCompanyParticipant(EscrowTransaction tx, Long companyId) {
+        if (companyId == null
+                || (!belongsToCompany(tx.getBuyerId(), companyId)
+                        && !belongsToCompany(tx.getSellerId(), companyId))) {
+            throw new ForbiddenException("The partner company is not a party to this transaction");
+        }
+    }
+
+    /** True iff {@code userId} resolves to a user whose company id equals {@code companyId} (null-safe). */
+    private boolean belongsToCompany(Long userId, Long companyId) {
+        return users.findById(userId)
+                .map(User::getCompany)
+                .map(Company::getId)
+                .map(companyId::equals)
+                .orElse(false);
     }
 }
