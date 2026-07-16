@@ -83,9 +83,9 @@ Le cœur durable : décisions qu'un futur développeur ne pourrait pas déduire 
 - **Rule:** chaque dépôt/retrait écrit une entrée `audit_logs` via `AuditService.recordSuccess` en **propagation MANDATORY** (commit atomique avec l'opération). Le `payload` JSONB porte `action ∈ {EVIDENCE_ADDED, EVIDENCE_WITHDRAWN}`, `evidenceId`, `sha256`, et — pour un dépôt offline différé — l'heure client de capture. **Pas** de colonne `action_type` ajoutée.
 
 ### AD-6 — Stockage binaire derrière le **port `EvidenceStorage`** (clé opaque)
-- **Binds:** NFR-1
-- **Prevents:** couplage des controllers/service au backend de stockage ; migration future impossible sans casser le contrat d'API.
-- **Rule:** le binaire n'est jamais manipulé que via l'interface `EvidenceStorage` (`store(bytes, contentType) → storageKey`, `load(storageKey) → stream`). La clé est **opaque** (`{transaction_id}/{uuid}`), **jamais dérivée du nom de fichier fourni**. Implémentation POC = `MinioEvidenceStorage` (S3-compatible). Aucun code hors de l'adaptateur ne connaît MinIO/S3.
+- **Binds:** NFR-1, NFR-3
+- **Prevents:** couplage des controllers/service au backend de stockage ; migration future impossible sans casser le contrat d'API ; **objets orphelins** laissés par un rollback (le stockage objet n'est pas transactionnel).
+- **Rule:** le binaire n'est jamais manipulé que via l'interface `EvidenceStorage` (`store(transactionId, bytes, contentType) → storageKey`, `load(storageKey) → stream`, `delete(storageKey)`). La clé est **opaque** (`{transaction_id}/{uuid}`), **jamais dérivée du nom de fichier fourni**. Le stockage objet n'étant pas dans la transaction DB, tout écrivain (dépôt simple, ouverture composite Epic 2) **enregistre un nettoyage `afterCompletion` best-effort** qui `delete()` les clés écrites si la transaction rollback — aucun binaire orphelin. `delete()` est **idempotent** (no-op sur clé absente) et **ne masque jamais la cause du rollback** (échec avalé + loggé). Implémentation POC = `MinioEvidenceStorage` (S3-compatible). Aucun code hors de l'adaptateur ne connaît MinIO/S3. *(Amendé 2026-07-16 : ajout `delete()` + cleanup rollback, action item #1 de la rétro Epic 1.)*
 
 ### AD-7 — Validation **serveur** stricte à l'ingestion
 - **Binds:** FR-3, FR-4, NFR-2

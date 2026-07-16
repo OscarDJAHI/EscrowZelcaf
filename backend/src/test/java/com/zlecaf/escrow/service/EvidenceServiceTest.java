@@ -113,6 +113,12 @@ class EvidenceServiceTest {
             return new ByteArrayInputStream(bytes);
         }
 
+        @Override
+        public void delete(String storageKey) {
+            // Idempotent, no-op on a missing key — mirrors the real port contract.
+            objects.remove(storageKey);
+        }
+
         /** Preloads a binary under an explicit key so a persisted row can be downloaded. */
         void seed(String storageKey, byte[] content) {
             objects.put(storageKey, content.clone());

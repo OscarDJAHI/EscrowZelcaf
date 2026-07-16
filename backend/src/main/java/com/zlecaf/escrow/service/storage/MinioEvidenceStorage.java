@@ -4,6 +4,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.services.s3.S3Client;
+import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
 import software.amazon.awssdk.services.s3.model.NoSuchKeyException;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
@@ -59,5 +60,16 @@ public class MinioEvidenceStorage implements EvidenceStorage {
             // Translated here so callers never need an S3 type to handle a miss.
             throw new EvidenceNotFoundException(storageKey, e);
         }
+    }
+
+    @Override
+    public void delete(String storageKey) {
+        // S3 DeleteObject is idempotent: removing an absent key returns 204, not
+        // an error — exactly the no-op-on-missing contract the port requires for
+        // the rollback-cleanup path.
+        s3Client.deleteObject(DeleteObjectRequest.builder()
+                .bucket(bucket)
+                .key(storageKey)
+                .build());
     }
 }

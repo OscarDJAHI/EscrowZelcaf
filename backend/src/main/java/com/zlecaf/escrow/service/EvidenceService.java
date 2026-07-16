@@ -15,8 +15,12 @@ import com.zlecaf.escrow.web.ApiExceptions.BadRequestException;
 import com.zlecaf.escrow.web.ApiExceptions.ConflictException;
 import com.zlecaf.escrow.web.ApiExceptions.NotFoundException;
 import com.zlecaf.escrow.web.dto.EvidenceDtos.EvidenceDto;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
@@ -40,6 +44,8 @@ import java.util.Set;
  */
 @Service
 public class EvidenceService {
+
+    private static final Logger log = LoggerFactory.getLogger(EvidenceService.class);
 
     /** Per-file business limit (bytes), arbitrated here, not by the container. */
     static final long MAX_FILE_SIZE = 10_485_760L;
@@ -116,14 +122,22 @@ public class EvidenceService {
         }
 
         // --- Pass 2: store, persist and audit each file. Any failure rolls the
-        // whole transaction back (business row + audit commit together). ---
+        // whole transaction back (business row + audit commit together). Object
+        // storage is NOT transactional, so a store() that succeeded before a later
+        // failure would leave an orphaned binary; a rollback-time cleanup deletes
+        // exactly the keys written by this transaction. ---
         UploaderType uploaderType = toUploaderType(role);
+        List<String> storedKeys = new ArrayList<>(files.size());
+        registerRollbackCleanup(storedKeys);
         List<EvidenceFile> saved = new ArrayList<>(files.size());
         for (int i = 0; i < files.size(); i++) {
             byte[] bytes = contents.get(i);
             String mime = mimeTypes.get(i);
 
             String storageKey = storage.store(txId, bytes, mime);
+            // Track BEFORE the DB write that may fail: if save/audit throws, this
+            // key is already queued for rollback cleanup.
+            storedKeys.add(storageKey);
 
             EvidenceFile evidence = new EvidenceFile();
             evidence.setTransactionId(txId);
@@ -207,6 +221,34 @@ public class EvidenceService {
             throw new ConflictException(
                     "Evidence cannot be deposited while the transaction is " + state);
         }
+    }
+
+    /**
+     * Registers a rollback-only cleanup that deletes the binaries stored by this
+     * transaction if it does not commit. {@code storedKeys} is read at completion
+     * time, so keys added after registration are still cleaned up. Deletion is
+     * best-effort: an orphaned object is a tolerated leak, but a throw here would
+     * mask the real rollback cause, so every failure is swallowed and logged.
+     */
+    private void registerRollbackCleanup(List<String> storedKeys) {
+        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
+            return;
+        }
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCompletion(int status) {
+                if (status != STATUS_ROLLED_BACK) {
+                    return;
+                }
+                for (String key : storedKeys) {
+                    try {
+                        storage.delete(key);
+                    } catch (RuntimeException e) {
+                        log.warn("Failed to clean up orphaned evidence object {} after rollback", key, e);
+                    }
+                }
+            }
+        });
     }
 
     private String normalizeCapturedAt(String clientCapturedAt) {

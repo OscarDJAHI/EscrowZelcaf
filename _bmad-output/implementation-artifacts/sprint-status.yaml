@@ -84,7 +84,7 @@ action_items:
   - epic: 1
     action: "Traiter les orphelins MinIO au rollback : ajouter EvidenceStorage.delete() + cleanup best-effort afterCompletion (amender AD-6 dans la spine)"
     owner: "session dev Story 2.1"
-    status: open
+    status: done
   - epic: 1
     action: "Poursuivre bmad-loop story-par-story avec point de contrôle coût/diff entre chaque ; worktree propre entre runs"
     owner: "Oscard"

@@ -121,4 +121,23 @@ class MinioEvidenceStorageTest {
         assertThatThrownBy(() -> storage.store(null, fixedBytes(16), "application/pdf"))
                 .isInstanceOf(NullPointerException.class);
     }
+
+    @Test
+    @DisplayName("delete removes a stored object: a subsequent load misses (404)")
+    void deleteRemovesAStoredObject() {
+        String storageKey = storage.store(42L, fixedBytes(128), "image/png");
+
+        storage.delete(storageKey);
+
+        assertThatThrownBy(() -> storage.load(storageKey))
+                .isInstanceOf(EvidenceNotFoundException.class);
+    }
+
+    @Test
+    @DisplayName("delete of an absent key is a no-op, never an error (rollback-cleanup contract)")
+    void deleteOfAbsentKeyIsANoOp() {
+        // The rollback-cleanup path must tolerate a key whose object was never
+        // flushed; S3 DeleteObject is idempotent, so this must not throw.
+        storage.delete("42/never-stored");
+    }
 }

@@ -36,4 +36,19 @@ public interface EvidenceStorage {
      *         the calling layer's job, and must not require an S3 type to do it.
      */
     InputStream load(String storageKey);
+
+    /**
+     * Best-effort removal of a previously stored binary.
+     * <p>
+     * Its sole purpose is to clean up an object whose owning transaction rolled
+     * back, so a mid-batch failure leaves no orphan (the store happens before the
+     * DB write that may fail, and only the DB side is transactional). Because it
+     * runs on the rollback path, implementations must be <strong>idempotent and
+     * non-throwing for a missing key</strong>: deleting an absent object is a
+     * no-op, never an error. The caller treats any failure here as a tolerated
+     * leak — it must never mask the original rollback cause.
+     *
+     * @param storageKey a key previously returned by {@link #store}
+     */
+    void delete(String storageKey);
 }
