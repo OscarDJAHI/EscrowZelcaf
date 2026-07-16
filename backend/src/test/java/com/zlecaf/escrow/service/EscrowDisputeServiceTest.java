@@ -31,6 +31,7 @@ import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
@@ -43,6 +44,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 import java.io.ByteArrayInputStream;
 import java.io.InputStream;
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
@@ -550,5 +552,69 @@ class EscrowDisputeServiceTest {
         TransactionDetailDto detail = escrowService.getDetail(actor, tx.getId());
 
         assertThat(detail.auditLogs()).hasSize(PlatformLimits.MAX_LIST_RESULTS);
+    }
+
+    // --- Story 5.2: recent-tail selection on the audit trail ---
+
+    /** Persists one audit row with an explicit timestamp (survives @PrePersist, which only fills a null). */
+    private AuditLog persistAuditAt(Long txId, Long actorId, Instant timestamp) {
+        AuditLog log = new AuditLog();
+        log.setTransactionId(txId);
+        log.setActionBy(actorId);
+        log.setPreviousState("FUNDS_LOCKED");
+        log.setNextState("FUNDS_LOCKED");
+        ObjectNode payload = new ObjectMapper().createObjectNode();
+        payload.put("action", "EVIDENCE_ADDED");
+        log.setPayload(payload);
+        log.setTimestamp(timestamp);
+        return auditLogs.save(log);
+    }
+
+    @Test
+    @DisplayName("the bounded DESC trail overload keeps the MOST RECENT rows (recent tail), newest first")
+    void auditDescOverloadKeepsMostRecentRows() {
+        User buyer = persistUser("audRT@example.com", Role.BUYER);
+        User seller = persistUser("audRTs@example.com", Role.SELLER);
+        EscrowTransaction tx = persistTransaction(buyer.getId(), seller.getId(), EscrowState.FUNDS_LOCKED);
+
+        Instant t0 = Instant.parse("2026-07-15T10:00:00Z");
+        AuditLog oldest = persistAuditAt(tx.getId(), buyer.getId(), t0);
+        AuditLog middle = persistAuditAt(tx.getId(), buyer.getId(), t0.plusSeconds(60));
+        AuditLog newest = persistAuditAt(tx.getId(), buyer.getId(), t0.plusSeconds(120));
+
+        // LIMIT 2 over 3 rows: the DESC overload returns the two NEWEST, newest first
+        // (an ASC limit would have returned oldest+middle and dropped `newest`).
+        List<AuditLog> recent = auditLogs.findByTransactionIdOrderByTimestampDescIdDesc(
+                tx.getId(), PageRequest.of(0, 2));
+
+        assertThat(recent).extracting(AuditLog::getId)
+                .containsExactly(newest.getId(), middle.getId());
+        assertThat(recent).extracting(AuditLog::getId).doesNotContain(oldest.getId());
+    }
+
+    @Test
+    @DisplayName("getDetail keeps the MOST RECENT audit rows when over the cap, restored in ascending order")
+    void getDetailKeepsRecentTailInAscendingOrder() {
+        User buyer = persistUser("audTail@example.com", Role.BUYER);
+        User seller = persistUser("audTails@example.com", Role.SELLER);
+        EscrowTransaction tx = persistTransaction(buyer.getId(), seller.getId(), EscrowState.FUNDS_LOCKED);
+        AuthPrincipal actor = new AuthPrincipal(buyer.getId(), buyer.getEmail(), Role.BUYER);
+
+        Instant t0 = Instant.parse("2026-07-15T10:00:00Z");
+        int over = PlatformLimits.MAX_LIST_RESULTS + 5;
+        for (int i = 0; i < over; i++) {
+            persistAuditAt(tx.getId(), buyer.getId(), t0.plusSeconds(i));
+        }
+
+        TransactionDetailDto detail = escrowService.getDetail(actor, tx.getId());
+
+        // The 5 oldest are dropped, the newest MAX_LIST_RESULTS are kept, and the
+        // in-memory reverse restores ascending order: first = t0+5, last = t0+over-1.
+        assertThat(detail.auditLogs()).hasSize(PlatformLimits.MAX_LIST_RESULTS);
+        assertThat(detail.auditLogs()).extracting(dto -> dto.timestamp())
+                .isSortedAccordingTo(Instant::compareTo);
+        assertThat(detail.auditLogs().get(0).timestamp()).isEqualTo(t0.plusSeconds(5));
+        assertThat(detail.auditLogs().get(detail.auditLogs().size() - 1).timestamp())
+                .isEqualTo(t0.plusSeconds(over - 1L));
     }
 }

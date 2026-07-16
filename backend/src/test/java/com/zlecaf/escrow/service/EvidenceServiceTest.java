@@ -31,6 +31,7 @@ import org.springframework.boot.test.autoconfigure.orm.jpa.TestEntityManager;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.mock.web.MockMultipartFile;
@@ -924,6 +925,62 @@ class EvidenceServiceTest {
         assertThat(download.getPayload().get("evidenceId").asLong()).isEqualTo(deposited.getId());
         assertThat(download.getPreviousState()).isEqualTo("FUNDS_LOCKED");
         assertThat(download.getNextState()).isEqualTo("FUNDS_LOCKED");
+    }
+
+    // --- Story 5.2: recent-tail selection + nullable size_bytes on download ---
+
+    @Test
+    @DisplayName("the bounded DESC overload keeps the MOST RECENT rows (recent tail), not the oldest")
+    void descOverloadKeepsMostRecentRows() {
+        User buyer = persistUser("buyerRT@example.com", Role.BUYER);
+        User seller = persistUser("sellerRT@example.com", Role.SELLER);
+        EscrowTransaction tx = persistTransaction(buyer.getId(), seller.getId(), EscrowState.FUNDS_LOCKED);
+
+        Instant t0 = Instant.parse("2026-07-15T10:00:00Z");
+        EvidenceFile oldest = persistActiveEvidence(tx.getId(), buyer.getId(), UploaderType.BUYER, t0);
+        EvidenceFile middle = persistActiveEvidence(tx.getId(), buyer.getId(), UploaderType.BUYER, t0.plusSeconds(60));
+        EvidenceFile newest = persistActiveEvidence(tx.getId(), buyer.getId(), UploaderType.BUYER, t0.plusSeconds(120));
+
+        // LIMIT 2 over 3 rows: the DESC overload must return the two NEWEST, newest
+        // first — proving the limit keeps the recent tail (an ASC limit would have
+        // returned oldest+middle and silently dropped `newest`).
+        List<EvidenceFile> recent = evidenceFiles.findByTransactionIdOrderByCreatedAtDescIdDesc(
+                tx.getId(), PageRequest.of(0, 2));
+
+        assertThat(recent).extracting(EvidenceFile::getId)
+                .containsExactly(newest.getId(), middle.getId());
+        assertThat(recent).doesNotContain(oldest);
+    }
+
+    @Test
+    @DisplayName("download of a piece with a NULL size_bytes streams the binary without NPE and reports a null size")
+    void downloadWithNullSizeBytesDoesNotThrow() {
+        User buyer = persistUser("buyerNull@example.com", Role.BUYER);
+        User seller = persistUser("sellerNull@example.com", Role.SELLER);
+        EscrowTransaction tx = persistTransaction(buyer.getId(), seller.getId(), EscrowState.FUNDS_LOCKED);
+        AuthPrincipal actor = new AuthPrincipal(buyer.getId(), buyer.getEmail(), Role.BUYER);
+
+        // Persist a row whose size_bytes is NULL (nullable column), then seed its
+        // binary so the storage port can serve it. The unboxing bug would NPE here.
+        EvidenceFile e = new EvidenceFile();
+        e.setTransactionId(tx.getId());
+        e.setUploadedByUserId(buyer.getId());
+        e.setUploaderType(UploaderType.BUYER);
+        e.setPartnerCompanyId(null);
+        e.setOriginalFilename("evidence.pdf");
+        e.setMimeType("application/pdf");
+        e.setSizeBytes(null);
+        e.setStorageKey(tx.getId() + "/" + UUID.randomUUID());
+        e.setComment("proof");
+        e.setStatus(EvidenceStatus.ACTIVE);
+        e.setCreatedAt(Instant.parse("2026-07-15T10:00:00Z"));
+        EvidenceFile persisted = em.persistAndFlush(e);
+        ((InMemoryEvidenceStorage) storage).seed(persisted.getStorageKey(), pdfBytes());
+
+        EvidenceDownload d = evidenceService.download(actor, tx.getId(), persisted.getId());
+
+        assertThat(d.sizeBytes()).isNull();
+        assertThat(drain(d.content())).isEqualTo(pdfBytes());
     }
 
     @Test

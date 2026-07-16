@@ -40,7 +40,7 @@ class EvidenceControllerDownloadTest {
         byte[] body = "hello-evidence".getBytes(StandardCharsets.UTF_8);
         AuthPrincipal actor = new AuthPrincipal(7L, "party@example.com", Role.BUYER);
         EvidenceDownload stub = new EvidenceDownload(
-                new ByteArrayInputStream(body), "receipt.pdf", "application/pdf", body.length);
+                new ByteArrayInputStream(body), "receipt.pdf", "application/pdf", (long) body.length);
         when(service.download(any(AuthPrincipal.class), eq(42L), eq(99L))).thenReturn(stub);
 
         ResponseEntity<InputStreamResource> response = controller.download(actor, 42L, 99L);
@@ -57,6 +57,28 @@ class EvidenceControllerDownloadTest {
 
         byte[] served = readAll(response.getBody());
         assertThat(served).isEqualTo(body);
+    }
+
+    @Test
+    @DisplayName("download omits the Content-Length header when the piece has an unknown (null) size, still streaming the body")
+    void downloadOmitsContentLengthWhenSizeNull() {
+        EvidenceService service = mock(EvidenceService.class);
+        EvidenceController controller = new EvidenceController(service);
+
+        byte[] body = "sizeless".getBytes(StandardCharsets.UTF_8);
+        AuthPrincipal actor = new AuthPrincipal(7L, "party@example.com", Role.BUYER);
+        // size_bytes is nullable end-to-end: a null size must not throw and must
+        // leave the Content-Length header unset (getContentLength() == -1).
+        EvidenceDownload stub = new EvidenceDownload(
+                new ByteArrayInputStream(body), "receipt.pdf", "application/pdf", null);
+        when(service.download(any(AuthPrincipal.class), eq(42L), eq(99L))).thenReturn(stub);
+
+        ResponseEntity<InputStreamResource> response = controller.download(actor, 42L, 99L);
+
+        assertThat(response.getStatusCode().value()).isEqualTo(200);
+        assertThat(response.getHeaders().getContentLength()).isEqualTo(-1); // header absent
+        assertThat(response.getHeaders().containsKey("Content-Length")).isFalse();
+        assertThat(readAll(response.getBody())).isEqualTo(body);
     }
 
     @Test

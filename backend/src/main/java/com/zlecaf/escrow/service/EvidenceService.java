@@ -32,6 +32,7 @@ import java.security.NoSuchAlgorithmException;
 import java.time.OffsetDateTime;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 
 /**
@@ -186,10 +187,15 @@ public class EvidenceService {
                 .orElseThrow(() -> new NotFoundException("Transaction " + txId + " not found"));
         access.resolveRole(actor, tx);   // 403 if not a party; role ignored for a read
         // Hard cap the read (unsorted Pageable → LIMIT only; ordering stays from
-        // the method name). Bounds memory without paginating: still a JSON array.
-        return evidenceFiles.findByTransactionIdOrderByCreatedAtAscIdAsc(
-                        txId, PageRequest.of(0, PlatformLimits.MAX_LIST_RESULTS))
-                .stream().map(EvidenceDto::from).toList();
+        // the method name). Query DESC so the LIMIT keeps the MOST RECENT rows —
+        // an ASC limit would keep the oldest and silently drop the recent tail —
+        // then reverse in memory (≤ MAX_LIST_RESULTS elements) to restore the
+        // contract's created_at asc, id asc order. Bounds memory without
+        // paginating: still a JSON array.
+        List<EvidenceFile> recent = new ArrayList<>(evidenceFiles.findByTransactionIdOrderByCreatedAtDescIdDesc(
+                txId, PageRequest.of(0, PlatformLimits.MAX_LIST_RESULTS)));
+        Collections.reverse(recent);
+        return recent.stream().map(EvidenceDto::from).toList();
     }
 
     /**
@@ -223,12 +229,12 @@ public class EvidenceService {
         EvidenceFile evidence = evidenceFiles.findByIdAndTransactionId(evidenceId, txId)
                 .orElseThrow(() -> new NotFoundException("Evidence " + evidenceId + " not found"));
         // Read every metadata field BEFORE opening the stream. size_bytes/mime_type
-        // are nullable at the schema level; any failure here (e.g. a null size_bytes
-        // unboxing) must surface before a live storage stream exists, so it can never
-        // leak an unclosed connection.
+        // are nullable at the schema level, so size_bytes is kept boxed (Long) and
+        // never unboxed here — a null size is a valid piece, carried through to the
+        // controller which then omits the Content-Length header.
         String filename = evidence.getOriginalFilename();
         String contentType = evidence.getMimeType();
-        long sizeBytes = evidence.getSizeBytes();
+        Long sizeBytes = evidence.getSizeBytes();
         InputStream content;
         try {
             content = storage.load(evidence.getStorageKey());
@@ -241,12 +247,22 @@ public class EvidenceService {
         try {
             auditService.recordEvidenceDownloaded(txId, actor.userId(), role, tx.getState(), evidence.getId());
         } catch (RuntimeException e) {
-            // The stream is already open; if the audit write fails the transaction
+            // Synchronous window: if the audit write throws in-method the transaction
             // rolls back and the stream is never handed to the controller. Close it
-            // here so a failed download cannot leak a live storage connection.
+            // here and rethrow. The commit-time hook below is registered ONLY once
+            // the audit has succeeded, so this catch and that hook are mutually
+            // exclusive — the stream is never closed twice.
             try { content.close(); } catch (IOException ignored) { /* best-effort */ }
             throw e;
         }
+        // The audit succeeded, but the stream now outlives this method: the writable
+        // transaction commits in the proxy AFTER download() returns, still holding
+        // the open stream, and a commit failure there is out of reach of any
+        // in-method catch. Register a completion hook that closes the stream on any
+        // non-committed outcome so a failed commit cannot leak a live storage
+        // connection. On a successful commit the web layer owns and closes the
+        // stream, so the hook leaves it alone.
+        registerStreamCloseOnAbort(content);
         return new EvidenceDownload(content, filename, contentType, sizeBytes);
     }
 
@@ -362,6 +378,35 @@ public class EvidenceService {
                     } catch (RuntimeException e) {
                         log.warn("Failed to clean up orphaned evidence object {} after rollback", key, e);
                     }
+                }
+            }
+        });
+    }
+
+    /**
+     * Registers a completion hook that closes an open storage stream if the
+     * transaction does NOT commit. The download transaction is writable (it audits
+     * access), so its commit happens in the proxy AFTER {@code download} returns,
+     * still holding the open stream; a commit failure there is out of reach of any
+     * in-method {@code try/catch}. On a successful commit the web layer owns and
+     * consumes/closes the stream, so this hook closes it only on the abort path
+     * ({@code status != STATUS_COMMITTED}). Best-effort: an {@link IOException} on
+     * close is swallowed, since the transaction outcome is already decided.
+     */
+    private void registerStreamCloseOnAbort(InputStream content) {
+        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
+            return;
+        }
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCompletion(int status) {
+                if (status == STATUS_COMMITTED) {
+                    return;
+                }
+                try {
+                    content.close();
+                } catch (IOException ignored) {
+                    // best-effort: the transaction did not commit, nothing owns the stream
                 }
             }
         });

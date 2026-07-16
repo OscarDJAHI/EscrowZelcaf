@@ -18,10 +18,13 @@ public interface AuditLogRepository extends JpaRepository<AuditLog, Long> {
     List<AuditLog> findByTransactionIdOrderByTimestampAscIdAsc(Long transactionId);
 
     /**
-     * Bounded overload of the compliance trail: ordering derives from the method
-     * name, so the {@link Pageable} must be UNSORTED and contributes only the
-     * {@code LIMIT} (e.g. {@code PageRequest.of(0, MAX_LIST_RESULTS)}). Caps the
-     * read without changing the response shape (stays a {@code List}).
+     * Bounded, <em>reverse</em>-chronological overload: returns the {@code LIMIT}
+     * MOST RECENT trail rows first. Ordering derives from the method name, so the
+     * {@link Pageable} must be UNSORTED and contributes only the {@code LIMIT}
+     * (e.g. {@code PageRequest.of(0, MAX_LIST_RESULTS)}). A plain {@code ...Asc}
+     * limit would keep the OLDEST rows and silently drop the recent tail; the
+     * caller queries this DESC overload then re-reverses in memory to restore the
+     * causal ascending order while keeping the newest N.
      */
-    List<AuditLog> findByTransactionIdOrderByTimestampAscIdAsc(Long transactionId, Pageable page);
+    List<AuditLog> findByTransactionIdOrderByTimestampDescIdDesc(Long transactionId, Pageable page);
 }

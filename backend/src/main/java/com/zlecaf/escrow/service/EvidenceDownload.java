@@ -10,6 +10,10 @@ import java.io.InputStream;
  * and the controller streams it straight to the response; the caller owns the
  * stream and must ensure it is consumed/closed (Spring does so after the
  * controller returns).
+ * <p>
+ * {@code sizeBytes} is nullable: the {@code size_bytes} column is nullable at the
+ * schema level, so a piece may carry no known size. The controller omits the
+ * {@code Content-Length} header when it is {@code null}.
  */
-public record EvidenceDownload(InputStream content, String filename, String contentType, long sizeBytes) {
+public record EvidenceDownload(InputStream content, String filename, String contentType, Long sizeBytes) {
 }

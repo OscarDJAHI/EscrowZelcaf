@@ -21,12 +21,15 @@ public interface EvidenceFileRepository extends JpaRepository<EvidenceFile, Long
     List<EvidenceFile> findByTransactionIdOrderByCreatedAtAscIdAsc(Long transactionId);
 
     /**
-     * Bounded overload of the chronological list: the ordering still derives from
-     * the method name, so the {@link Pageable} must be UNSORTED — it contributes
-     * only the {@code LIMIT} (e.g. {@code PageRequest.of(0, MAX_LIST_RESULTS)}).
-     * Caps the read without changing the response shape (stays a {@code List}).
+     * Bounded, <em>reverse</em>-chronological overload: returns the {@code LIMIT}
+     * MOST RECENT rows first. The ordering derives from the method name, so the
+     * {@link Pageable} must be UNSORTED — it contributes only the {@code LIMIT}
+     * (e.g. {@code PageRequest.of(0, MAX_LIST_RESULTS)}). A plain {@code ...Asc}
+     * limit would keep the OLDEST rows and silently drop the recent tail; the
+     * caller queries this DESC overload then re-reverses in memory to restore the
+     * contract's ascending order while keeping the newest N.
      */
-    List<EvidenceFile> findByTransactionIdOrderByCreatedAtAscIdAsc(Long transactionId, Pageable page);
+    List<EvidenceFile> findByTransactionIdOrderByCreatedAtDescIdDesc(Long transactionId, Pageable page);
 
     /**
      * Sealed lookup keyed on <em>both</em> the evidence id and its owning

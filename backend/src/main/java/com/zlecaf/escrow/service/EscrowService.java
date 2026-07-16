@@ -16,6 +16,8 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -208,10 +210,15 @@ public class EscrowService {
         // resolved role is irrelevant for a read, so it is intentionally ignored.
         transactionAccess.resolveRole(actor, tx);
         // Hard cap the audit trail read (unsorted Pageable → LIMIT only; ordering
-        // stays from the method name). Same bound as the evidence list.
-        List<AuditLogDto> trail = auditLogs.findByTransactionIdOrderByTimestampAscIdAsc(
-                        txId, PageRequest.of(0, PlatformLimits.MAX_LIST_RESULTS))
-                .stream().map(AuditLogDto::from).toList();
+        // stays from the method name). Query DESC so the LIMIT keeps the MOST
+        // RECENT rows — an ASC limit would keep the oldest and silently drop the
+        // recent tail — then reverse in memory (≤ MAX_LIST_RESULTS elements) to
+        // restore the causal timestamp asc, id asc order. Same bound as the
+        // evidence list.
+        List<AuditLog> recent = new ArrayList<>(auditLogs.findByTransactionIdOrderByTimestampDescIdDesc(
+                txId, PageRequest.of(0, PlatformLimits.MAX_LIST_RESULTS)));
+        Collections.reverse(recent);
+        List<AuditLogDto> trail = recent.stream().map(AuditLogDto::from).toList();
         return new TransactionDetailDto(toDto(tx, resolveParties(tx)), trail);
     }
 

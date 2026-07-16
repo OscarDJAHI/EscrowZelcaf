@@ -79,11 +79,15 @@ public class EvidenceController {
             ContentDisposition cd = ContentDisposition.attachment()
                     .filename(d.filename(), StandardCharsets.UTF_8)
                     .build();
-            return ResponseEntity.ok()
+            ResponseEntity.BodyBuilder builder = ResponseEntity.ok()
                     .header(HttpHeaders.CONTENT_DISPOSITION, cd.toString())
-                    .contentType(MediaType.parseMediaType(d.contentType()))
-                    .contentLength(d.sizeBytes())
-                    .body(new InputStreamResource(d.content()));
+                    .contentType(MediaType.parseMediaType(d.contentType()));
+            // size_bytes is nullable: only advertise Content-Length when known,
+            // otherwise omit the header rather than send a bogus/zero length.
+            if (d.sizeBytes() != null) {
+                builder.contentLength(d.sizeBytes());
+            }
+            return builder.body(new InputStreamResource(d.content()));
         } catch (RuntimeException ex) {
             closeQuietly(d.content());
             throw ex;
