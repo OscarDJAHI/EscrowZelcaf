@@ -4,6 +4,7 @@ import com.zlecaf.escrow.domain.AuditLog;
 import com.zlecaf.escrow.domain.EscrowEvent;
 import com.zlecaf.escrow.domain.EscrowState;
 import com.zlecaf.escrow.domain.EscrowTransaction;
+import com.zlecaf.escrow.web.dto.EvidenceDtos.EvidenceDto;
 import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
@@ -54,4 +55,10 @@ public final class EscrowDtos {
 
     /** Detail view: the transaction plus its immutable audit trail. */
     public record TransactionDetailDto(TransactionDto transaction, List<AuditLogDto> auditLogs) {}
+
+    /**
+     * Composite response of {@code POST /{id}/dispute}: the transaction now in
+     * {@code DISPUTED} plus the evidence piece(s) attached in the same atomic act.
+     */
+    public record DisputeOpenedDto(TransactionDto transaction, List<EvidenceDto> evidence) {}
 }

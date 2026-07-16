@@ -59,7 +59,7 @@ development_status:
 
   # Epic 2 — Litige adossé à la preuve
   epic-2: backlog
-  2-1-ouvrir-un-litige-avec-preuve-obligatoire-atomique: backlog
+  2-1-ouvrir-un-litige-avec-preuve-obligatoire-atomique: done
   2-2-verrouiller-depot-retrait-aux-etats-terminaux: backlog
   2-3-retirer-sa-propre-piece-avec-plancher-de-preuve: backlog
   2-4-interface-pwa-ouvrir-un-litige-fil-contradictoire: backlog

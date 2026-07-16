@@ -8,9 +8,11 @@ import com.zlecaf.escrow.security.AuthPrincipal;
 import com.zlecaf.escrow.web.ApiExceptions.BadRequestException;
 import com.zlecaf.escrow.web.ApiExceptions.NotFoundException;
 import com.zlecaf.escrow.web.dto.EscrowDtos.*;
+import com.zlecaf.escrow.web.dto.EvidenceDtos.EvidenceDto;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.time.Instant;
 import java.util.HashMap;
@@ -32,6 +34,7 @@ public class EscrowService {
     private final EscrowStateMachine stateMachine;
     private final AuditService auditService;
     private final TransactionAccess transactionAccess;
+    private final EvidenceService evidenceService;
     private final ApplicationEventPublisher events;
 
     public EscrowService(EscrowTransactionRepository transactions,
@@ -40,6 +43,7 @@ public class EscrowService {
                          EscrowStateMachine stateMachine,
                          AuditService auditService,
                          TransactionAccess transactionAccess,
+                         EvidenceService evidenceService,
                          ApplicationEventPublisher events) {
         this.transactions = transactions;
         this.users = users;
@@ -47,6 +51,7 @@ public class EscrowService {
         this.stateMachine = stateMachine;
         this.auditService = auditService;
         this.transactionAccess = transactionAccess;
+        this.evidenceService = evidenceService;
         this.events = events;
     }
 
@@ -82,9 +87,20 @@ public class EscrowService {
      * Applies an event to the state machine under a pessimistic lock. On an
      * illegal or unauthorised transition the attempt is logged and the call is
      * rejected without mutating financial state.
+     *
+     * <p>{@code OPEN_DISPUTE} is intentionally NOT accepted here: a dispute may
+     * only be opened through the composite {@code POST /{id}/dispute} endpoint,
+     * which enforces the mandatory-evidence invariant. Allowing it on this
+     * generic path would let a caller move a transaction to {@code DISPUTED}
+     * with no evidence and no comment, defeating that invariant.
      */
     @Transactional
     public TransactionDto applyEvent(AuthPrincipal actor, Long txId, EscrowEvent event) {
+        if (event == EscrowEvent.OPEN_DISPUTE) {
+            throw new BadRequestException(
+                    "Opening a dispute requires evidence; use POST /api/v1/escrow/{id}/dispute");
+        }
+
         EscrowTransaction tx = transactions.findByIdForUpdate(txId)
                 .orElseThrow(() -> new NotFoundException("Transaction " + txId + " not found"));
 
@@ -109,6 +125,61 @@ public class EscrowService {
         return toDto(tx, resolveParties(tx));
     }
 
+    /**
+     * Opens a dispute as a single atomic act: transitions the transaction to
+     * {@code DISPUTED} <em>and</em> attaches the mandatory evidence within one
+     * transaction. Either both happen or neither does — a rejected file, an
+     * unreachable object store or an illegal transition rolls the whole thing
+     * back (no {@code DISPUTED} state, no {@code evidence_files} row, no success
+     * audit). All file validation, storage, the {@code EVIDENCE_ADDED} audit and
+     * the rollback-time object cleanup are reused verbatim from
+     * {@link EvidenceService#deposit}; nothing is duplicated here.
+     */
+    @Transactional
+    public DisputeOpenedDto openDispute(AuthPrincipal actor, Long txId, List<MultipartFile> files,
+                                        String comment, String clientCapturedAt) {
+        // Composite pre-conditions, enforced BEFORE any state change so a bad
+        // request never leaves a half-open dispute: at least one file and a
+        // substantive comment (>= 10 characters after trim).
+        if (files == null || files.isEmpty()) {
+            throw new BadRequestException("At least one evidence file is required to open a dispute");
+        }
+        if (comment == null || comment.trim().length() < 10) {
+            throw new BadRequestException("A comment of at least 10 characters is required to open a dispute");
+        }
+
+        EscrowTransaction tx = transactions.findByIdForUpdate(txId)
+                .orElseThrow(() -> new NotFoundException("Transaction " + txId + " not found"));
+
+        ParticipantRole role = transactionAccess.resolveRole(actor, tx);
+        EscrowState previous = tx.getState();
+
+        EscrowState next;
+        try {
+            next = stateMachine.determineNextState(previous, EscrowEvent.OPEN_DISPUTE, role);
+        } catch (TransitionException ex) {
+            // Durably record the rejected attempt (separate transaction), then reject.
+            auditService.recordFailure(txId, actor.userId(), role, EscrowEvent.OPEN_DISPUTE, previous, ex.getMessage());
+            throw ex;
+        }
+
+        tx.setState(next);
+        transactions.save(tx);
+        auditService.recordSuccess(txId, actor.userId(), role, EscrowEvent.OPEN_DISPUTE, previous, next);
+
+        // Reuse Epic 1 ingestion wholesale: validation, storage, evidence rows,
+        // the EVIDENCE_ADDED audit and rollback-time object cleanup. Called AFTER
+        // the transition so any rejection here rolls the transition back too within
+        // this single unit of work (DISPUTED is already inside deposit's upload
+        // window, so the deposit itself is legal).
+        List<EvidenceFile> evidence = evidenceService.deposit(actor, txId, files, comment, clientCapturedAt);
+
+        publishAfterCommit(tx, previous, next, EscrowEvent.OPEN_DISPUTE, actor.userId());
+
+        return new DisputeOpenedDto(toDto(tx, resolveParties(tx)),
+                evidence.stream().map(EvidenceDto::from).toList());
+    }
+
     @Transactional(readOnly = true)
     public TransactionDetailDto getDetail(AuthPrincipal actor, Long txId) {
         EscrowTransaction tx = transactions.findById(txId)
@@ -116,7 +187,7 @@ public class EscrowService {
         // Membership check: throws ForbiddenException for non-parties. The
         // resolved role is irrelevant for a read, so it is intentionally ignored.
         transactionAccess.resolveRole(actor, tx);
-        List<AuditLogDto> trail = auditLogs.findByTransactionIdOrderByTimestampAsc(txId)
+        List<AuditLogDto> trail = auditLogs.findByTransactionIdOrderByTimestampAscIdAsc(txId)
                 .stream().map(AuditLogDto::from).toList();
         return new TransactionDetailDto(toDto(tx, resolveParties(tx)), trail);
     }
