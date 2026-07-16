@@ -6,7 +6,6 @@ import com.zlecaf.escrow.repository.EscrowTransactionRepository;
 import com.zlecaf.escrow.repository.UserRepository;
 import com.zlecaf.escrow.security.AuthPrincipal;
 import com.zlecaf.escrow.web.ApiExceptions.BadRequestException;
-import com.zlecaf.escrow.web.ApiExceptions.ForbiddenException;
 import com.zlecaf.escrow.web.ApiExceptions.NotFoundException;
 import com.zlecaf.escrow.web.dto.EscrowDtos.*;
 import org.springframework.context.ApplicationEventPublisher;
@@ -32,6 +31,7 @@ public class EscrowService {
     private final AuditLogRepository auditLogs;
     private final EscrowStateMachine stateMachine;
     private final AuditService auditService;
+    private final TransactionAccess transactionAccess;
     private final ApplicationEventPublisher events;
 
     public EscrowService(EscrowTransactionRepository transactions,
@@ -39,12 +39,14 @@ public class EscrowService {
                          AuditLogRepository auditLogs,
                          EscrowStateMachine stateMachine,
                          AuditService auditService,
+                         TransactionAccess transactionAccess,
                          ApplicationEventPublisher events) {
         this.transactions = transactions;
         this.users = users;
         this.auditLogs = auditLogs;
         this.stateMachine = stateMachine;
         this.auditService = auditService;
+        this.transactionAccess = transactionAccess;
         this.events = events;
     }
 
@@ -86,7 +88,7 @@ public class EscrowService {
         EscrowTransaction tx = transactions.findByIdForUpdate(txId)
                 .orElseThrow(() -> new NotFoundException("Transaction " + txId + " not found"));
 
-        ParticipantRole role = resolveRole(actor, tx);
+        ParticipantRole role = transactionAccess.resolveRole(actor, tx);
         EscrowState previous = tx.getState();
 
         EscrowState next;
@@ -111,7 +113,9 @@ public class EscrowService {
     public TransactionDetailDto getDetail(AuthPrincipal actor, Long txId) {
         EscrowTransaction tx = transactions.findById(txId)
                 .orElseThrow(() -> new NotFoundException("Transaction " + txId + " not found"));
-        authorizeView(actor, tx);
+        // Membership check: throws ForbiddenException for non-parties. The
+        // resolved role is irrelevant for a read, so it is intentionally ignored.
+        transactionAccess.resolveRole(actor, tx);
         List<AuditLogDto> trail = auditLogs.findByTransactionIdOrderByTimestampAsc(txId)
                 .stream().map(AuditLogDto::from).toList();
         return new TransactionDetailDto(toDto(tx, resolveParties(tx)), trail);
@@ -125,25 +129,6 @@ public class EscrowService {
     }
 
     // --- helpers ---
-
-    private ParticipantRole resolveRole(AuthPrincipal actor, EscrowTransaction tx) {
-        if (actor.role() == Role.ADMIN) {
-            return ParticipantRole.ADMIN;
-        }
-        if (actor.userId().equals(tx.getBuyerId())) {
-            return ParticipantRole.BUYER;
-        }
-        if (actor.userId().equals(tx.getSellerId())) {
-            return ParticipantRole.SELLER;
-        }
-        throw new ForbiddenException("You are not a party to this transaction");
-    }
-
-    private void authorizeView(AuthPrincipal actor, EscrowTransaction tx) {
-        if (actor.role() == Role.ADMIN) return;
-        if (actor.userId().equals(tx.getBuyerId()) || actor.userId().equals(tx.getSellerId())) return;
-        throw new ForbiddenException("You are not a party to this transaction");
-    }
 
     private void publishAfterCommit(EscrowTransaction tx, EscrowState previous, EscrowState next,
                                     EscrowEvent event, Long actorId) {

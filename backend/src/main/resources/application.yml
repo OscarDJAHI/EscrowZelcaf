@@ -28,6 +28,15 @@ spring:
     # Keep API responsive if the broker is unreachable at startup.
     connection-timeout: 3000ms
 
+  servlet:
+    multipart:
+      # Deliberately set ABOVE the 10 MB per-file business limit so the service
+      # arbitrates the real bound (0 < size <= 10 MB) and returns a clean 400.
+      # The container cap only guards against absurd payloads; breaching it
+      # surfaces as MaxUploadSizeExceededException -> 400 in the handler.
+      max-file-size: 15MB
+      max-request-size: 60MB
+
 escrow:
   jwt:
     # Override in every real environment. Must be >= 32 bytes for HS256.

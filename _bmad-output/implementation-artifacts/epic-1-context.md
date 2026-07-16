@@ -4,7 +4,7 @@
 
 ## Goal
 
-Permettre à toute partie prenante d'une transaction (acheteur, vendeur, arbitre) d'attacher des pièces justificatives dès l'état `FUNDS_LOCKED`, puis de consulter et télécharger **toutes** les pièces du dossier — visibilité contradictoire, ordre chronologique, traçabilité complète. Cet epic est le socle : il embarque toute l'infrastructure d'ingestion (backend de stockage objet, table de preuves, port de stockage isolé, validation du contenu, écriture d'audit, contrôle d'appartenance anti-IDOR) parce que c'est ici qu'elle est requise en premier. Les epics 2, 3 et 4 s'appuient tous dessus. Sans la preuve, l'arbitre ne peut pas trancher : ce socle est le pivot de la confiance de la plateforme.
+Permettre à toute partie prenante d'une transaction (acheteur, vendeur, arbitre) d'attacher des pièces justificatives dès l'état `FUNDS_LOCKED`, puis de consulter et télécharger **toutes** les pièces du dossier — y compris celles de la partie adverse — dans une logique contradictoire tracée. La preuve est le pivot de la confiance dans un séquestre B2B transfrontalier : c'est elle qui permet à un arbitre de trancher équitablement. Cet epic porte en plus toute l'infrastructure d'ingestion (stockage objet, table `evidence_files`, port de stockage, validation du contenu, écriture d'audit, contrôle d'appartenance), car c'est ici qu'elle est requise pour la première fois ; les epics 2 à 4 s'y adossent sans la redéfinir.
 
 ## Stories
 
@@ -17,68 +17,54 @@ Permettre à toute partie prenante d'une transaction (acheteur, vendeur, arbitre
 ## Requirements & Constraints
 
 **Dépôt**
-- Toute partie prenante de la transaction peut attacher 1..N pièces dès que les fonds sont bloqués et jusqu'au verrou d'état terminal ; commentaire optionnel pour les dépôts hors ouverture de litige.
-- Types acceptés : **JPG, PNG, PDF uniquement**, jugés sur le **type réel du contenu** (content-sniffing), jamais sur l'extension ou le `Content-Type` déclaré ; incohérence entre les trois ⇒ rejet.
-- Taille : **0 < taille ≤ 10 485 760 octets**. Fichier vide comme fichier trop gros sont rejetés en 400 (jamais 413/500).
+- Toute partie prenante de la transaction peut attacher 1..N pièces dès `FUNDS_LOCKED` ; un commentaire du déposant est optionnel à ce stade (il ne devient obligatoire qu'à l'ouverture d'un litige, hors epic).
+- Types acceptés : JPG, PNG, PDF **uniquement**, contrôlés sur le type réel du contenu (content-sniffing), jamais sur l'extension ou le `Content-Type` déclaré seuls ; incohérence entre les trois ⇒ rejet.
+- Taille : `0 < taille ≤ 10 485 760` octets. Un fichier vide comme un fichier hors borne est rejeté. La limite est **arbitrée par le service**, pas par le conteneur multipart.
 
 **Consultation & visibilité**
-- **Contradictoire** : acheteur, vendeur et arbitre voient *toutes* les pièces, quelle qu'en soit la provenance. Aucune vue partielle par rôle.
-- Liste triée par ordre chronologique (heure serveur), portant déposant, type de déposant, horodatage, type MIME, taille, commentaire, statut.
-- Une pièce retirée reste visible avec son statut — jamais masquée.
+- Visibilité contradictoire : chaque partie et l'arbitre voient **toutes** les pièces, quelle qu'en soit l'origine.
+- Liste par ordre chronologique croissant, chaque item portant déposant, type de déposant, horodatage, type MIME, taille, commentaire et statut (`ACTIVE`/`WITHDRAWN`). Une pièce retirée reste visible, jamais masquée.
+- Téléchargement du binaire original, servi uniquement après contrôle d'appartenance.
 
-**Sécurité (non négociable)**
-- Toute validation est **serveur** ; les contrôles client sont un confort, jamais l'autorité.
-- Nom de stockage **généré**, jamais dérivé du nom fourni (anti-path-traversal) ; le nom d'origine n'est qu'une métadonnée assainie.
-- Accès aux binaires contrôlé par autorisation — aucune URL publique devinable.
-- Restitution systématique en `Content-Disposition: attachment`, jamais *inline* (anti-XSS stocké via PDF).
+**Sécurité (autorité serveur)**
+- Toute validation est serveur ; le client ne fait que du confort d'UX, il n'est jamais l'autorité.
 - Anti-IDOR : le téléchargement vérifie que la pièce appartient bien à la transaction de l'URL **et** que le demandeur est partie prenante.
-
-**Intégrité**
-- Chaque dépôt (et retrait) produit une entrée d'audit immuable, committée dans la même transaction que l'opération métier — jamais après, jamais en dehors.
-- Aucune suppression physique ; rétention illimitée (POC, aucune purge planifiée).
+- Pas de nom de stockage dérivé du nom fourni (anti-path-traversal) ; le nom d'origine n'est conservé qu'en métadonnée assainie.
+- Restitution en `Content-Disposition: attachment`, jamais *inline* (anti-XSS stocké via PDF).
 - Aucun scan antivirus : risque explicitement accepté pour le POC.
 
-**Observabilité des critères** — Story 1.1 exige un test de round-trip réel prouvant l'identité octet-pour-octet du binaire restitué. « Ça compile » n'est pas un critère.
+**Intégrité & rétention**
+- Chaque dépôt génère une entrée d'audit immuable, cohérente transactionnellement (ACID) avec l'opération métier.
+- Rétention illimitée : aucune purge planifiée pour le POC.
+
+**Codes d'erreur attendus** : `400` (type/taille/contenu invalide), `403` (non partie prenante), `409`/`400` (fenêtre de dépôt fermée), `404`/`403` (pièce étrangère à la transaction).
 
 ## Technical Decisions
 
-**Contexte brownfield.** Aucun starter : la plateforme Spring Boot (couches `web/service/repository/domain`) et la PWA Vue 3/Pinia existent. La règle est de **ratifier les conventions présentes**, pas d'en inventer : injection par constructeur, controllers minces, `@Transactional` porté par le service, DTOs = records dans un holder avec `static from()`, enveloppe d'erreur globale existante (aucun nouveau handler — lever les exceptions maison 400/403/404/409), migrations Flyway versionnées avec `ddl-auto=none`, principal d'authentification injecté, routes authentifiées par défaut.
+**Contexte brownfield.** La plateforme Spring Boot + Vue existe déjà : ratifier les conventions présentes (injection par constructeur, controllers minces, `@Transactional` porté par le service, DTOs en records avec `static from()`, enveloppe d'erreur globale existante, migrations Flyway avec `ddl-auto=none`). Aucun nouveau handler d'exception : lever les exceptions applicatives existantes.
 
-**Port de stockage (l'invariant central).** Le binaire n'est manipulé **que** via une interface de stockage (`store(bytes, contentType) → clé`, `load(clé) → stream`). La clé est **opaque**, de forme `{transaction_id}/{uuid}`. Aucun code hors de l'adaptateur ne connaît MinIO/S3 : c'est ce qui rendra triviale la bascule vers un autre backend (MinIO OSS est archivé — la question est ouverte, la réponse est ce port).
-
-**Fenêtre fondée sur l'état, pas sur l'événement.** Dépôt et retrait autorisés ssi l'état ∈ {`FUNDS_LOCKED`, `SHIPPED`, `DISPUTED`}. Le contrôle est serveur et ne se dérive jamais du dernier événement enregistré.
-
-**Contrôle d'appartenance unique et centralisé.** Tous les endpoints preuve chargent d'abord la transaction et passent par le **même** contrôle « X est-il partie de Y ? » (réutiliser le mécanisme `resolveRole`/`authorizeView` existant). Deux endpoints avec des règles d'accès divergentes = la faille.
-
-**Horodatage.** `created_at` = heure serveur à la réception ; c'est la seule clé de tri. Une éventuelle heure de capture client est conservée dans le payload d'audit, jamais utilisée pour l'ordre.
-
-**Audit.** Réutiliser le writer d'audit unique existant en propagation MANDATORY, avec payload JSONB schemaless enrichi (action, identifiant de pièce, empreinte sha256). **Pas** de nouvelle colonne `action_type`.
-
-**Modèle de données.** Table net-new `evidence_files` (migration `V2`) suivant les idiomes de `V1` : PK BIGSERIAL, `TIMESTAMPTZ`, FK explicites, index `(transaction_id, created_at)`. Colonnes : transaction, déposant (nullable — un dépôt partenaire n'a pas d'utilisateur), type de déposant, société partenaire (nullable), nom d'origine, type MIME contraint, taille, clé de stockage, commentaire, statut, dates de création/retrait, auteur du retrait. Enums en `VARCHAR` : `UploaderType {BUYER, SELLER, ADMIN, CARRIER_PARTNER}`, `EvidenceStatus {ACTIVE, WITHDRAWN}`.
-
-**Contrat multipart figé (transverse).** Noms de champs **identiques** partout — dépôt simple, ouverture composite, endpoint partenaire, rejeu offline : `files[]` (1..N), `comment`, `clientCapturedAt` (ISO-8601, optionnel). Toute divergence casse le rejeu offline en 400. À respecter dès Epic 1 même si les autres consommateurs n'existent pas encore.
-
-**Arbitrage de la taille par le service.** La limite multipart du framework est réglée **au-dessus** de 10 Mo volontairement, pour que le service arbitre et que l'exception d'upload trop gros soit mappée vers 400 dans le handler global — enveloppe d'erreur uniforme.
-
-**Infra.** Un service MinIO est ajouté au docker-compose (volume persistant + bucket provisionné) ; endpoint et credentials injectés via variables d'environnement avec valeur par défaut — **aucun secret en dur**.
-
-**Stack imposée** — Java 21, Spring Boot 3.3.5, PostgreSQL 16, Apache Tika `tika-core` 3.3.1 (content-sniffing), AWS SDK for Java v2 `s3` 2.47.6, MinIO `RELEASE.2025-10-15T17-29-55Z`. Frontend Vue 3 + Pinia + Vite/PWA + Tailwind (existant).
-
-**Direction des dépendances** — `web → service → {repository, audit, port}`. Seul l'adaptateur connaît le backend de stockage. Jamais de dépendance remontante.
+- **Port de stockage (invariant central)** — le binaire n'est manipulé qu'à travers une interface de stockage exposant un `store`/`load` par **clé opaque** de forme `{transaction_id}/{uuid}`, jamais dérivée du nom fourni. L'implémentation POC est un adaptateur MinIO (S3-compatible, AWS SDK Java v2). **Aucun code hors de l'adaptateur ne connaît MinIO/S3** — c'est ce qui rendra la bascule future (S3 managé, chiffrement) indolore.
+- **Modèle de données** — table net-new `evidence_files` (migration `V2`) : transaction, déposant (nullable — un dépôt partenaire n'a pas d'utilisateur), type de déposant, société partenaire (nullable), nom d'origine, MIME, taille, clé de stockage, commentaire, statut, `created_at`, `withdrawn_at`, `withdrawn_by`. Idiomes de `V1` obligatoires (BIGSERIAL PK, TIMESTAMPTZ, FK). Index `(transaction_id, created_at)` — c'est la clé du tri chronologique. Enums en `VARCHAR` : déposant ∈ {BUYER, SELLER, ADMIN, CARRIER_PARTNER}, statut ∈ {ACTIVE, WITHDRAWN}.
+- **Fenêtre fondée sur l'état, pas sur l'événement** — dépôt/retrait autorisés **ssi** l'état ∈ {`FUNDS_LOCKED`, `SHIPPED`, `DISPUTED`}. Jamais dérivé du dernier événement enregistré.
+- **Contrôle d'appartenance unique** — tout endpoint preuve charge d'abord la transaction et passe par le **même** contrôle « X est-il partie de Y ? » déjà présent dans la plateforme. Deux endpoints avec des règles d'accès divergentes = défaut.
+- **Audit dans la même transaction** — écriture via le writer d'audit unique existant en **propagation MANDATORY** (commit atomique avec l'opération métier). Le payload JSONB schemaless est enrichi (action, identifiant de pièce, sha256, heure client de capture si dépôt différé). **Pas** de nouvelle colonne : le schéma d'audit ne bouge pas.
+- **Horodatage : serveur source de vérité** — `created_at` = heure serveur à la réception, seule clé de tri. L'heure client de capture n'est conservée que dans le payload d'audit et n'ordonne jamais rien.
+- **Contrat multipart figé** — noms de champs identiques sur **tous** les points d'entrée (dépôt simple, ouverture composite, partenaire, rejeu offline) : `files[]` (1..N), `comment`, `clientCapturedAt` (ISO-8601, optionnel). Une divergence ici casserait le rejeu offline des epics ultérieurs.
+- **Infrastructure** — service MinIO ajouté au compose (volume persistant + bucket provisionné) ; endpoint et credentials injectés via `${ENV:default}`, aucun secret en dur.
+- **Découpage en couches** — `web → service → {repository, audit, port}` ; l'adaptateur seul connaît le backend de stockage. Aucune dépendance remontante.
+- **Preuve par test observable** — le round-trip de stockage doit être prouvé par un test automatisé (binaire restitué identique octet pour octet), pas par « ça compile ». La garde de fenêtre d'état étend le test de machine à états existant plutôt que de le contourner.
 
 ## UX & Interaction Patterns
 
-Aucun document UX formel n'existe ; les besoins front sont dérivés des parcours narratifs et restent à préciser avec l'utilisateur.
+Aucun document UX formel n'existe ; les besoins ci-dessous sont dérivés des parcours décrits dans le PRD et restent à préciser avec l'utilisateur.
 
-- **Composant de dépôt** sur le détail transaction, disponible dès `FUNDS_LOCKED` : sélection du fichier, aperçu type/taille, champ commentaire optionnel, soumission. Un type non autorisé ou une taille excessive est signalé côté client **avant** l'envoi — confort d'usage, le serveur restant l'autorité.
-- **Liste chronologique des preuves** en vue contradictoire : déposant, horodatage, type, taille, statut actif/retiré, action télécharger, action retirer visible seulement si l'utilisateur est le déposant.
-- Contexte d'usage : réseau instable (ZLECAf), mobile fréquent — le payload doit rester maîtrisé. Miniatures/prévisualisation : optionnel, non requis pour le POC.
+- **Composant de dépôt** sur l'écran de détail transaction, disponible dès `FUNDS_LOCKED` : sélection de fichier, aperçu type/taille, champ commentaire optionnel, soumission. Le client signale un type ou une taille invalides avant l'envoi — confort d'UX, le serveur restant l'autorité.
+- **Liste chronologique des preuves** sur ce même écran (déposant, horodatage, type, taille, statut actif/retiré), avec action « télécharger » et action « retirer » visible seulement pour le déposant de la pièce.
 
 ## Cross-Story Dependencies
 
-- **Story 1.1 débloque tout le reste** : la table, le port de stockage et le backend MinIO conditionnent 1.2 → 1.4. À faire en premier.
-- **Story 1.2 pose la logique de service réutilisée partout** : validation, clé opaque, écriture d'audit. Epic 2 (ouverture composite de litige) et Epic 3 (dépôt partenaire) doivent **réutiliser ce même service** — aucune règle de validation dupliquée. La qualité de ce découpage se paiera dans les deux epics suivants.
-- **Story 1.5 (PWA) dépend des endpoints de 1.2 et 1.3.**
-- Le contrôle d'appartenance sert 1.2, 1.3 et 1.4 : le factoriser dès 1.2 plutôt que de le répliquer.
-- **Le statut `WITHDRAWN`** est lu par la liste (1.3) alors que le retrait n'est implémenté qu'en Epic 2 — modéliser le statut dès 1.1 et l'afficher dès 1.3.
-- **Epics 2, 3 et 4 dépendent tous d'Epic 1** (table, port, validation, audit, contrat multipart).
+- **Story 1.1 est bloquante pour tout le reste** : table, port de stockage et backend objet conditionnent les stories 1.2 à 1.4.
+- Story 1.2 (dépôt) établit la logique de validation, la clé opaque et l'écriture d'audit que **l'ouverture composite de l'Epic 2 doit réutiliser telle quelle** — aucune règle de validation dupliquée. La concevoir comme un service réutilisable, pas comme une méthode de controller.
+- Stories 1.3 et 1.4 dépendent de 1.2 pour exister avec des données ; 1.5 (PWA) consomme les endpoints de 1.2 à 1.4.
+- Le contrôle d'appartenance introduit ici est le point unique réutilisé par les epics 2 à 4.
+- Epics aval : Epic 2 (litige) et Epic 3 (partenaire) dépendent de cet epic pour la table, le port, la validation et l'audit ; Epic 4 (hors-ligne) en dépend via le contrat multipart figé.

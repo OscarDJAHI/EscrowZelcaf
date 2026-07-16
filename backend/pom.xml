@@ -127,6 +127,15 @@
             <version>3.9.0</version>
         </dependency>
 
+        <!-- Apache Tika: content-based MIME sniffing for evidence validation.
+             Explicit version — not managed by the Boot parent BOM. tika-core
+             alone (no parsers) is enough for the magic-byte detection we need. -->
+        <dependency>
+            <groupId>org.apache.tika</groupId>
+            <artifactId>tika-core</artifactId>
+            <version>3.3.1</version>
+        </dependency>
+
         <!-- Test -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
@@ -155,6 +164,14 @@
         <dependency>
             <groupId>org.testcontainers</groupId>
             <artifactId>minio</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <!-- Real Postgres for the evidence deposit round-trip (JSONB audit +
+             Flyway V1/V2). Version comes from the testcontainers BOM pinned in
+             <properties> to 1.21.4 — no explicit version here. -->
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>postgresql</artifactId>
             <scope>test</scope>
         </dependency>
     </dependencies>

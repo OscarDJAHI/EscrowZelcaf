@@ -56,6 +56,27 @@ public class AuditService {
         save(transactionId, actorId, current, current, payload);
     }
 
+    /**
+     * Log an evidence deposit within the caller's transaction (atomic with the
+     * {@code evidence_files} row). A deposit is not a state change, so
+     * {@code previous == next == currentState}. The JSONB payload is schemaless:
+     * no schema change is needed to carry the extra evidence context.
+     */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void recordEvidenceAdded(Long transactionId, Long actorId, ParticipantRole actorRole,
+                                    EscrowState currentState, Long evidenceId, String sha256,
+                                    String clientCapturedAt) {
+        ObjectNode payload = objectMapper.createObjectNode();
+        payload.put("action", "EVIDENCE_ADDED");
+        payload.put("actorRole", actorRole == null ? null : actorRole.name());
+        payload.put("evidenceId", evidenceId);
+        payload.put("sha256", sha256);
+        if (clientCapturedAt != null && !clientCapturedAt.isBlank()) {
+            payload.put("clientCapturedAt", clientCapturedAt);
+        }
+        save(transactionId, actorId, currentState, currentState, payload);
+    }
+
     private void save(Long transactionId, Long actorId, EscrowState previous, EscrowState next, ObjectNode payload) {
         AuditLog logEntry = new AuditLog();
         logEntry.setTransactionId(transactionId);
