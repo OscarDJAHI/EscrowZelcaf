@@ -543,3 +543,27 @@ So that le durcissement ne laisse ni régression fonctionnelle ni bug latent ava
 **Given** la suite de tests
 **When** on exécute `mvn test`
 **Then** tout passe, avec les nouveaux tests A/B/C.
+
+### Story 3.3 : Durcir le stockage des clés HMAC partenaire
+
+As a responsable sécurité,
+I want durcir l'admission, la non-divulgation et le cycle de vie des clés HMAC entrantes,
+So that le secret partenaire ne puisse être ni faible, ni fuité, ni perdre son historique anti-rejeu — avant que la Story 3.2 ne l'utilise pour vérifier les signatures.
+
+**Acceptance Criteria:**
+
+**Given** l'admission d'une clé HMAC entrante (`partner_hmac_keys.secret_key`)
+**When** une clé est provisionnée
+**Then** une **garde de longueur/entropie minimale** est appliquée (≥ 32 octets, cohérent avec la convention du secret JWT `escrow.jwt.secret`) ; une clé trop courte est rejetée. Un test couvre le rejet d'une clé faible.
+
+**Given** l'entité `PartnerHmacKey` (et tout DTO éventuel)
+**When** elle est sérialisée (JSON, log, réponse API)
+**Then** le champ/getter du **secret n'est jamais exposé** (`@JsonIgnore` ou équivalent) — le secret ne peut fuiter par sérialisation. Un test prouve l'absence du secret dans la sérialisation.
+
+**Given** la relation `partner_key_nonces.key_id → partner_hmac_keys` en `ON DELETE CASCADE`
+**When** on envisage la suppression d'une clé
+**Then** l'historique anti-rejeu n'est **jamais effacé silencieusement** : soit les clés sont **désactivées** (drapeau `is_active`) plutôt que hard-deletées, soit la FK est `RESTRICT`/`NO ACTION` (suppression bloquée tant qu'un historique existe). Le choix est documenté et testé. `key_id` est **UNIQUE** au niveau table (invariant de résolution key-id → clé).
+
+**Given** la suite de tests
+**When** on exécute `mvn test`
+**Then** tout passe, avec les nouveaux tests (rejet clé faible, secret non sérialisé, cycle de vie sûr).
