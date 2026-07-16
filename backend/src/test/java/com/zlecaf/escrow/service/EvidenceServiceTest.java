@@ -17,6 +17,8 @@ import com.zlecaf.escrow.service.storage.EvidenceStorage;
 import com.zlecaf.escrow.web.ApiExceptions.ConflictException;
 import com.zlecaf.escrow.web.ApiExceptions.ForbiddenException;
 import com.zlecaf.escrow.web.ApiExceptions.BadRequestException;
+import com.zlecaf.escrow.web.ApiExceptions.NotFoundException;
+import com.zlecaf.escrow.web.dto.EvidenceDtos.EvidenceDto;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -37,6 +39,7 @@ import java.io.ByteArrayInputStream;
 import java.io.InputStream;
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -338,5 +341,156 @@ class EvidenceServiceTest {
                 .isInstanceOf(BadRequestException.class);
 
         assertThat(evidenceFiles.count()).isZero();
+    }
+
+    // --- Story 1.3: chronological list ---
+
+    /**
+     * Persists one evidence row directly (bypassing the deposit path) so tests can
+     * pin created_at and status explicitly. @PrePersist only sets created_at when
+     * null, so an explicit value survives. Storage keys are unique (uq constraint).
+     */
+    private EvidenceFile persistEvidence(Long txId, Long uploaderId, UploaderType type,
+                                         Instant createdAt, EvidenceStatus status,
+                                         Instant withdrawnAt, Long withdrawnByUserId) {
+        EvidenceFile e = new EvidenceFile();
+        e.setTransactionId(txId);
+        e.setUploadedByUserId(uploaderId);
+        e.setUploaderType(type);
+        e.setPartnerCompanyId(null);
+        e.setOriginalFilename("evidence.pdf");
+        e.setMimeType("application/pdf");
+        e.setSizeBytes(123L);
+        e.setStorageKey(txId + "/" + UUID.randomUUID());
+        e.setComment("proof");
+        e.setStatus(status);
+        e.setCreatedAt(createdAt);
+        e.setWithdrawnAt(withdrawnAt);
+        e.setWithdrawnByUserId(withdrawnByUserId);
+        return em.persistAndFlush(e);
+    }
+
+    private EvidenceFile persistActiveEvidence(Long txId, Long uploaderId, UploaderType type, Instant createdAt) {
+        return persistEvidence(txId, uploaderId, type, createdAt, EvidenceStatus.ACTIVE, null, null);
+    }
+
+    @Test
+    @DisplayName("list returns every piece sorted by created_at ascending, regardless of insertion order")
+    void listSortsByCreatedAtAscending() {
+        User buyer = persistUser("buyerL1@example.com", Role.BUYER);
+        User seller = persistUser("sellerL1@example.com", Role.SELLER);
+        EscrowTransaction tx = persistTransaction(buyer.getId(), seller.getId(), EscrowState.FUNDS_LOCKED);
+        AuthPrincipal actor = new AuthPrincipal(buyer.getId(), buyer.getEmail(), Role.BUYER);
+
+        Instant t0 = Instant.parse("2026-07-15T10:00:00Z");
+        // Persist out of chronological order to prove the query, not insertion, sorts.
+        EvidenceFile middle = persistActiveEvidence(tx.getId(), buyer.getId(), UploaderType.BUYER, t0.plusSeconds(60));
+        EvidenceFile oldest = persistActiveEvidence(tx.getId(), seller.getId(), UploaderType.SELLER, t0);
+        EvidenceFile newest = persistActiveEvidence(tx.getId(), buyer.getId(), UploaderType.BUYER, t0.plusSeconds(120));
+
+        List<EvidenceDto> result = evidenceService.list(actor, tx.getId());
+
+        assertThat(result).extracting(EvidenceDto::id)
+                .containsExactly(oldest.getId(), middle.getId(), newest.getId());
+        assertThat(result).extracting(EvidenceDto::createdAt)
+                .containsExactly(t0, t0.plusSeconds(60), t0.plusSeconds(120));
+    }
+
+    @Test
+    @DisplayName("list breaks created_at ties deterministically by id ascending")
+    void listTieBreaksByIdWhenCreatedAtEqual() {
+        User buyer = persistUser("buyerL7@example.com", Role.BUYER);
+        User seller = persistUser("sellerL7@example.com", Role.SELLER);
+        EscrowTransaction tx = persistTransaction(buyer.getId(), seller.getId(), EscrowState.FUNDS_LOCKED);
+        AuthPrincipal actor = new AuthPrincipal(buyer.getId(), buyer.getEmail(), Role.BUYER);
+
+        // Same created_at for both rows (as a batch deposit stamps within one instant):
+        // order must fall back to id ascending, i.e. insertion order.
+        Instant tie = Instant.parse("2026-07-15T10:00:00Z");
+        EvidenceFile first = persistActiveEvidence(tx.getId(), buyer.getId(), UploaderType.BUYER, tie);
+        EvidenceFile second = persistActiveEvidence(tx.getId(), seller.getId(), UploaderType.SELLER, tie);
+
+        List<EvidenceDto> result = evidenceService.list(actor, tx.getId());
+
+        assertThat(result).extracting(EvidenceDto::id)
+                .containsExactly(first.getId(), second.getId());
+    }
+
+    @Test
+    @DisplayName("list surfaces pieces from every uploader (BUYER/SELLER/ADMIN) to a buyer caller — contradictory visibility")
+    void listReturnsAllUploaderTypes() {
+        User buyer = persistUser("buyerL2@example.com", Role.BUYER);
+        User seller = persistUser("sellerL2@example.com", Role.SELLER);
+        User admin = persistUser("adminL2@example.com", Role.ADMIN);
+        EscrowTransaction tx = persistTransaction(buyer.getId(), seller.getId(), EscrowState.DISPUTED);
+        AuthPrincipal actor = new AuthPrincipal(buyer.getId(), buyer.getEmail(), Role.BUYER);
+
+        Instant t0 = Instant.parse("2026-07-15T10:00:00Z");
+        persistActiveEvidence(tx.getId(), buyer.getId(), UploaderType.BUYER, t0);
+        persistActiveEvidence(tx.getId(), seller.getId(), UploaderType.SELLER, t0.plusSeconds(1));
+        persistActiveEvidence(tx.getId(), admin.getId(), UploaderType.ADMIN, t0.plusSeconds(2));
+
+        List<EvidenceDto> result = evidenceService.list(actor, tx.getId());
+
+        assertThat(result).hasSize(3)
+                .extracting(EvidenceDto::uploaderType)
+                .containsExactly(UploaderType.BUYER, UploaderType.SELLER, UploaderType.ADMIN);
+    }
+
+    @Test
+    @DisplayName("list keeps a WITHDRAWN piece visible alongside an ACTIVE one, with its status")
+    void listIncludesWithdrawnPieces() {
+        User buyer = persistUser("buyerL3@example.com", Role.BUYER);
+        User seller = persistUser("sellerL3@example.com", Role.SELLER);
+        EscrowTransaction tx = persistTransaction(buyer.getId(), seller.getId(), EscrowState.DISPUTED);
+        AuthPrincipal actor = new AuthPrincipal(buyer.getId(), buyer.getEmail(), Role.BUYER);
+
+        Instant t0 = Instant.parse("2026-07-15T10:00:00Z");
+        EvidenceFile active = persistActiveEvidence(tx.getId(), buyer.getId(), UploaderType.BUYER, t0);
+        // WITHDRAWN row must carry withdrawn_at + withdrawn_by_user_id (V3 CHECK).
+        EvidenceFile withdrawn = persistEvidence(tx.getId(), seller.getId(), UploaderType.SELLER,
+                t0.plusSeconds(60), EvidenceStatus.WITHDRAWN, t0.plusSeconds(90), seller.getId());
+
+        List<EvidenceDto> result = evidenceService.list(actor, tx.getId());
+
+        assertThat(result).hasSize(2);
+        assertThat(result.get(0).id()).isEqualTo(active.getId());
+        assertThat(result.get(0).status()).isEqualTo(EvidenceStatus.ACTIVE);
+        assertThat(result.get(1).id()).isEqualTo(withdrawn.getId());
+        assertThat(result.get(1).status()).isEqualTo(EvidenceStatus.WITHDRAWN);
+    }
+
+    @Test
+    @DisplayName("list returns an empty list for a transaction with no evidence")
+    void listReturnsEmptyWhenNoEvidence() {
+        User buyer = persistUser("buyerL4@example.com", Role.BUYER);
+        User seller = persistUser("sellerL4@example.com", Role.SELLER);
+        EscrowTransaction tx = persistTransaction(buyer.getId(), seller.getId(), EscrowState.FUNDS_LOCKED);
+        AuthPrincipal actor = new AuthPrincipal(seller.getId(), seller.getEmail(), Role.SELLER);
+
+        assertThat(evidenceService.list(actor, tx.getId())).isEmpty();
+    }
+
+    @Test
+    @DisplayName("list rejects a non-party with ForbiddenException")
+    void listNonPartyIsForbidden() {
+        User buyer = persistUser("buyerL5@example.com", Role.BUYER);
+        User seller = persistUser("sellerL5@example.com", Role.SELLER);
+        User stranger = persistUser("strangerL5@example.com", Role.BUYER);
+        EscrowTransaction tx = persistTransaction(buyer.getId(), seller.getId(), EscrowState.FUNDS_LOCKED);
+        AuthPrincipal actor = new AuthPrincipal(stranger.getId(), stranger.getEmail(), Role.BUYER);
+
+        assertThatThrownBy(() -> evidenceService.list(actor, tx.getId()))
+                .isInstanceOf(ForbiddenException.class);
+    }
+
+    @Test
+    @DisplayName("list on an unknown transaction throws NotFoundException")
+    void listUnknownTransactionNotFound() {
+        User buyer = persistUser("buyerL6@example.com", Role.BUYER);
+        AuthPrincipal actor = new AuthPrincipal(buyer.getId(), buyer.getEmail(), Role.BUYER);
+
+        assertThatThrownBy(() -> evidenceService.list(actor, 999_999L))
+                .isInstanceOf(NotFoundException.class);
     }
 }

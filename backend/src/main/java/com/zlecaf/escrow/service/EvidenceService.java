@@ -13,6 +13,7 @@ import com.zlecaf.escrow.service.storage.EvidenceStorage;
 import com.zlecaf.escrow.web.ApiExceptions.BadRequestException;
 import com.zlecaf.escrow.web.ApiExceptions.ConflictException;
 import com.zlecaf.escrow.web.ApiExceptions.NotFoundException;
+import com.zlecaf.escrow.web.dto.EvidenceDtos.EvidenceDto;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
@@ -141,6 +142,25 @@ public class EvidenceService {
             saved.add(evidence);
         }
         return saved;
+    }
+
+    /**
+     * Lists every evidence row of a transaction the actor is party to, sorted by
+     * server-time {@code created_at} ascending. A pure, non-locking read: same
+     * membership check as {@link #deposit} and {@code EscrowService.getDetail}
+     * (403 for non-parties, resolved role intentionally ignored), no storage
+     * access, WITHDRAWN rows included (AD-4).
+     *
+     * @throws NotFoundException transaction unknown (404)
+     * @throws com.zlecaf.escrow.web.ApiExceptions.ForbiddenException non-party (403)
+     */
+    @Transactional(readOnly = true)
+    public List<EvidenceDto> list(AuthPrincipal actor, Long txId) {
+        EscrowTransaction tx = transactions.findById(txId)
+                .orElseThrow(() -> new NotFoundException("Transaction " + txId + " not found"));
+        access.resolveRole(actor, tx);   // 403 if not a party; role ignored for a read
+        return evidenceFiles.findByTransactionIdOrderByCreatedAtAscIdAsc(txId)
+                .stream().map(EvidenceDto::from).toList();
     }
 
     private void requireUploadWindow(EscrowState state) {
