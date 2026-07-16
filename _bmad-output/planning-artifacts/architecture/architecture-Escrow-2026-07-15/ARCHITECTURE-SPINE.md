@@ -7,7 +7,7 @@ paradigm: 'En couches (package-by-layer Spring) + un port/adaptateur pour le sto
 scope: "Fonctionnalité Evidence Upload ajoutée à la plateforme Escrow B2B ZLECAf : dépôt/consultation/téléchargement/retrait de pièces justificatives, preuve obligatoire à l'ouverture d'un litige, dépôt partenaire livreur (HMAC), dépôt hors-ligne (PWA)."
 status: final
 created: '2026-07-15'
-updated: '2026-07-15'
+updated: '2026-07-16'
 binds: [FR-1, FR-2, FR-3, FR-4, FR-5, FR-6, FR-7, FR-8, FR-9, FR-10, FR-11, FR-12, FR-13, FR-14, FR-15, FR-16, NFR-1, NFR-2, NFR-3, NFR-4, NFR-5]
 sources:
   - _bmad-output/planning-artifacts/prds/prd-Escrow-2026-07-15/prd.md
@@ -111,6 +111,11 @@ Le cœur durable : décisions qu'un futur développeur ne pourrait pas déduire 
 - **Binds:** FR-10
 - **Prevents:** ordre chronologique faussé par des horloges clientes divergentes (surtout dépôts offline différés).
 - **Rule:** `created_at` = **heure serveur à la réception** ; c'est la clé du tri chronologique (index `(transaction_id, created_at)`). L'heure client de capture est conservée dans le `payload` d'audit (AD-5), jamais utilisée pour l'ordre.
+
+### AD-12 — Intégrité de `evidence_files` garantie **en base**
+- **Binds:** FR-12, FR-13, NFR-3, et toute écriture de preuve (Epic 2/3)
+- **Prevents:** preuve inattribuable (`CARRIER_PARTNER` sans société, ou humain portant une société) ; retrait sans trace (`WITHDRAWN` sans `withdrawn_at`/`by`) ; valeur d'enum invalide empoisonnant les lectures ; duplication de la relation métadonnée↔objet.
+- **Rule:** les invariants de la table ne reposent **pas** sur la seule discipline applicative — ils sont tenus par des contraintes **DB** (migration `V3`) : `CHECK` sur `uploader_type`/`status`, `CHECK` d'attribution (`CARRIER_PARTNER` ⟺ `partner_company_id` non-null ∧ `uploaded_by_user_id` null ; humain ⟺ l'inverse), `CHECK` de retrait (`ACTIVE` ⟺ champs de retrait null ; `WITHDRAWN` ⟺ non-null), et `UNIQUE(storage_key)`. *(Ajouté 2026-07-16 : trou d'ERD remonté en Story 1.1/1.2, tranché avant qu'Epic 2/3 n'écrivent des lignes.)*
 
 ### Direction des dépendances
 
