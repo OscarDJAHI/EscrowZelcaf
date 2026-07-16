@@ -36,6 +36,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 @Testcontainers
 class PartnerKeyStoreTest {
 
+    /** Inbound HMAC secret satisfying the {@code ck_partner_hmac_keys_secret_len} CHECK (36 bytes >= 32). */
+    private static final String VALID_SECRET = "INBOUND-HMAC-SECRET-0123456789ABCDEF";
+
     @Container
     static final PostgreSQLContainer<?> POSTGRES =
             new PostgreSQLContainer<>("postgres:16-alpine");
@@ -86,20 +89,20 @@ class PartnerKeyStoreTest {
     @DisplayName("Active key resolves to its inbound secret and owning company")
     void activeKeyResolves() {
         Company company = persistCompany("Carrier Active");
-        persistKey("key-active", company.getId(), "INBOUND-SECRET", true);
+        persistKey("key-active", company.getId(), VALID_SECRET, true);
 
         Optional<PartnerHmacKey> resolved = partnerKeys.findByKeyIdAndActiveTrue("key-active");
 
         assertThat(resolved).isPresent();
         assertThat(resolved.get().getCompanyId()).isEqualTo(company.getId());
-        assertThat(resolved.get().getSecretKey()).isEqualTo("INBOUND-SECRET");
+        assertThat(resolved.get().getSecretKey()).isEqualTo(VALID_SECRET);
     }
 
     @Test
     @DisplayName("Inactive key is not resolved (immediate revocation)")
     void inactiveKeyNotResolved() {
         Company company = persistCompany("Carrier Revoked");
-        persistKey("key-inactive", company.getId(), "INBOUND-SECRET", false);
+        persistKey("key-inactive", company.getId(), VALID_SECRET, false);
 
         assertThat(partnerKeys.findByKeyIdAndActiveTrue("key-inactive")).isEmpty();
     }
@@ -117,11 +120,11 @@ class PartnerKeyStoreTest {
         outbound.setActive(true);
         outbound = webhookSubscriptions.save(outbound);
 
-        persistKey("key-both", company.getId(), "INBOUND-HMAC-SECRET", true);
+        persistKey("key-both", company.getId(), VALID_SECRET, true);
 
         // Resolving the inbound credential yields the inbound secret only.
         PartnerHmacKey resolved = partnerKeys.findByKeyIdAndActiveTrue("key-both").orElseThrow();
-        assertThat(resolved.getSecretKey()).isEqualTo("INBOUND-HMAC-SECRET");
+        assertThat(resolved.getSecretKey()).isEqualTo(VALID_SECRET);
         assertThat(resolved.getCompanyId()).isEqualTo(company.getId());
 
         // The outbound webhook secret is untouched and still distinct.
@@ -133,7 +136,7 @@ class PartnerKeyStoreTest {
     @DisplayName("Replaying (key_id, nonce) under the same key-id is rejected by the composite UNIQUE")
     void replaySameKeyIdRejected() {
         Company company = persistCompany("Carrier Replay");
-        persistKey("key-replay", company.getId(), "S", true);
+        persistKey("key-replay", company.getId(), VALID_SECRET, true);
 
         assertThat(nonces.existsByKeyIdAndNonce("key-replay", "nonce-1")).isFalse();
 
@@ -150,8 +153,8 @@ class PartnerKeyStoreTest {
     @DisplayName("Same nonce is allowed under two distinct key-ids (uniqueness scoped per key-id)")
     void sameNonceDifferentKeyIdAllowed() {
         Company company = persistCompany("Carrier Scoped");
-        persistKey("key-a", company.getId(), "SA", true);
-        persistKey("key-b", company.getId(), "SB", true);
+        persistKey("key-a", company.getId(), VALID_SECRET, true);
+        persistKey("key-b", company.getId(), VALID_SECRET, true);
 
         nonces.saveAndFlush(newNonce("key-a", "shared-nonce", Instant.now()));
         // Same nonce string, different key-id: no constraint spans the two.
@@ -165,7 +168,7 @@ class PartnerKeyStoreTest {
     @DisplayName("Bounded purge deletes nonces older than the cutoff and keeps the recent tail")
     void boundedPurge() {
         Company company = persistCompany("Carrier Purge");
-        persistKey("key-purge", company.getId(), "SP", true);
+        persistKey("key-purge", company.getId(), VALID_SECRET, true);
 
         Instant now = Instant.now();
         Instant cutoff = now.minus(5, ChronoUnit.MINUTES);
@@ -180,5 +183,87 @@ class PartnerKeyStoreTest {
         assertThat(deleted).isEqualTo(1);
         assertThat(nonces.existsByKeyIdAndNonce("key-purge", "old")).isFalse();
         assertThat(nonces.existsByKeyIdAndNonce("key-purge", "fresh")).isTrue();
+    }
+
+    @Test
+    @DisplayName("A secret shorter than 32 bytes is rejected at admission by the length CHECK")
+    void weakSecretRejected() {
+        Company company = persistCompany("Carrier Weak");
+
+        PartnerHmacKey weak = new PartnerHmacKey();
+        weak.setKeyId("key-weak");
+        weak.setCompanyId(company.getId());
+        weak.setSecretKey("tooshort");
+        weak.setActive(true);
+
+        assertThatThrownBy(() -> partnerKeys.saveAndFlush(weak))
+                .isInstanceOf(DataIntegrityViolationException.class)
+                // Pin the failure to the length CHECK, not any incidental integrity violation.
+                .hasStackTraceContaining("ck_partner_hmac_keys_secret_len");
+    }
+
+    @Test
+    @DisplayName("The length CHECK boundary is exactly >= 32 bytes (32 accepted, 31 rejected)")
+    void secretLengthBoundaryEnforced() {
+        Company company = persistCompany("Carrier Boundary");
+
+        // 32 bytes -> exactly at the floor -> accepted. (Done first: the reject below
+        // aborts the surrounding @DataJpaTest transaction, so it must be the last statement.)
+        PartnerHmacKey atFloorKey = new PartnerHmacKey();
+        atFloorKey.setKeyId("key-32");
+        atFloorKey.setCompanyId(company.getId());
+        atFloorKey.setSecretKey("B".repeat(32));
+        atFloorKey.setActive(true);
+        partnerKeys.saveAndFlush(atFloorKey);
+        assertThat(partnerKeys.findByKeyIdAndActiveTrue("key-32")).isPresent();
+
+        // 31 bytes -> just under the floor -> rejected by ck_partner_hmac_keys_secret_len.
+        PartnerHmacKey underKey = new PartnerHmacKey();
+        underKey.setKeyId("key-31");
+        underKey.setCompanyId(company.getId());
+        underKey.setSecretKey("A".repeat(31));
+        underKey.setActive(true);
+        assertThatThrownBy(() -> partnerKeys.saveAndFlush(underKey))
+                .isInstanceOf(DataIntegrityViolationException.class)
+                .hasStackTraceContaining("ck_partner_hmac_keys_secret_len");
+    }
+
+    @Test
+    @DisplayName("Serializing the key never leaks the secret (field name nor value)")
+    void secretNotSerialized() throws Exception {
+        Company company = persistCompany("Carrier Serialize");
+        PartnerHmacKey key = persistKey("key-serialize", company.getId(), VALID_SECRET, true);
+
+        String json = new com.fasterxml.jackson.databind.ObjectMapper()
+                .findAndRegisterModules()
+                .writeValueAsString(key);
+
+        assertThat(json).doesNotContain("secretKey");
+        assertThat(json).doesNotContain(VALID_SECRET);
+    }
+
+    @Test
+    @DisplayName("Hard-deleting a key that has nonce history is blocked by the FK RESTRICT")
+    void keyDeleteRestrictedByNonceHistory() {
+        Company company = persistCompany("Carrier Restrict");
+        PartnerHmacKey key = persistKey("key-restrict", company.getId(), VALID_SECRET, true);
+        nonces.saveAndFlush(newNonce("key-restrict", "nonce-kept", Instant.now()));
+
+        assertThatThrownBy(() -> {
+            partnerKeys.delete(key);
+            partnerKeys.flush();
+        }).isInstanceOf(DataIntegrityViolationException.class);
+    }
+
+    @Test
+    @DisplayName("A key with no nonce history is still hard-deletable (RESTRICT blocks only history loss)")
+    void nonceFreeKeyIsDeletable() {
+        Company company = persistCompany("Carrier Deletable");
+        PartnerHmacKey key = persistKey("key-nofree", company.getId(), VALID_SECRET, true);
+
+        partnerKeys.delete(key);
+        partnerKeys.flush();
+
+        assertThat(partnerKeys.findByKeyIdAndActiveTrue("key-nofree")).isEmpty();
     }
 }

@@ -1,5 +1,6 @@
 package com.zlecaf.escrow.domain;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import jakarta.persistence.*;
 
 import java.time.Instant;
@@ -50,6 +51,9 @@ public class PartnerHmacKey {
     public Long getCompanyId() { return companyId; }
     public void setCompanyId(Long companyId) { this.companyId = companyId; }
 
+    // WRITE_ONLY: the secret is never serialized out (JSON/log/API), but stays bindable
+    // on input so a future provisioning path (Story 3.2 / admin) can still set it.
+    @JsonProperty(access = JsonProperty.Access.WRITE_ONLY)
     public String getSecretKey() { return secretKey; }
     public void setSecretKey(String secretKey) { this.secretKey = secretKey; }
 

@@ -1,40 +1,43 @@
-# Epic 3 Context : Preuve neutre du transporteur (partenaire machine)
+# Epic 3 Context: Preuve neutre du transporteur (partenaire machine)
 
 <!-- Generated from planning artifacts. Regenerate with compile-epic-context if planning docs change. -->
 
 ## Goal
 
-Cet epic ouvre la plateforme à un acteur non humain : un partenaire logistique (transporteur) qui pousse des preuves horodatées de l'état de la marchandise via un endpoint API signé, sans session utilisateur. La valeur est d'obtenir une preuve **neutre** (ni acheteur ni vendeur), authentifiée cryptographiquement, restreinte aux transactions que la société du partenaire sert réellement, et visible de toutes les parties — potentiellement **avant même** l'ouverture d'un litige. L'enjeu principal est la sécurité machine-à-machine : authentification par HMAC-SHA256 avec clé dédiée entrante, protection anti-rejeu (fenêtre temporelle + nonce), et cloisonnement strict par société. L'epic réutilise toute l'infrastructure d'ingestion posée par l'Epic 1 (table, stockage, validation, audit) : il n'apporte que l'authentification partenaire et l'attribution machine des pièces.
+Cet epic ouvre la plateforme à un contributeur **machine** : un partenaire logistique (livreur/transporteur) pousse des preuves horodatées de l'état de la marchandise via un endpoint API signé, sans écran ni compte interactif. L'enjeu est double : (1) permettre un dépôt authentifié par signature HMAC-SHA256, strictement limité aux transactions impliquant la propre société du partenaire, dont les pièces deviennent visibles de toutes les parties — potentiellement avant même l'ouverture d'un litige, où elles servent de preuve neutre ; (2) durcir le socle de sécurité (clés entrantes, magasin de nonces) pour qu'aucun secret partenaire ne puisse être faible, fuité, ni perdre son historique anti-rejeu. Il capitalise sur le socle d'ingestion déjà livré (table `evidence_files`, port de stockage, validation, audit) sans le dupliquer.
 
 ## Stories
 
 - Story 3.1 : Provisionner les clés HMAC entrantes & le magasin de nonces
 - Story 3.2 : Déposer une preuve partenaire via API signée
+- Story 3.3 : Durcir le stockage des clés HMAC partenaire
 
 ## Requirements & Constraints
 
-- Un partenaire dépose **uniquement** sur des transactions où sa société est impliquée ; sinon `403`. Le cloisonnement par société est la garde d'autorisation centrale de l'epic (équivalent machine du contrôle d'appartenance humain).
-- L'authentification repose sur une signature HMAC-SHA256 portée par un en-tête `X-Escrow-Signature`, accompagnée d'un `key-id` partenaire, d'un timestamp et d'un nonce. La signature doit couvrir le **corps + les métadonnées + le timestamp** (pas seulement le corps).
-- Anti-rejeu **non négociable** : timestamp accepté dans une fenêtre de **±5 minutes** ; nonce jamais réutilisé pour un même `key-id`. Un timestamp hors fenêtre ou un nonce déjà vu ⇒ rejet `401`/`403`.
-- La clé HMAC entrante est **dédiée** et distincte du secret des webhooks **sortants** ; ne jamais réutiliser le secret sortant en entrée.
-- Rétention des nonces **≥ durée de la fenêtre** de validité : toute purge en deçà de 5 min rouvre une fenêtre de rejeu et est interdite.
-- Une pièce partenaire est attribuée en `uploader_type = CARRIER_PARTNER`, avec `partner_company_id` renseigné et `uploaded_by_user_id` null (attribution machine, pas humaine).
-- **Aucun scan antivirus** n'est réalisé sur les fichiers partenaire : risque explicitement accepté (POC), à documenter.
-- Le dépôt réutilise la validation d'ingestion existante (content-sniffing du type réel, bornes de taille, clé de stockage opaque) et écrit une entrée d'audit dans la même transaction que le dépôt.
+- **Dépôt partenaire signé (FR-5)** : endpoint machine dédié `POST /api/v1/partner/escrow/{id}/evidence`, authentifié par signature HMAC-SHA256. Le partenaire ne dépose que sur les transactions impliquant sa propre société (`companies`) ; toute tentative sur une transaction tierce est rejetée `403`.
+- **Sécurité de la signature (NFR-5)** : clé HMAC **dédiée par partenaire**, identifiée par un **key-id** dans la requête, **distincte** du secret des webhooks *sortants* (jamais réutilisé). La signature couvre le **corps** (fichier + métadonnées) **et un horodatage**. Un **nonce anti-rejeu** est stocké et vérifié.
+- **Anti-rejeu figé** : fenêtre de tolérance du timestamp **±5 min** ; unicité du nonce **scindée par key-id** ; **rétention des nonces ≥ durée de fenêtre** (une purge < 5 min rouvrirait une fenêtre de rejeu). Rejet `401/403` si le nonce a déjà été vu pour ce key-id ou si le timestamp est hors fenêtre.
+- **Visibilité contradictoire anticipée** : la pièce partenaire est visible de toutes les parties, y compris avant l'ouverture d'un litige.
+- **Absence de scan malveillant (NFR-6)** : aucun scan antivirus ; le fichier partenaire est ingéré sans scan, risque explicitement accepté et documenté (POC).
+- **Retour synchrone suffisant** : le code HTTP synchrone (2xx/4xx) fait office de réponse au partenaire ; pas de notification asynchrone (POC).
+- **Durcissement des clés (Story 3.3)** : garde d'entropie/longueur minimale à l'admission (≥ 32 octets, cohérent avec la convention du secret JWT) rejetant une clé faible ; le secret n'est **jamais** exposé en sérialisation (JSON, log, réponse API) ; le cycle de vie ne peut jamais effacer silencieusement l'historique anti-rejeu (désactivation logique ou FK `RESTRICT`, choix documenté et testé) ; `key-id` unique au niveau table.
 
 ## Technical Decisions
 
-- **Route et sécurité** : `POST /api/v1/partner/escrow/{id}/evidence`, exposée en `permitAll` (à la manière des webhooks entrants `/webhooks/incoming/**`) — l'autorisation vient exclusivement de la signature, pas d'une session.
-- **Réutilisation de l'util existant** : la vérification de signature s'appuie sur l'util `HmacSigner` (comparaison constant-time) déjà présent pour les webhooks ; l'epic l'**étend** avec la logique nonce + timestamp plutôt que de la réimplémenter. Étendre `HmacSignerTest` : signature couvrant corps+timestamp, nonce rejoué (même key-id) rejeté, timestamp hors ±5 min rejeté.
-- **Contrôleur dédié** : `PartnerEvidenceController` (couche web mince) déléguant au service ; toutes les frontières `@Transactional` restent dans la couche service.
-- **Persistance (migration Flyway du partenaire)** : nouvelle migration ajoutant (1) un stockage des **clés HMAC entrantes** indexé par `key-id` et lié à une ligne `companies`, distinct du `secret_key` sortant de `webhook_subscriptions` ; (2) un magasin de **nonces** `(key_id, nonce, seen_at)` dont l'unicité est scindée par `key-id` via une clé composite `(key_id, nonce)`. Respecter les idiomes des migrations existantes (BIGSERIAL PK, TIMESTAMPTZ, FK `REFERENCES`, index).
-- **Résolution du key-id** : un `key-id` doit être résolvable vers la `companies` du partenaire ; c'est cette société qui est confrontée à la transaction `{id}` pour la garde d'autorisation.
-- **Contraintes DB d'attribution** : la ligne `evidence_files` d'une preuve partenaire est validée par les `CHECK` de la table (posés par l'Epic 1) : `CARRIER_PARTNER ⟺ partner_company_id non-null ∧ uploaded_by_user_id null`. L'attribution ne repose pas sur la seule discipline applicative.
-- **Contrat multipart figé** : mêmes noms de champs (`files[]`, `comment`, `clientCapturedAt`) que les endpoints humains, pour un contrat d'ingestion uniforme.
+- **Modèle d'authentification** : route `permitAll` à la manière de `/webhooks/incoming/**` (pas de JWT), auth portée entièrement par la signature. En-têtes attendus : key-id partenaire, `X-Escrow-Signature`, timestamp, nonce ; corps multipart signé.
+- **Réutilisation de l'util existant** : la vérification s'appuie sur `HmacSigner.sign/verify` (comparaison à temps constant) déjà en place pour les webhooks ; l'epic y **ajoute** la gestion nonce + timestamp, sans nouveau mécanisme cryptographique.
+- **Résolution key-id → société** : chaque clé entrante porte un key-id résolvable vers une `companies`, base du contrôle « société impliquée dans la transaction ». Unicité du nonce par **clé composite `(key_id, nonce)`**.
+- **Persistance dédiée** : stockage des clés HMAC entrantes (par key-id, lié à `companies`, distinct du `secret_key` sortant de `webhook_subscriptions`) et magasin de nonces `(key_id, nonce, seen_at)`, provisionnés par migration Flyway. Le contrat de sécurité fixe les invariants, pas le schéma exact.
+- **Ligne `evidence_files` partenaire** : `uploader_type = CARRIER_PARTNER`, `partner_company_id` renseigné, `uploaded_by_user_id` null. Cet invariant d'attribution est tenu par une contrainte `CHECK` en base (CARRIER_PARTNER ⟺ société non-null ∧ user null), pas seulement par la discipline applicative.
+- **Réutilisation stricte du socle d'ingestion** : validation du type réel (content-sniffing), bornes de taille, clé de stockage opaque `{transaction_id}/{uuid}`, écriture d'audit — tout passe par la **même logique de service** que le dépôt utilisateur ; aucune règle dupliquée.
+- **Contrôle d'appartenance centralisé (anti-IDOR)** : réutiliser le contrôle unique de la plateforme ; ici « la société du partenaire est-elle impliquée dans la transaction {id} ? ».
+- **Horodatage serveur source de vérité** : `created_at` = heure de réception serveur (clé du tri chronologique) ; l'heure client éventuelle reste conservée dans le payload d'audit, jamais utilisée pour l'ordre.
+- **Audit atomique** : chaque dépôt partenaire écrit une entrée `audit_logs` (`EVIDENCE_ADDED`, `evidenceId`, `sha256`) dans la même transaction, en propagation MANDATORY.
+- **Plancher de preuve** : une preuve partenaire compte dans le plancher (≥ 1 pièce active toutes parties confondues) qui gouverne le retrait en état `DISPUTED`.
+- **Contrat multipart figé** : noms de champs partagés identiques à ceux des autres points de dépôt — `files[]` (1..N), `comment`, `clientCapturedAt` (ISO-8601, optionnel).
 
 ## Cross-Story Dependencies
 
-- **Dépend de l'Epic 1** (prérequis dur) : table `evidence_files`, port `EvidenceStorage`, validation d'ingestion et écriture d'audit sont réutilisés tels quels ; l'Epic 3 n'ajoute que l'authentification partenaire.
-- **Dépend de l'Epic 5** (durcissement transverse, exécuté avant l'Epic 3) : le contrat d'API des preuves est déjà borné et durci (plafonds de liste, plafond `files[]`, mapping d'erreur stockage, audit de download) — les dépôts partenaire héritent de ce contrat robuste.
-- **Ordre interne** : Story 3.1 (schéma clés + nonces) est un prérequis dur de Story 3.2 (endpoint signé), qui consomme le magasin de clés et de nonces.
-- L'attribution `CARRIER_PARTNER` alimente le plancher de preuve de l'Epic 2 : une preuve partenaire compte dans le décompte des pièces `ACTIVE` toutes parties confondues (décision POC).
+- **Dépend de l'Epic 1** : réutilise la table `evidence_files`, le port de stockage, la validation d'ingestion et l'écriture d'audit déjà livrés.
+- **Ordre interne intentionnel** : Story 3.1 provisionne les clés entrantes et le magasin de nonces (fondation de persistance) → Story 3.3 **durcit** ce stockage (entropie, non-divulgation, cycle de vie) **avant** que la Story 3.2 ne l'utilise pour vérifier les signatures → Story 3.2 consomme les clés durcies pour authentifier le dépôt.
+- **Réutilise l'infrastructure existante** de la plateforme : `companies`, mécanisme webhook/HMAC (`HmacSigner`), mais **sans réutiliser le secret webhook sortant**.
