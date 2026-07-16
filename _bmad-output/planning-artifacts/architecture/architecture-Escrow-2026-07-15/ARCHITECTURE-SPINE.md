@@ -170,7 +170,7 @@ La slice greffe sur du code déjà couvert : tout AD qui modifie ce code **éten
 | hypersistence-utils-hibernate-63 (JSONB) | existant |
 | Apache Tika (`org.apache.tika:tika-core`) | 3.3.1 |
 | AWS SDK for Java v2 (`software.amazon.awssdk:s3`) | 2.47.6 |
-| MinIO (conteneur, S3-compatible) | `minio/minio:RELEASE.2025-10-15T17-29-55Z` |
+| MinIO (conteneur, S3-compatible) | `minio/minio:RELEASE.2025-09-07T16-13-09Z` |
 | RabbitMQ | 3.13 |
 | Frontend : Vue 3 + Pinia + Vite/PWA + Tailwind | existant |
 
@@ -253,7 +253,7 @@ infra/docker-compose.yml   (+ service minio)
 - **Montée de version Spring Boot** — 3.3.5 est sur une ligne 3.x désormais EOL (3.5.x EOL 30/06/2026 ; stable actuelle 4.1.0). Dette technique **hors-périmètre** de cette feature ; à planifier séparément (migration transverse).
 - **Scan antivirus/anti-malware** (NFR-6) — risque explicitement accepté pour le POC ; s'insérera dans `EvidenceService` avant `EvidenceStorage.store` quand adopté.
 - **Chiffrement par fichier au repos** — évolution ; le port `EvidenceStorage` en absorbera l'ajout sans toucher aux endpoints.
-- **Backend de stockage définitif** — MinIO OSS archivé (avr. 2026) ; grâce à AD-6 + client S3 standard, bascule (AWS S3 managé, Garage, SeaweedFS) triviale. Non tranché ici.
+- **Backend de stockage définitif** — MinIO OSS archivé (avr. 2026) ; grâce à AD-6 + client S3 standard, bascule (AWS S3 managé, Garage, SeaweedFS) triviale. Non tranché ici. **NB (2026-07-16)** : le tag initialement épinglé `RELEASE.2025-10-15T17-29-55Z` n'existait pas sur Docker Hub (recherche web erronée) ; corrigé en `RELEASE.2025-09-07T16-13-09Z` (dernière release publiée) lors de l'implémentation de la Story 1.1.
 - **Livreur en acteur interactif complet** (rôle `CARRIER` avec écrans/compte) — post-POC ; l'intégration partenaire machine (AD-8) le préfigure.
 - **Plafond dur du nombre de pièces** — non fixé (limite souple indicative ~20, PRD §8).
 - **Miniatures / prévisualisation PWA** — optionnel, non requis POC.
