@@ -477,3 +477,45 @@ So that je ne perde ni mon travail ni le fil, malgré l'échec de mon action opt
 **When** je le consulte
 **Then** il propose un **parcours de sortie** explicite (ex. consulter la résolution, ré-attacher les pièces à une autre transaction éligible si applicable, ou acquitter et vider l'entrée)
 **And** rien n'est supprimé tant que je n'ai pas explicitement acquitté (aucune perte silencieuse — FR-16).
+
+---
+
+## Epic 5 : Durcissement transverse (contrat d'API preuves)
+
+Epic **transverse** (cross-cutting) qui solde le backlog de reports différés accumulé pendant les Epics 1-2, **exécuté entre Epic 2 et Epic 3** (l'ordre d'id ≠ l'ordre d'exécution). Ne livre pas de nouvelle valeur utilisateur mais durcit le contrat d'API et ferme des trous de couverture avant d'empiler l'Epic 3 (partenaire) et l'Epic 4 (offline/volume).
+
+### Story 5.1 : Durcir le contrat d'API des preuves (bundle de reports)
+
+As a mainteneur de la plateforme,
+I want borner et durcir les endpoints de preuves et compléter la piste d'audit,
+So that l'API reste robuste et cohérente sous volume et sous erreur, avant que l'Epic 3/4 n'amplifient la charge.
+
+**Acceptance Criteria:**
+
+**Given** la liste des preuves (`GET /escrow/{id}/evidence`) et la lecture du détail transaction (trail d'audit d'`EscrowService.getDetail`)
+**When** une transaction porte un grand nombre de lignes
+**Then** aucune liste n'est renvoyée **non bornée** : un plafond (ou pagination `Pageable`) est appliqué de façon **cohérente** aux deux endpoints (report deferred-work 1.3 + lecture d'audit).
+
+**Given** un dépôt multipart `files[]` (dépôt simple ET ouverture composite)
+**When** le nombre de fichiers dépasse un plafond (≤ 20, cf. hypothèse PRD §8)
+**Then** la requête est rejetée `400` avant toute bufférisation massive (report deferred-work 1.2).
+
+**Given** le téléchargement d'une preuve (`GET .../evidence/{eid}/download`)
+**When** un ayant droit télécharge le binaire
+**Then** une entrée d'audit (`EVIDENCE_DOWNLOADED`) est écrite — le chemin de lecture n'est plus un trou dans la piste d'audit (report deferred-work 1.4).
+
+**Given** une défaillance du stockage objet **autre** que « objet absent » (MinIO indisponible, timeout, `S3Exception`, 403 de politique de bucket)
+**When** elle survient pendant un dépôt ou un téléchargement
+**Then** elle est mappée dans l'**enveloppe d'erreur JSON** de la plateforme (ex. `502`), jamais une page whitelabel `500` (report deferred-work + AI Epic 2).
+
+**Given** une pièce retirée
+**When** l'API la renvoie (liste, retrait, dépôt)
+**Then** `EvidenceDto` expose `withdrawnAt` et `withdrawnByUserId` — qui a retiré la pièce et quand est visible (report deferred-work 2.3).
+
+**Given** le store `evidence` de la PWA et un retrait de pièce
+**When** un `loadEvidence` en vol se résout après le commit du retrait
+**Then** le retrait participe au jeton `loadSeq` et la pièce ne réapparaît **jamais** brièvement en `ACTIVE` (report deferred-work 2.4).
+
+**Given** la suite de tests
+**When** on exécute `mvn test` (+ front)
+**Then** tous les tests passent, y compris de nouveaux tests couvrant : le plafond de liste, le rejet `files[]` > plafond, l'audit de download, le mapping d'erreur S3, et les nouveaux champs du DTO.
