@@ -519,3 +519,27 @@ So that l'API reste robuste et cohérente sous volume et sous erreur, avant que 
 **Given** la suite de tests
 **When** on exécute `mvn test` (+ front)
 **Then** tous les tests passent, y compris de nouveaux tests couvrant : le plafond de liste, le rejet `files[]` > plafond, l'audit de download, le mapping d'erreur S3, et les nouveaux champs du DTO.
+
+### Story 5.2 : Corriger les reports remontés par le durcissement 5.1
+
+As a mainteneur,
+I want corriger les 3 défauts que la revue de la Story 5.1 a elle-même remontés,
+So that le durcissement ne laisse ni régression fonctionnelle ni bug latent avant l'Epic 3.
+
+**Acceptance Criteria:**
+
+**Given** les listes désormais bornées (`GET /escrow/{id}/evidence` et le trail d'audit de `EscrowService.getDetail`)
+**When** une transaction dépasse le plafond
+**Then** ce sont les entrées **les plus récentes** qui sont conservées, jamais tronquées silencieusement (report A) — p. ex. sélectionner les N dernières par `created_at DESC` puis restituer dans l'ordre attendu ; l'invariant est « le bout récent n'est jamais perdu ». Un test le prouve pour les deux listes.
+
+**Given** `EvidenceService.download` et une ligne dont `size_bytes` est `NULL` (colonne BIGINT nullable, entité `Long`)
+**When** le téléchargement s'exécute
+**Then** aucun `NullPointerException` d'unboxing : le `Content-Length` est omis (ou géré) proprement quand la taille est absente (report B). Un test couvre le cas `size_bytes NULL`.
+
+**Given** `EvidenceService.download` qui ouvre un flux S3 vivant et écrit l'audit `EVIDENCE_DOWNLOADED`
+**When** le téléchargement s'exécute
+**Then** l'écriture d'audit et l'ouverture du flux sont ordonnées de façon à **ne jamais retenir une connexion/stream** en cas d'échec (report C) — p. ex. écrire l'audit avant d'ouvrir le flux, ou garantir la fermeture ; le flux reste consommé par la couche web.
+
+**Given** la suite de tests
+**When** on exécute `mvn test`
+**Then** tout passe, avec les nouveaux tests A/B/C.
