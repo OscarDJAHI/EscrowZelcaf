@@ -3,11 +3,16 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { useEscrowStore } from '@/stores/escrow'
+import { useEvidenceStore } from '@/stores/evidence'
 import { useOfflineQueueStore } from '@/stores/offlineQueue'
 import StateBadge from '@/components/StateBadge.vue'
 import StepperEscrow from '@/components/StepperEscrow.vue'
 import AuditTimeline from '@/components/AuditTimeline.vue'
+import EvidenceDeposit from '@/components/EvidenceDeposit.vue'
+import EvidenceList from '@/components/EvidenceList.vue'
 import { getAllowedEventsForTransaction } from '@/utils/stateMachine'
+
+const DEPOSIT_STATES = ['FUNDS_LOCKED', 'SHIPPED', 'DISPUTED']
 
 const props = defineProps({
   id: { type: String, required: true },
@@ -17,6 +22,7 @@ const route = useRoute()
 const router = useRouter()
 const auth = useAuthStore()
 const escrowStore = useEscrowStore()
+const evidenceStore = useEvidenceStore()
 const offlineQueue = useOfflineQueueStore()
 
 const sendingEvent = ref(null)
@@ -25,6 +31,7 @@ const actionError = ref('')
 const transaction = computed(() => escrowStore.currentDetail?.transaction || null)
 const auditLogs = computed(() => escrowStore.currentDetail?.auditLogs || [])
 const allowedEvents = computed(() => getAllowedEventsForTransaction(transaction.value, auth.user))
+const canDeposit = computed(() => DEPOSIT_STATES.includes(transaction.value?.state))
 
 const counterparty = computed(() => {
   if (!transaction.value || !auth.user) return ''
@@ -56,6 +63,10 @@ function load() {
   return escrowStore.loadTransactionDetail(props.id)
 }
 
+function loadEvidence() {
+  return evidenceStore.loadEvidence(props.id)
+}
+
 async function trigger(event) {
   actionError.value = ''
   sendingEvent.value = event
@@ -71,12 +82,18 @@ async function trigger(event) {
   }
 }
 
+function onSync() {
+  load()
+  loadEvidence()
+}
+
 onMounted(() => {
   load()
-  window.addEventListener('escrow:sync', load)
+  loadEvidence()
+  window.addEventListener('escrow:sync', onSync)
 })
 onBeforeUnmount(() => {
-  window.removeEventListener('escrow:sync', load)
+  window.removeEventListener('escrow:sync', onSync)
 })
 </script>
 
@@ -142,6 +159,14 @@ onBeforeUnmount(() => {
       <div class="mt-6 rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
         <h2 class="mb-4 text-sm font-semibold text-gray-900">Audit history</h2>
         <AuditTimeline :logs="auditLogs" />
+      </div>
+
+      <div class="mt-6 rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
+        <h2 class="mb-4 text-sm font-semibold text-gray-900">Evidence</h2>
+        <div v-if="canDeposit" class="mb-6 border-b border-gray-100 pb-6">
+          <EvidenceDeposit :transaction-id="id" @uploaded="loadEvidence" />
+        </div>
+        <EvidenceList :transaction-id="id" />
       </div>
     </template>
   </div>

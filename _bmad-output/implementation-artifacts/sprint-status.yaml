@@ -54,7 +54,7 @@ development_status:
   1-2-deposer-une-piece-sur-une-transaction: done
   1-3-consulter-la-liste-chronologique-des-preuves: done
   1-4-telecharger-une-preuve-en-toute-securite: done
-  1-5-interface-pwa-depot-liste-des-preuves: backlog
+  1-5-interface-pwa-depot-liste-des-preuves: done
   epic-1-retrospective: optional
 
   # Epic 2 — Litige adossé à la preuve
