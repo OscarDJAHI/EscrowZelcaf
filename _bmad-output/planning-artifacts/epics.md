@@ -567,3 +567,35 @@ So that le secret partenaire ne puisse être ni faible, ni fuité, ni perdre son
 **Given** la suite de tests
 **When** on exécute `mvn test`
 **Then** tout passe, avec les nouveaux tests (rejet clé faible, secret non sérialisé, cycle de vie sûr).
+
+### Story 3.4 : Durcir l'endpoint partenaire signé (reports de 3.2)
+
+As a responsable sécurité,
+I want solder les défauts réels et les trous de couverture remontés par la revue de la Story 3.2,
+So that l'endpoint partenaire live soit robuste (pas de croissance non bornée, surface d'auth précise, erreurs non masquées) et prouvé sur vraie base.
+
+**Acceptance Criteria:**
+
+**Given** la table `partner_key_nonces` alimentée par chaque dépôt partenaire
+**When** des nonces dépassent la fenêtre de validité (±5 min)
+**Then** ils sont **purgés** (tâche planifiée et/ou purge à l'écriture) — la table ne croît **jamais sans borne** (report #1). Un test prouve qu'un nonce expiré est éliminé.
+
+**Given** la configuration de sécurité (`SecurityConfig`)
+**When** on expose la route signée
+**Then** le matcher `permitAll` cible **exactement** l'endpoint partenaire (`POST /api/v1/partner/escrow/*/evidence`), **pas** tout le sous-arbre `/api/v1/partner/**` (report #2). Un test vérifie qu'une autre route `/api/v1/partner/**` reste protégée.
+
+**Given** l'INSERT du nonce dans `PartnerEvidenceService.deposit`
+**When** une `DataIntegrityViolationException` survient
+**Then** seul le **conflit d'unicité du nonce** est interprété comme rejeu (401/403) ; toute autre violation d'intégrité **remonte** (500), n'est plus masquée en échec d'auth (report #3). Un test distingue les deux cas.
+
+**Given** une vraie base (Testcontainer Postgres)
+**When** un dépôt partenaire réussit
+**Then** un test d'intégration persiste et relit une ligne `CARRIER_PARTNER` réelle (`partner_company_id` renseigné, `uploaded_by_user_id` null) — le CHECK d'attribution d'AD-12 tient (report #4).
+
+**Given** deux requêtes partenaire concurrentes portant le **même nonce**
+**When** elles s'exécutent sur vraie base
+**Then** un test de concurrence (pas un mock) prouve qu'**exactement une** réussit et l'autre est rejetée comme rejeu (report #5).
+
+**Given** la suite de tests
+**When** on exécute `mvn test`
+**Then** tout passe, avec les nouveaux tests ci-dessus.

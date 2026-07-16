@@ -66,10 +66,11 @@ development_status:
   epic-2-retrospective: done
 
   # Epic 3 — Preuve neutre du transporteur (partenaire machine)
-  epic-3: done
+  epic-3: in-progress
   3-1-provisionner-les-cles-hmac-entrantes-le-magasin-de-nonces: done
   3-2-deposer-une-preuve-partenaire-via-api-signee: done
   3-3-durcir-stockage-cles-hmac-partenaire: done
+  3-4-durcir-endpoint-partenaire-signe: backlog
   epic-3-retrospective: optional
 
   # Epic 4 — Dépôt & litige résilients hors-ligne (PWA)

@@ -122,7 +122,10 @@ story that found them. Append-only.
 - source_spec: `spec-3-2-deposer-une-preuve-partenaire-via-api-signee.md`
   summary: `TransactionAccess.requireCompanyParticipant` charge jusqu'à deux agrégats `User` complets (`users.findById(buyerId)` puis `sellerId`) juste pour comparer un id de société, à chaque dépôt partenaire, à l'intérieur de la transaction d'écriture qui tient déjà le verrou pessimiste sur la transaction.
   evidence: `belongsToCompany` matérialise l'entité `User` (et touche `Company` en lazy) pour ne lire qu'un `Company.id`. Une requête de projection (`existsByIdInAndCompanyId`, ou une jointure sur la transaction) serait moins coûteuse et raccourcirait la durée de détention du verrou. Différé comme optimisation ; sévérité faible (le triage de cette passe a ajouté un test unitaire direct du garde — `TransactionAccessTest` — mais pas l'optimisation de requête).
+  status: ACCEPTÉ — MINEUR POC (2026-07-17) — micro-inefficacité (2 chargements User) ; non bloquant.
 
 - source_spec: `spec-3-2-deposer-une-preuve-partenaire-via-api-signee.md`
   summary: Le message d'échec d'authentification `"Invalid partner credentials"` est déclaré en double (`PartnerEvidenceService.AUTH_FAILED` et une constante privée de `PartnerSignatureVerifier`) alors que l'uniformité du message est une propriété de sécurité voulue (anti-énumération) — deux copies indépendantes invitent une dérive future où l'une change et la propriété anti-oracle casse silencieusement.
   evidence: Les deux constantes sont aujourd'hui identiques ; le risque est la maintenance (un seul point devrait porter le message uniforme). Correctif = extraire une constante partagée unique. Différé : churn de code de production pour un gain cosmétique ; sévérité faible.
+  status: ACCEPTÉ — MINEUR POC (2026-07-17) — duplication de littéral, cosmétique ; non bloquant.
+
