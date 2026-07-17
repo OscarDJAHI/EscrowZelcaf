@@ -51,12 +51,21 @@ export const useEscrowStore = defineStore('escrow', {
           _queuedOffline: true,
         }
         this.transactions.unshift(optimistic)
-        offlineQueue.enqueue({
-          method: 'post',
-          url: '/api/v1/escrow',
-          data: payload,
-          meta: { type: 'CREATE_TRANSACTION' },
-        })
+        try {
+          await offlineQueue.enqueue({
+            method: 'post',
+            url: '/api/v1/escrow',
+            data: payload,
+            meta: { type: 'CREATE_TRANSACTION' },
+          })
+        } catch (err) {
+          // Nothing was persisted, so nothing will ever sync: take the card back
+          // rather than show a transaction no reload would bring back. Matched
+          // on id, not identity — Pinia stores a reactive proxy of `optimistic`,
+          // so `!==` against the raw object never matches and would keep it.
+          this.transactions = this.transactions.filter((t) => t.id !== optimistic.id)
+          throw err
+        }
         return optimistic
       }
 
@@ -86,7 +95,7 @@ export const useEscrowStore = defineStore('escrow', {
       const offlineQueue = useOfflineQueueStore()
 
       if (!offlineQueue.isOnline) {
-        offlineQueue.enqueue({
+        await offlineQueue.enqueue({
           method: 'post',
           url: `/api/v1/escrow/${id}/event`,
           data: { event },
