@@ -59,6 +59,22 @@ function mountNotice(pinia) {
   return mount(SyncFailureNotice, { global: { plugins: [pinia], stubs: { RouterLink: true } } })
 }
 
+/**
+ * The links *to a transaction*, which are the only ones the tests below are
+ * about. Since Story 4.5 every frozen entry also carries a `/recovery/` link —
+ * the acknowledgement being the only way to silence this band — so a bare
+ * `find('router-link-stub')` no longer isolates the claim these tests make.
+ * Narrowed on the target, not weakened: "the reason forbids opening the
+ * transaction" is still asserted exactly, and `SyncFailureNotice.recovery.spec.js`
+ * holds the other half.
+ */
+function transactionLinks(wrapper) {
+  return wrapper
+    .findAll('router-link-stub')
+    .map((link) => link.attributes('to'))
+    .filter((to) => to?.startsWith('/escrow/'))
+}
+
 let pinia
 
 beforeEach(() => {
@@ -165,7 +181,7 @@ describe('SyncFailureNotice — what it renders at all', () => {
     expect(wrapper.text()).toContain('Creating a transaction')
     expect(wrapper.text()).toContain('This transaction was never created.')
     // There is no id to link to; inventing one is the alternative to saying so.
-    expect(wrapper.find('router-link-stub').exists()).toBe(false)
+    expect(transactionLinks(wrapper)).toEqual([])
   })
 
   it('mentions kept files only on an entry that carries some', () => {
@@ -389,7 +405,10 @@ describe('SyncFailureNotice — a state is badged only once it has seen the reje
 
     expect(wrapper.findComponent({ name: 'StateBadge' }).exists()).toBe(false)
     expect(wrapper.text()).not.toContain('DISPUTED')
-    expect(wrapper.find('router-link-stub').exists()).toBe(true)
+    // Named, not merely counted: every frozen entry now also carries a
+    // `/recovery/` link, so `find('router-link-stub').exists()` would be true
+    // here even if the degradation this test is about had stopped happening.
+    expect(transactionLinks(wrapper)).toEqual(['/escrow/7'])
   })
 
   it('badges nothing when two equally fresh sources contradict each other', () => {
@@ -406,7 +425,9 @@ describe('SyncFailureNotice — a state is badged only once it has seen the reje
     const wrapper = mountNotice(pinia)
 
     expect(wrapper.findComponent({ name: 'StateBadge' }).exists()).toBe(false)
-    expect(wrapper.find('router-link-stub').exists()).toBe(true)
+    // Named for the same reason as above: the recovery link would satisfy a
+    // bare existence check regardless of the tie-breaking rule under test.
+    expect(transactionLinks(wrapper)).toEqual(['/escrow/7'])
   })
 
   it('badges the state when two equally fresh sources agree', () => {
@@ -460,7 +481,7 @@ describe('SyncFailureNotice — no link where the reason forbids one', () => {
 
       const wrapper = mountNotice(pinia)
 
-      expect(wrapper.find('router-link-stub').exists()).toBe(false)
+      expect(transactionLinks(wrapper)).toEqual([])
       expect(wrapper.findAll('li')).toHaveLength(1) // the reason is still shown
     },
   )
@@ -481,7 +502,7 @@ describe('SyncFailureNotice — the fixes review found', () => {
     const wrapper = mountNotice(pinia)
 
     expect(wrapper.text()).toContain('RELEASED')
-    expect(wrapper.find('router-link-stub').exists()).toBe(false)
+    expect(transactionLinks(wrapper)).toEqual([])
   })
 
   it.each(['TRANSACTION_NOT_FOUND', 'NOT_A_PARTY'])(
@@ -499,7 +520,7 @@ describe('SyncFailureNotice — the fixes review found', () => {
 
       expect(wrapper.text()).not.toContain('FUNDS LOCKED')
       expect(wrapper.text()).not.toContain('Current state')
-      expect(wrapper.find('router-link-stub').exists()).toBe(false)
+      expect(transactionLinks(wrapper)).toEqual([])
     },
   )
 
@@ -542,7 +563,7 @@ describe('SyncFailureNotice — the fixes review found', () => {
     expect(wrapper.text()).toContain('Updating a transaction')
     expect(wrapper.text()).toContain('This action is not allowed from the state')
     expect(wrapper.text()).not.toContain('never created')
-    expect(wrapper.find('router-link-stub').exists()).toBe(false)
+    expect(transactionLinks(wrapper)).toEqual([])
   })
 
   it('degrades to a link instead of blanking every route when the list is not an array', () => {

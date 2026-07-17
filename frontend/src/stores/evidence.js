@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia'
 import { downloadEvidence, listEvidence, uploadEvidence, withdrawEvidence } from '@/api/evidence'
+import { saveBlob } from '@/utils/download'
 
 export const useEvidenceStore = defineStore('evidence', {
   state: () => ({
@@ -78,14 +79,11 @@ export const useEvidenceStore = defineStore('evidence', {
      */
     async downloadFile(id, item) {
       const blob = await downloadEvidence(id, item.id)
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = item.originalFilename
-      document.body.appendChild(a)
-      a.click()
-      a.remove()
-      URL.revokeObjectURL(url)
+      // The save itself is `utils/download.js` since Story 4.5 gave it a second
+      // caller. The fetch above stays here: it is what this action is *for* —
+      // carrying the JWT — and it is precisely the half the recovery screen has
+      // nothing to do with, its bytes never having left the device.
+      saveBlob(blob, item.originalFilename)
     },
   },
 })

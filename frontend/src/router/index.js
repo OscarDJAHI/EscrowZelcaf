@@ -19,6 +19,15 @@ const routes = [
     component: () => import('@/views/TransactionDetailView.vue'),
     props: true,
   },
+  // No `meta`: routes are protected by default (see the guard below), and this
+  // one hands back the binaries of a frozen queue entry. Marking it public would
+  // be the exact inversion of what it needs.
+  {
+    path: '/recovery/:entryId',
+    name: 'recovery',
+    component: () => import('@/views/RecoveryView.vue'),
+    props: true,
+  },
   {
     path: '/:pathMatch(.*)*',
     redirect: '/',

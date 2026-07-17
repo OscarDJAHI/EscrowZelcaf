@@ -79,7 +79,7 @@ development_status:
   4-2-ouvrir-un-litige-deposer-des-preuves-hors-ligne: done
   4-3-reconcilier-la-file-a-la-synchronisation: done
   4-4-notifier-l-utilisateur-du-resultat-de-synchronisation: done
-  4-5-recuperer-ses-preuves-apres-un-rejet-definitif: backlog
+  4-5-recuperer-ses-preuves-apres-un-rejet-definitif: done
   epic-4-retrospective: optional
 
   # Epic 5 — Durcissement transverse (contrat d'API preuves)
