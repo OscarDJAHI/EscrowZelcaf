@@ -41,7 +41,7 @@
 # - Retrospective appends its action items to action_items; sprint-status surfaces open ones
 
 generated: 2026-07-16
-last_updated: 2026-07-17 (Story 4.3 done — réconciliation de la file livrée ; Epic 4 : 3/5)
+last_updated: "2026-07-17 (Story 4.3 done — réconciliation de la file livrée ; Epic 4 3/5)"
 project: Escrow
 project_key: NOKEY
 tracking_system: file-system
