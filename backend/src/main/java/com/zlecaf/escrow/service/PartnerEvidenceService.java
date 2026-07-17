@@ -1,5 +1,6 @@
 package com.zlecaf.escrow.service;
 
+import com.zlecaf.escrow.domain.ErrorCode;
 import com.zlecaf.escrow.domain.EvidenceFile;
 import com.zlecaf.escrow.domain.PartnerHmacKey;
 import com.zlecaf.escrow.domain.PartnerKeyNonce;
@@ -68,7 +69,7 @@ public class PartnerEvidenceService {
         // nonce never drives the (expensive) per-file hashing and never reaches a
         // flush-time truncation surfacing as a misleading 401/500.
         if (nonce != null && nonce.length() > MAX_NONCE_LENGTH) {
-            throw new BadRequestException("Nonce exceeds the maximum allowed length");
+            throw new BadRequestException(ErrorCode.INVALID_REQUEST, "Nonce exceeds the maximum allowed length");
         }
 
         // Only ACTIVE keys resolve, so revocation (active=false) is immediate. The
@@ -76,7 +77,7 @@ public class PartnerEvidenceService {
         // "unknown key" from "bad signature" would let an attacker enumerate which
         // key-ids exist and are active.
         PartnerHmacKey key = keyRepository.findByKeyIdAndActiveTrue(keyId)
-                .orElseThrow(() -> new UnauthorizedException(AUTH_FAILED));
+                .orElseThrow(() -> new UnauthorizedException(ErrorCode.AUTH_FAILED, AUTH_FAILED_MESSAGE));
 
         // Cap the batch BEFORE the verifier reads and SHA-256-hashes every file:
         // the key-id is a public identifier, so hashing must not be reachable by an
@@ -87,7 +88,7 @@ public class PartnerEvidenceService {
 
         // Fast replay probe. The unique constraint below is the real arbiter under a race.
         if (nonceRepository.existsByKeyIdAndNonce(keyId, nonce)) {
-            throw new UnauthorizedException(AUTH_FAILED);
+            throw new UnauthorizedException(ErrorCode.AUTH_FAILED, AUTH_FAILED_MESSAGE);
         }
 
         List<EvidenceFile> evidence =
@@ -103,7 +104,7 @@ public class PartnerEvidenceService {
             // integrity violation (a bug, an unrelated constraint) must NOT be masked
             // as an auth failure — it propagates and surfaces as a 500.
             if (isNonceReplay(e)) {
-                throw new UnauthorizedException(AUTH_FAILED);
+                throw new UnauthorizedException(ErrorCode.AUTH_FAILED, AUTH_FAILED_MESSAGE);
             }
             throw e;
         }
@@ -141,7 +142,9 @@ public class PartnerEvidenceService {
      * Single generic 401 reason for every partner authentication failure (unknown
      * or inactive key, bad signature, stale timestamp, replayed nonce). Keeping the
      * client-facing message uniform prevents key-id / key-status enumeration through
-     * differentiated error text.
+     * differentiated error text — and so does the single {@link ErrorCode#AUTH_FAILED}
+     * code every one of those sites carries: a machine-readable split would hand back
+     * exactly the oracle the uniform text denies.
      */
-    private static final String AUTH_FAILED = "Invalid partner credentials";
+    private static final String AUTH_FAILED_MESSAGE = "Invalid partner credentials";
 }

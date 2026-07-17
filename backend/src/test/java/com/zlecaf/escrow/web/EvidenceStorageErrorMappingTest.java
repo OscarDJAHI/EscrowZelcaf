@@ -56,6 +56,9 @@ class EvidenceStorageErrorMappingTest {
                 .andExpect(status().isBadGateway())
                 .andExpect(jsonPath("$.status").value(502))
                 .andExpect(jsonPath("$.error").value("Bad Gateway"))
+                // The classifiable token: `error` is a reason phrase, `code` is the
+                // contract a client may branch on, and a storage outage is retryable.
+                .andExpect(jsonPath("$.code").value("STORAGE_UNAVAILABLE"))
                 .andExpect(jsonPath("$.message").value("Stockage de preuves indisponible"))
                 .andExpect(jsonPath("$.timestamp").exists());
     }

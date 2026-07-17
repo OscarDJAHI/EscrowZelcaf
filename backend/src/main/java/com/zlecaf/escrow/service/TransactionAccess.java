@@ -1,6 +1,7 @@
 package com.zlecaf.escrow.service;
 
 import com.zlecaf.escrow.domain.Company;
+import com.zlecaf.escrow.domain.ErrorCode;
 import com.zlecaf.escrow.domain.EscrowTransaction;
 import com.zlecaf.escrow.domain.ParticipantRole;
 import com.zlecaf.escrow.domain.Role;
@@ -43,7 +44,7 @@ public class TransactionAccess {
         if (actor.userId().equals(tx.getSellerId())) {
             return ParticipantRole.SELLER;
         }
-        throw new ForbiddenException("You are not a party to this transaction");
+        throw new ForbiddenException(ErrorCode.NOT_A_PARTY, "You are not a party to this transaction");
     }
 
     /**
@@ -59,7 +60,8 @@ public class TransactionAccess {
         if (companyId == null
                 || (!belongsToCompany(tx.getBuyerId(), companyId)
                         && !belongsToCompany(tx.getSellerId(), companyId))) {
-            throw new ForbiddenException("The partner company is not a party to this transaction");
+            throw new ForbiddenException(ErrorCode.NOT_A_PARTY,
+                    "The partner company is not a party to this transaction");
         }
     }
 

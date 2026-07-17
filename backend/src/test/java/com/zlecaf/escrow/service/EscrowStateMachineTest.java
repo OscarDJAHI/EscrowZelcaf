@@ -1,5 +1,6 @@
 package com.zlecaf.escrow.service;
 
+import com.zlecaf.escrow.domain.ErrorCode;
 import com.zlecaf.escrow.domain.EscrowState;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -62,8 +63,8 @@ class EscrowStateMachineTest {
     void sellerCannotConfirmDelivery() {
         assertThatThrownBy(() -> sm.determineNextState(SHIPPED, DELIVERY_CONFIRMED, SELLER))
                 .isInstanceOf(TransitionException.class)
-                .satisfies(ex -> assertThat(((TransitionException) ex).getReason())
-                        .isEqualTo(TransitionException.Reason.UNAUTHORIZED));
+                .satisfies(ex -> assertThat(((TransitionException) ex).getCode())
+                        .isEqualTo(ErrorCode.UNAUTHORIZED_TRANSITION));
     }
 
     @Test
@@ -80,8 +81,8 @@ class EscrowStateMachineTest {
     void sellerCannotDisputeAfterShipping() {
         assertThatThrownBy(() -> sm.determineNextState(SHIPPED, OPEN_DISPUTE, SELLER))
                 .isInstanceOf(TransitionException.class)
-                .satisfies(ex -> assertThat(((TransitionException) ex).getReason())
-                        .isEqualTo(TransitionException.Reason.UNAUTHORIZED));
+                .satisfies(ex -> assertThat(((TransitionException) ex).getCode())
+                        .isEqualTo(ErrorCode.UNAUTHORIZED_TRANSITION));
     }
 
     // --- Illegal transitions ---
@@ -91,19 +92,36 @@ class EscrowStateMachineTest {
     void cannotShipBeforeFunding() {
         assertThatThrownBy(() -> sm.determineNextState(INITIATED, SHIP_GOODS, SELLER))
                 .isInstanceOf(TransitionException.class)
-                .satisfies(ex -> assertThat(((TransitionException) ex).getReason())
-                        .isEqualTo(TransitionException.Reason.ILLEGAL_TRANSITION));
+                .satisfies(ex -> assertThat(((TransitionException) ex).getCode())
+                        .isEqualTo(ErrorCode.ILLEGAL_TRANSITION));
     }
 
     @ParameterizedTest
     @EnumSource(value = EscrowState.class, names = {"RELEASED", "REFUNDED"})
-    @DisplayName("Terminal states admit no further transitions")
+    @DisplayName("Terminal states admit no further transitions, and say so with TRANSACTION_TERMINAL")
     void terminalStatesAreFrozen(EscrowState terminal) {
         assertThat(terminal.isTerminal()).isTrue();
         assertThatThrownBy(() -> sm.determineNextState(terminal, PAY_FUNDS, ADMIN))
-                .isInstanceOf(TransitionException.class);
+                .isInstanceOf(TransitionException.class)
+                .satisfies(ex -> assertThat(((TransitionException) ex).getCode())
+                        .isEqualTo(ErrorCode.TRANSACTION_TERMINAL));
         assertThatThrownBy(() -> sm.determineNextState(terminal, OPEN_DISPUTE, BUYER))
-                .isInstanceOf(TransitionException.class);
+                .isInstanceOf(TransitionException.class)
+                .satisfies(ex -> assertThat(((TransitionException) ex).getCode())
+                        .isEqualTo(ErrorCode.TRANSACTION_TERMINAL));
+    }
+
+    @Test
+    @DisplayName("A whitelist miss from a LIVE state stays ILLEGAL_TRANSITION, distinct from terminality")
+    void nonTerminalMissIsOrdinaryIllegality() {
+        // The discriminating pair: same whitelist miss, same event, same 409 — but
+        // INITIATED may yet reach a state where SHIP_GOODS works, and RELEASED never will.
+        assertThatThrownBy(() -> sm.determineNextState(INITIATED, SHIP_GOODS, SELLER))
+                .satisfies(ex -> assertThat(((TransitionException) ex).getCode())
+                        .isEqualTo(ErrorCode.ILLEGAL_TRANSITION));
+        assertThatThrownBy(() -> sm.determineNextState(RELEASED, SHIP_GOODS, SELLER))
+                .satisfies(ex -> assertThat(((TransitionException) ex).getCode())
+                        .isEqualTo(ErrorCode.TRANSACTION_TERMINAL));
     }
 
     // --- Evidence mutation window (deposit/withdraw lock, FR-8 / AD-2) ---

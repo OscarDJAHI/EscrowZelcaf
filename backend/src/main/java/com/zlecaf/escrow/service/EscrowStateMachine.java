@@ -1,5 +1,6 @@
 package com.zlecaf.escrow.service;
 
+import com.zlecaf.escrow.domain.ErrorCode;
 import com.zlecaf.escrow.domain.EscrowEvent;
 import com.zlecaf.escrow.domain.EscrowState;
 import com.zlecaf.escrow.domain.ParticipantRole;
@@ -54,20 +55,26 @@ public class EscrowStateMachine {
     /**
      * Computes the next state for an event, enforcing legality and authorisation.
      *
-     * @throws TransitionException with {@code ILLEGAL_TRANSITION} if the event is
-     *         not valid from {@code current}, or {@code UNAUTHORIZED} if it is
-     *         valid but the {@code actor} role may not trigger it.
+     * @throws TransitionException with {@code TRANSACTION_TERMINAL} if {@code current}
+     *         is terminal, {@code ILLEGAL_TRANSITION} if the event is merely not valid
+     *         from a still-live {@code current}, or {@code UNAUTHORIZED_TRANSITION} if
+     *         it is valid but the {@code actor} role may not trigger it.
      */
     public EscrowState determineNextState(EscrowState current, EscrowEvent event, ParticipantRole actor) {
         Transition transition = MATRIX.get(new Key(current, event));
         if (transition == null) {
+            // A whitelist miss lumps two very different verdicts together: "not yet /
+            // not from here" (the caller may reach a state where it works) and "this
+            // transaction is over" (nothing will ever work again). Fork them on
+            // terminality — a pure function of `current`, so this component keeps its
+            // zero dependencies. Messages are unchanged.
             throw new TransitionException(
-                TransitionException.Reason.ILLEGAL_TRANSITION,
+                current.isTerminal() ? ErrorCode.TRANSACTION_TERMINAL : ErrorCode.ILLEGAL_TRANSITION,
                 "Event %s is not permitted from state %s".formatted(event, current));
         }
         if (!transition.allowedRoles().contains(actor)) {
             throw new TransitionException(
-                TransitionException.Reason.UNAUTHORIZED,
+                ErrorCode.UNAUTHORIZED_TRANSITION,
                 "Role %s is not authorised to trigger %s from state %s".formatted(actor, event, current));
         }
         return transition.target();

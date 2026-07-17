@@ -105,7 +105,8 @@ public class EscrowService {
         }
 
         EscrowTransaction tx = transactions.findByIdForUpdate(txId)
-                .orElseThrow(() -> new NotFoundException("Transaction " + txId + " not found"));
+                .orElseThrow(() -> new NotFoundException(ErrorCode.TRANSACTION_NOT_FOUND,
+                        "Transaction " + txId + " not found"));
 
         ParticipantRole role = transactionAccess.resolveRole(actor, tx);
         EscrowState previous = tx.getState();
@@ -148,18 +149,20 @@ public class EscrowService {
             throw new BadRequestException("At least one evidence file is required to open a dispute");
         }
         if (comment == null || comment.trim().length() < 10) {
-            throw new BadRequestException("A comment of at least 10 characters is required to open a dispute");
+            throw new BadRequestException(ErrorCode.COMMENT_TOO_SHORT,
+                    "A comment of at least 10 characters is required to open a dispute");
         }
         // Same shared file cap as a plain deposit, enforced BEFORE the state
         // transition (and before any byte buffering) so an over-plafond batch
         // never leaves a half-open dispute.
         if (files.size() > PlatformLimits.MAX_FILES_PER_DEPOSIT) {
-            throw new BadRequestException(
+            throw new BadRequestException(ErrorCode.TOO_MANY_FILES,
                     "A deposit accepts at most " + PlatformLimits.MAX_FILES_PER_DEPOSIT + " files");
         }
 
         EscrowTransaction tx = transactions.findByIdForUpdate(txId)
-                .orElseThrow(() -> new NotFoundException("Transaction " + txId + " not found"));
+                .orElseThrow(() -> new NotFoundException(ErrorCode.TRANSACTION_NOT_FOUND,
+                        "Transaction " + txId + " not found"));
 
         ParticipantRole role = transactionAccess.resolveRole(actor, tx);
         EscrowState previous = tx.getState();
@@ -170,7 +173,7 @@ public class EscrowService {
         } catch (TransitionException ex) {
             // Durably record the rejected attempt (separate transaction), then reject.
             auditService.recordFailure(txId, actor.userId(), role, EscrowEvent.OPEN_DISPUTE, previous, ex.getMessage());
-            throw ex;
+            throw refineTerminalRejection(txId, ex);
         }
 
         tx.setState(next);
@@ -205,7 +208,8 @@ public class EscrowService {
     @Transactional(readOnly = true)
     public TransactionDetailDto getDetail(AuthPrincipal actor, Long txId) {
         EscrowTransaction tx = transactions.findById(txId)
-                .orElseThrow(() -> new NotFoundException("Transaction " + txId + " not found"));
+                .orElseThrow(() -> new NotFoundException(ErrorCode.TRANSACTION_NOT_FOUND,
+                        "Transaction " + txId + " not found"));
         // Membership check: throws ForbiddenException for non-parties. The
         // resolved role is irrelevant for a read, so it is intentionally ignored.
         transactionAccess.resolveRole(actor, tx);
@@ -230,6 +234,31 @@ public class EscrowService {
     }
 
     // --- helpers ---
+
+    /**
+     * Sharpens a terminal-state dispute rejection into {@code DISPUTE_ALREADY_RESOLVED}
+     * when the audit trail proves this transaction was disputed before.
+     *
+     * <p>The state machine is pure, so it can only see that the transaction is over —
+     * not <em>why</em>. That distinction matters to the caller: a dispute replayed
+     * onto an arbitrated dispute is a different story from one replayed onto a
+     * transaction that simply completed on delivery, and RELEASED covers both. Only
+     * the durable audit trail can tell them apart, and reading it needs the
+     * repository — which is why the fork lives in the state machine and the
+     * refinement lives here.
+     *
+     * <p>The rejection path already writes to {@code audit_logs} (the
+     * {@code recordFailure} above), so an indexed SELECT on the same table adds no
+     * new dependency and no meaningful cost. Every other rejection passes through
+     * untouched, message included.
+     */
+    private TransitionException refineTerminalRejection(Long txId, TransitionException ex) {
+        if (ex.getCode() != ErrorCode.TRANSACTION_TERMINAL
+                || !auditLogs.existsByTransactionIdAndNextState(txId, EscrowState.DISPUTED.name())) {
+            return ex;
+        }
+        return new TransitionException(ErrorCode.DISPUTE_ALREADY_RESOLVED, ex.getMessage());
+    }
 
     private void publishAfterCommit(EscrowTransaction tx, EscrowState previous, EscrowState next,
                                     EscrowEvent event, Long actorId) {

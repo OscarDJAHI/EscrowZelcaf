@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.zlecaf.escrow.domain.AuditLog;
+import com.zlecaf.escrow.domain.ErrorCode;
 import com.zlecaf.escrow.domain.EscrowEvent;
 import com.zlecaf.escrow.domain.EscrowState;
 import com.zlecaf.escrow.domain.EscrowTransaction;
@@ -381,8 +382,8 @@ class EscrowDisputeServiceTest {
         assertThatThrownBy(() -> escrowService.openDispute(actor, tx.getId(),
                 List.of(pdf("receipt.pdf")), "the item never arrived", null))
                 .isInstanceOf(TransitionException.class)
-                .satisfies(ex -> assertThat(((TransitionException) ex).getReason())
-                        .isEqualTo(TransitionException.Reason.ILLEGAL_TRANSITION));
+                .satisfies(ex -> assertThat(((TransitionException) ex).getCode())
+                        .isEqualTo(ErrorCode.ILLEGAL_TRANSITION));
 
         assertThat(stateOf(tx.getId())).isEqualTo(EscrowState.DISPUTED);
         assertThat(evidenceFor(tx.getId())).isEmpty();
@@ -393,8 +394,8 @@ class EscrowDisputeServiceTest {
     }
 
     @Test
-    @DisplayName("Opening a terminal RELEASED transaction is an illegal transition (409) and never transitions")
-    void openDisputeTerminalReleasedIsIllegal() {
+    @DisplayName("Opening a RELEASED transaction that was never disputed is TRANSACTION_TERMINAL (409) and never transitions")
+    void openDisputeTerminalReleasedIsTerminal() {
         User buyer = persistUser("dispbuyer7@example.com", Role.BUYER);
         User seller = persistUser("dispseller7@example.com", Role.SELLER);
         EscrowTransaction tx = persistTransaction(buyer.getId(), seller.getId(), EscrowState.RELEASED);
@@ -403,12 +404,65 @@ class EscrowDisputeServiceTest {
         assertThatThrownBy(() -> escrowService.openDispute(actor, tx.getId(),
                 List.of(pdf("receipt.pdf")), "the item never arrived", null))
                 .isInstanceOf(TransitionException.class)
-                .satisfies(ex -> assertThat(((TransitionException) ex).getReason())
-                        .isEqualTo(TransitionException.Reason.ILLEGAL_TRANSITION));
+                .satisfies(ex -> assertThat(((TransitionException) ex).getCode())
+                        .isEqualTo(ErrorCode.TRANSACTION_TERMINAL));
 
         assertThat(stateOf(tx.getId())).isEqualTo(EscrowState.RELEASED);
         assertThat(evidenceFor(tx.getId())).isEmpty();
         assertThat(auditFor(tx.getId())).anyMatch(EscrowDisputeServiceTest::isRejected);
+    }
+
+    /**
+     * The pair the state alone cannot separate. Both transactions end RELEASED and
+     * both reject an OPEN_DISPUTE replay with a 409 — but one was arbitrated after a
+     * dispute and the other simply completed on delivery, and the client is told
+     * which. Only the audit trail carries that history, so this proof needs the real
+     * database: the transaction is walked through DISPUTED -> RELEASED by the service
+     * itself, never persisted straight into its end state.
+     */
+    @Test
+    @DisplayName("Replaying a dispute onto an arbitrated (RELEASED-via-dispute) transaction is DISPUTE_ALREADY_RESOLVED")
+    void openDisputeAfterArbitrationIsAlreadyResolved() {
+        User buyer = persistUser("dispbuyer7b@example.com", Role.BUYER);
+        User seller = persistUser("dispseller7b@example.com", Role.SELLER);
+        User admin = persistUser("dispadmin7b@example.com", Role.ADMIN);
+        EscrowTransaction tx = persistTransaction(buyer.getId(), seller.getId(), EscrowState.FUNDS_LOCKED);
+        AuthPrincipal buyerActor = new AuthPrincipal(buyer.getId(), buyer.getEmail(), Role.BUYER);
+        AuthPrincipal adminActor = new AuthPrincipal(admin.getId(), admin.getEmail(), Role.ADMIN);
+
+        // Real history: a dispute is opened, then an admin arbitrates it to RELEASED.
+        escrowService.openDispute(buyerActor, tx.getId(), List.of(pdf("receipt.pdf")),
+                "the item never arrived", null);
+        escrowService.applyEvent(adminActor, tx.getId(), EscrowEvent.RESOLVE_RELEASE);
+        assertThat(stateOf(tx.getId())).isEqualTo(EscrowState.RELEASED);
+
+        assertThatThrownBy(() -> escrowService.openDispute(buyerActor, tx.getId(),
+                List.of(pdf("receipt.pdf")), "the item never arrived", null))
+                .isInstanceOf(TransitionException.class)
+                .satisfies(ex -> assertThat(((TransitionException) ex).getCode())
+                        .isEqualTo(ErrorCode.DISPUTE_ALREADY_RESOLVED));
+    }
+
+    @Test
+    @DisplayName("A REFUNDED transaction is only reachable through a dispute, so a replay is DISPUTE_ALREADY_RESOLVED")
+    void openDisputeAfterRefundIsAlreadyResolved() {
+        User buyer = persistUser("dispbuyer7c@example.com", Role.BUYER);
+        User seller = persistUser("dispseller7c@example.com", Role.SELLER);
+        User admin = persistUser("dispadmin7c@example.com", Role.ADMIN);
+        EscrowTransaction tx = persistTransaction(buyer.getId(), seller.getId(), EscrowState.FUNDS_LOCKED);
+        AuthPrincipal buyerActor = new AuthPrincipal(buyer.getId(), buyer.getEmail(), Role.BUYER);
+        AuthPrincipal adminActor = new AuthPrincipal(admin.getId(), admin.getEmail(), Role.ADMIN);
+
+        escrowService.openDispute(buyerActor, tx.getId(), List.of(pdf("receipt.pdf")),
+                "the item never arrived", null);
+        escrowService.applyEvent(adminActor, tx.getId(), EscrowEvent.RESOLVE_REFUND);
+        assertThat(stateOf(tx.getId())).isEqualTo(EscrowState.REFUNDED);
+
+        assertThatThrownBy(() -> escrowService.openDispute(buyerActor, tx.getId(),
+                List.of(pdf("receipt.pdf")), "the item never arrived", null))
+                .isInstanceOf(TransitionException.class)
+                .satisfies(ex -> assertThat(((TransitionException) ex).getCode())
+                        .isEqualTo(ErrorCode.DISPUTE_ALREADY_RESOLVED));
     }
 
     // --- 403: non-party (rejected before any transition, no audit) ---
@@ -445,8 +499,8 @@ class EscrowDisputeServiceTest {
         assertThatThrownBy(() -> escrowService.openDispute(actor, tx.getId(),
                 List.of(pdf("receipt.pdf")), "the item never arrived", null))
                 .isInstanceOf(TransitionException.class)
-                .satisfies(ex -> assertThat(((TransitionException) ex).getReason())
-                        .isEqualTo(TransitionException.Reason.UNAUTHORIZED));
+                .satisfies(ex -> assertThat(((TransitionException) ex).getCode())
+                        .isEqualTo(ErrorCode.UNAUTHORIZED_TRANSITION));
 
         assertThat(stateOf(tx.getId())).isEqualTo(EscrowState.SHIPPED);
         assertThat(evidenceFor(tx.getId())).isEmpty();

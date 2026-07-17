@@ -1,5 +1,6 @@
 package com.zlecaf.escrow.service;
 
+import com.zlecaf.escrow.domain.ErrorCode;
 import com.zlecaf.escrow.web.ApiExceptions.BadRequestException;
 import org.apache.tika.Tika;
 import org.springframework.stereotype.Component;
@@ -32,24 +33,24 @@ public class EvidenceContentValidator {
      */
     public String validate(byte[] content, String originalFilename, String declaredContentType) {
         if (content == null || content.length == 0) {
-            throw new BadRequestException("Uploaded file is empty");
+            throw new BadRequestException(ErrorCode.EVIDENCE_INVALID, "Uploaded file is empty");
         }
 
         String realType = tika.detect(content);
         if (!ALLOWED_TYPES.contains(realType)) {
-            throw new BadRequestException(
+            throw new BadRequestException(ErrorCode.EVIDENCE_INVALID,
                     "File type not allowed: " + realType + " (only JPEG, PNG and PDF are accepted)");
         }
 
         String extensionType = mimeForExtension(originalFilename);
         if (extensionType == null || !extensionType.equals(realType)) {
-            throw new BadRequestException(
+            throw new BadRequestException(ErrorCode.EVIDENCE_INVALID,
                     "Filename extension is inconsistent with the actual file content");
         }
 
         String declared = normalize(declaredContentType);
         if (declared == null || !declared.equals(realType)) {
-            throw new BadRequestException(
+            throw new BadRequestException(ErrorCode.EVIDENCE_INVALID,
                     "Declared Content-Type is inconsistent with the actual file content");
         }
 

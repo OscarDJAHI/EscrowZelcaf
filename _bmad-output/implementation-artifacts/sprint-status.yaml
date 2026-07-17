@@ -87,7 +87,7 @@ development_status:
   epic-5: in-progress
   5-1-durcissement-contrat-api-preuves: done
   5-2-corriger-reports-durcissement: done
-  5-3-codes-erreur-applicatifs-enveloppe: backlog
+  5-3-codes-erreur-applicatifs-enveloppe: done
   epic-5-retrospective: optional
 
 action_items:

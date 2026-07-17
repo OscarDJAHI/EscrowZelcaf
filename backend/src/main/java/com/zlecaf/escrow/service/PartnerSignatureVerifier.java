@@ -1,5 +1,6 @@
 package com.zlecaf.escrow.service;
 
+import com.zlecaf.escrow.domain.ErrorCode;
 import com.zlecaf.escrow.domain.PartnerHmacKey;
 import com.zlecaf.escrow.web.ApiExceptions.UnauthorizedException;
 import org.springframework.beans.factory.annotation.Value;
@@ -28,8 +29,12 @@ import java.util.StringJoiner;
 @Component
 public class PartnerSignatureVerifier {
 
-    /** Generic 401 reason: never reveals which specific check failed. */
-    private static final String AUTH_FAILED = "Invalid partner credentials";
+    /**
+     * Generic 401 reason: never reveals which specific check failed. Paired with the
+     * equally generic {@link ErrorCode#AUTH_FAILED} code — the opacity has to hold in
+     * the machine-readable field too, or it does not hold at all.
+     */
+    private static final String AUTH_FAILED_MESSAGE = "Invalid partner credentials";
 
     private final long toleranceSeconds;
 
@@ -74,16 +79,16 @@ public class PartnerSignatureVerifier {
         // signature is otherwise valid).
         String canonical = canonicalString(key.getKeyId(), txId, timestamp, nonce, files, comment, clientCapturedAt);
         if (!HmacSigner.verify(canonical, key.getSecretKey(), signature)) {
-            throw new UnauthorizedException(AUTH_FAILED);
+            throw new UnauthorizedException(ErrorCode.AUTH_FAILED, AUTH_FAILED_MESSAGE);
         }
         long parsed;
         try {
             parsed = Long.parseLong(timestamp.trim());
         } catch (NumberFormatException | NullPointerException e) {
-            throw new UnauthorizedException(AUTH_FAILED);
+            throw new UnauthorizedException(ErrorCode.AUTH_FAILED, AUTH_FAILED_MESSAGE);
         }
         if (Math.abs(nowEpochSeconds() - parsed) > toleranceSeconds) {
-            throw new UnauthorizedException(AUTH_FAILED);
+            throw new UnauthorizedException(ErrorCode.AUTH_FAILED, AUTH_FAILED_MESSAGE);
         }
     }
 
@@ -110,7 +115,7 @@ public class PartnerSignatureVerifier {
         } catch (IOException e) {
             // The bytes cannot be read, so the signature cannot be reconstructed:
             // treat as an authentication failure rather than leaking an I/O 500.
-            throw new UnauthorizedException(AUTH_FAILED);
+            throw new UnauthorizedException(ErrorCode.AUTH_FAILED, AUTH_FAILED_MESSAGE);
         }
     }
 

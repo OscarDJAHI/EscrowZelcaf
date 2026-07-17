@@ -1,5 +1,6 @@
 package com.zlecaf.escrow.service;
 
+import com.zlecaf.escrow.domain.ErrorCode;
 import com.zlecaf.escrow.domain.EscrowState;
 import com.zlecaf.escrow.domain.EscrowTransaction;
 import com.zlecaf.escrow.domain.EvidenceFile;
@@ -100,7 +101,8 @@ public class EvidenceService {
         // transitions, so the window check below cannot be invalidated by a
         // RELEASE/REFUND committing between the read and this transaction's commit.
         EscrowTransaction tx = transactions.findByIdForUpdate(txId)
-                .orElseThrow(() -> new NotFoundException("Transaction " + txId + " not found"));
+                .orElseThrow(() -> new NotFoundException(ErrorCode.TRANSACTION_NOT_FOUND,
+                        "Transaction " + txId + " not found"));
 
         ParticipantRole role = access.resolveRole(actor, tx);   // 403 if not a party
         requireUploadWindow(tx.getState());                     // 409 if outside window
@@ -132,7 +134,8 @@ public class EvidenceService {
                                                String comment, String clientCapturedAt) {
         requireDepositableBatch(files); // gate before the lock (PartnerEvidenceService also gates before hashing)
         EscrowTransaction tx = transactions.findByIdForUpdate(txId)
-                .orElseThrow(() -> new NotFoundException("Transaction " + txId + " not found"));
+                .orElseThrow(() -> new NotFoundException(ErrorCode.TRANSACTION_NOT_FOUND,
+                        "Transaction " + txId + " not found"));
 
         access.requireCompanyParticipant(tx, companyId);       // 403 if company not a party
         requireUploadWindow(tx.getState());                     // 409 if outside window
@@ -165,10 +168,10 @@ public class EvidenceService {
         for (MultipartFile file : files) {
             byte[] bytes = read(file);
             if (bytes.length == 0) {
-                throw new BadRequestException("Uploaded file is empty");
+                throw new BadRequestException(ErrorCode.EVIDENCE_INVALID, "Uploaded file is empty");
             }
             if (bytes.length > MAX_FILE_SIZE) {
-                throw new BadRequestException(
+                throw new BadRequestException(ErrorCode.EVIDENCE_INVALID,
                         "File exceeds the maximum allowed size of " + MAX_FILE_SIZE + " bytes");
             }
             String mime = validator.validate(bytes, file.getOriginalFilename(), file.getContentType());
@@ -238,7 +241,7 @@ public class EvidenceService {
             throw new BadRequestException("At least one file is required");
         }
         if (files.size() > PlatformLimits.MAX_FILES_PER_DEPOSIT) {
-            throw new BadRequestException(
+            throw new BadRequestException(ErrorCode.TOO_MANY_FILES,
                     "A deposit accepts at most " + PlatformLimits.MAX_FILES_PER_DEPOSIT + " files");
         }
     }
@@ -256,7 +259,8 @@ public class EvidenceService {
     @Transactional(readOnly = true)
     public List<EvidenceDto> list(AuthPrincipal actor, Long txId) {
         EscrowTransaction tx = transactions.findById(txId)
-                .orElseThrow(() -> new NotFoundException("Transaction " + txId + " not found"));
+                .orElseThrow(() -> new NotFoundException(ErrorCode.TRANSACTION_NOT_FOUND,
+                        "Transaction " + txId + " not found"));
         access.resolveRole(actor, tx);   // 403 if not a party; role ignored for a read
         // Hard cap the read (unsorted Pageable → LIMIT only; ordering stays from
         // the method name). Query DESC so the LIMIT keeps the MOST RECENT rows —
@@ -296,7 +300,8 @@ public class EvidenceService {
     @Transactional
     public EvidenceDownload download(AuthPrincipal actor, Long txId, Long evidenceId) {
         EscrowTransaction tx = transactions.findById(txId)
-                .orElseThrow(() -> new NotFoundException("Transaction " + txId + " not found"));
+                .orElseThrow(() -> new NotFoundException(ErrorCode.TRANSACTION_NOT_FOUND,
+                        "Transaction " + txId + " not found"));
         ParticipantRole role = access.resolveRole(actor, tx);   // 403 if not a party
         EvidenceFile evidence = evidenceFiles.findByIdAndTransactionId(evidenceId, txId)
                 .orElseThrow(() -> new NotFoundException("Evidence " + evidenceId + " not found"));
@@ -372,7 +377,8 @@ public class EvidenceService {
         // state transitions) on the same transaction, so the floor count below is
         // read on committed state and cannot be undercut by a lost update.
         EscrowTransaction tx = transactions.findByIdForUpdate(txId)
-                .orElseThrow(() -> new NotFoundException("Transaction " + txId + " not found"));
+                .orElseThrow(() -> new NotFoundException(ErrorCode.TRANSACTION_NOT_FOUND,
+                        "Transaction " + txId + " not found"));
 
         ParticipantRole role = access.resolveRole(actor, tx);   // 403 if not a party
 
@@ -400,7 +406,8 @@ public class EvidenceService {
         if (tx.getState() == EscrowState.DISPUTED
                 && evidenceFiles.countByTransactionIdAndStatus(txId, EvidenceStatus.ACTIVE)
                         <= MIN_ACTIVE_EVIDENCE_IN_DISPUTE) {
-            throw new ConflictException("Withdrawal would leave the dispute without evidence");
+            throw new ConflictException(ErrorCode.EVIDENCE_FLOOR_VIOLATION,
+                    "Withdrawal would leave the dispute without evidence");
         }
 
         evidence.setStatus(EvidenceStatus.WITHDRAWN);
@@ -415,16 +422,27 @@ public class EvidenceService {
 
     private void requireUploadWindow(EscrowState state) {
         if (!state.allowsEvidenceMutation()) {
-            throw new ConflictException(
+            throw new ConflictException(windowCode(state),
                     "Evidence cannot be deposited while the transaction is " + state);
         }
     }
 
     private void requireWithdrawWindow(EscrowState state) {
         if (!state.allowsEvidenceMutation()) {
-            throw new ConflictException(
+            throw new ConflictException(windowCode(state),
                     "Evidence cannot be withdrawn while the transaction is " + state);
         }
+    }
+
+    /**
+     * Why the window is shut, told apart. {@code allowsEvidenceMutation()} is false
+     * for INITIATED — where the window has not opened <em>yet</em> and will — and for
+     * the terminal states, where it is shut forever. Both are permanent for the
+     * request at hand, but only one leaves the caller anything to wait for, and the
+     * client is entitled to say so. The message is unchanged either way.
+     */
+    private static ErrorCode windowCode(EscrowState state) {
+        return state.isTerminal() ? ErrorCode.TRANSACTION_TERMINAL : ErrorCode.WINDOW_CLOSED;
     }
 
     /**
@@ -502,7 +520,10 @@ public class EvidenceService {
         try {
             return file.getBytes();
         } catch (IOException e) {
-            throw new BadRequestException("Could not read the uploaded file");
+            // The bytes, not the file, are the problem: the identical upload may well
+            // succeed on a retry. Hence a TRANSIENT code under a 400 — the clearest
+            // case of why the code cannot be derived from the status.
+            throw new BadRequestException(ErrorCode.FILE_READ_ERROR, "Could not read the uploaded file");
         }
     }
 
