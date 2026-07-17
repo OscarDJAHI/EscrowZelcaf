@@ -41,7 +41,7 @@
 # - Retrospective appends its action items to action_items; sprint-status surfaces open ones
 
 generated: 2026-07-16
-last_updated: 2026-07-17 (Story 3.4 done — Epic 3 hardening complete, 4/4 stories done)
+last_updated: 2026-07-17 (Story 4.3 done — réconciliation de la file livrée ; Epic 4 : 3/5)
 project: Escrow
 project_key: NOKEY
 tracking_system: file-system
@@ -77,7 +77,7 @@ development_status:
   epic-4: in-progress
   4-1-migrer-la-file-hors-ligne-vers-indexeddb-porter-le-binaire: done
   4-2-ouvrir-un-litige-deposer-des-preuves-hors-ligne: done
-  4-3-reconcilier-la-file-a-la-synchronisation: backlog
+  4-3-reconcilier-la-file-a-la-synchronisation: done
   4-4-notifier-l-utilisateur-du-resultat-de-synchronisation: backlog
   4-5-recuperer-ses-preuves-apres-un-rejet-definitif: backlog
   epic-4-retrospective: optional

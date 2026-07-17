@@ -1,5 +1,7 @@
+import { toRaw } from 'vue'
 import { defineStore } from 'pinia'
 import apiClient from '@/api/client'
+import { classifyReplayFailure, extractFailureReason } from '@/utils/replayFailure'
 import * as idb from './offlineQueue.idb'
 
 let seqCounter = 0
@@ -55,7 +57,12 @@ export const useOfflineQueueStore = defineStore('offlineQueue', {
   }),
 
   getters: {
-    pendingCount: (state) => state.queue.length,
+    // Frozen entries are excluded: they are no longer waiting for anything, and
+    // `OnlineBanner` reads this to mean "there is still work in flight".
+    pendingCount: (state) => state.queue.filter((item) => !item.frozen).length,
+    /** Entries definitively rejected by the server; kept, never auto-replayed. */
+    frozenEntries: (state) => state.queue.filter((item) => item.frozen),
+    frozenCount: (state) => state.queue.filter((item) => item.frozen).length,
   },
 
   actions: {
@@ -142,13 +149,24 @@ export const useOfflineQueueStore = defineStore('offlineQueue', {
       this.queue = this.queue.filter((item) => item.id !== id)
     },
 
-    /** Replay queued requests in order; stop (keep remainder queued) on first failure. */
+    /**
+     * Replay queued requests in order. A transient failure stops the run and
+     * keeps the remainder queued; a permanent one freezes the offending entry
+     * and moves on, so a definitive rejection bounds the auto-retry rather than
+     * corking the queue behind it.
+     */
     async flush() {
-      if (this.flushing || !this.isOnline || this.queue.length === 0) return
+      // `pendingCount`, not `queue.length`: frozen entries are never purged, so a
+      // queue holding nothing else would otherwise pay a full empty run on every
+      // `online` event and every startup, forever.
+      if (this.flushing || !this.isOnline || this.pendingCount === 0) return
       this.flushing = true
 
-      const pending = [...this.queue]
+      // Frozen entries are skipped, not replayed: the server has already given
+      // its final word on them. Story 4.5 is what brings them back.
+      const pending = this.queue.filter((item) => !item.frozen)
       let syncedAny = false
+      let reconciledAny = false
 
       for (const item of pending) {
         try {
@@ -169,8 +187,45 @@ export const useOfflineQueueStore = defineStore('offlineQueue', {
             await apiClient.request({ method: item.method, url: item.url, data: item.data })
           }
         } catch (err) {
-          console.error('[offlineQueue] failed to sync queued request, will retry later', item, err)
-          break
+          if (classifyReplayFailure(err) === 'transient') {
+            console.error('[offlineQueue] failed to sync queued request, will retry later', item, err)
+            break
+          }
+
+          // Permanent rejection: replaying would fail identically forever. Freeze
+          // the entry — id, `data` and Blobs all kept — so the auto-retry stops
+          // without anything being lost.
+          console.error('[offlineQueue] queued request definitively rejected, freezing it', item, err)
+          const { code, status, message } = extractFailureReason(err)
+          item.frozen = true
+          item.failure = { code, status, message, at: new Date().toISOString() }
+          try {
+            // Persisted before moving on: a reload must not resurrect the
+            // auto-retry of a request the server already refused.
+            //
+            // `toRaw` is load-bearing: `item` came out of the reactive state, and
+            // structured clone refuses a Proxy outright (DataCloneError). Only
+            // `enqueue()` gets away with a bare `put` — it writes the item before
+            // pushing it into the state. Writing the proxy here would throw into
+            // the catch below and leave the freeze session-local, so the entry
+            // would go back to being replayed on the next reload.
+            // eslint-disable-next-line no-await-in-loop
+            await idb.put(toRaw(item))
+          } catch (persistErr) {
+            // The freeze holds in memory for this session and the entry is still
+            // in IndexedDB. Turning a storage hiccup into a sync failure would
+            // put the cork straight back in the queue.
+            console.error(
+              '[offlineQueue] could not persist the frozen entry; it stays frozen for this session only',
+              item,
+              persistErr,
+            )
+          }
+          // The optimistic display is now a lie, and `flush()` only ever runs
+          // online: the server is reachable and authoritative, so let the wired
+          // refetch overwrite it.
+          reconciledAny = true
+          continue
         }
 
         // Past this line the server has accepted the request, so failing to
@@ -193,7 +248,7 @@ export const useOfflineQueueStore = defineStore('offlineQueue', {
 
       this.flushing = false
 
-      if (syncedAny && typeof window !== 'undefined') {
+      if ((syncedAny || reconciledAny) && typeof window !== 'undefined') {
         window.dispatchEvent(new CustomEvent('escrow:sync'))
       }
     },

@@ -355,6 +355,221 @@ describe('offlineQueue — failures on the newly-async paths', () => {
   })
 })
 
+/**
+ * Shapes an AxiosError the way `client.js` relays it — the two pre-existing
+ * simulated failures are bare network errors with no `response` at all, so this
+ * is the first HTTP error envelope this suite mocks.
+ */
+function httpError(status, data) {
+  return Object.assign(new Error(`Request failed with status code ${status}`), {
+    response: { status, data },
+  })
+}
+
+describe('offlineQueue — reconciling on a permanent rejection', () => {
+  it('freezes the entry with its reason, keeps its binary, and dispatches escrow:sync', async () => {
+    const store = useOfflineQueueStore()
+    store.isOnline = false
+    const a = makeBlob(4096, 'image/jpeg')
+    const b = makeBlob(2048, 'image/png')
+    await store.enqueue({
+      method: 'post',
+      url: '/api/v1/escrow/7/dispute',
+      files: [a, b],
+      data: { comment: 'Litige déposé hors ligne' },
+      meta: { type: 'OPEN_DISPUTE', transactionId: 7 },
+    })
+
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    apiClient.request.mockRejectedValueOnce(
+      httpError(409, { code: 'DISPUTE_ALREADY_RESOLVED', message: 'Le litige a déjà été arbitré' }),
+    )
+    const listener = vi.fn()
+    window.addEventListener('escrow:sync', listener)
+    store.isOnline = true
+    await store.flush()
+    window.removeEventListener('escrow:sync', listener)
+
+    expect(store.pendingCount).toBe(0)
+    expect(store.frozenCount).toBe(1)
+    // Nothing synced, yet the refetch must still run: that dispatch is what
+    // overwrites the optimistic DISPUTED with the server's truth.
+    expect(listener).toHaveBeenCalledOnce()
+
+    // Read back from IndexedDB — not from the in-memory object — so the assertion
+    // proves the freeze survived the round-trip with its bytes.
+    const persisted = await idb.getAll()
+    expect(persisted).toHaveLength(1)
+    const [kept] = persisted
+    expect(kept.frozen).toBe(true)
+    expect(kept.failure.code).toBe('DISPUTE_ALREADY_RESOLVED')
+    expect(kept.failure.status).toBe(409)
+    expect(kept.failure.message).toBe('Le litige a déjà été arbitré')
+    expect(kept.failure.at).toEqual(expect.any(String))
+    expect(kept.files[0]).toBeInstanceOf(Blob)
+    await expectSameBytes(kept.files[0], a)
+    await expectSameBytes(kept.files[1], b)
+  })
+
+  it('never retries a frozen entry — neither on a later flush nor after a reload', async () => {
+    const store = useOfflineQueueStore()
+    store.isOnline = false
+    await store.enqueue({
+      method: 'post',
+      url: '/api/v1/escrow/7/dispute',
+      files: [makeBlob(1024, 'image/jpeg')],
+      data: { comment: 'Litige déposé hors ligne' },
+    })
+
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    apiClient.request.mockRejectedValueOnce(httpError(409, { code: 'DISPUTE_ALREADY_RESOLVED' }))
+    store.isOnline = true
+    await store.flush()
+    expect(apiClient.request).toHaveBeenCalledOnce()
+
+    await store.flush()
+    // Still one: the freeze bounds the auto-retry within the session...
+    expect(apiClient.request).toHaveBeenCalledOnce()
+
+    // ...and survives the reload, which is the whole point of persisting it.
+    setActivePinia(createPinia())
+    idb.resetDBForTests()
+    const reloaded = useOfflineQueueStore()
+    reloaded.isOnline = true
+    await reloaded.init()
+
+    await reloaded.flush()
+
+    expect(apiClient.request).toHaveBeenCalledOnce()
+    expect(reloaded.pendingCount).toBe(0)
+    expect(reloaded.frozenCount).toBe(1)
+    expect(reloaded.frozenEntries[0].failure.code).toBe('DISPUTE_ALREADY_RESOLVED')
+  })
+
+  it('does not block the entries behind it: the freeze bounds the retry, not the queue', async () => {
+    const store = useOfflineQueueStore()
+    store.isOnline = false
+    await store.enqueue({
+      method: 'post',
+      url: '/api/v1/escrow/7/dispute',
+      files: [makeBlob(1024, 'image/jpeg')],
+      data: { comment: 'Litige déposé hors ligne' },
+    })
+    await store.enqueue({
+      method: 'post',
+      url: '/api/v1/escrow/9/event',
+      data: { event: 'SHIP' },
+      meta: { type: 'SEND_EVENT', transactionId: 9 },
+    })
+
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    apiClient.request.mockRejectedValueOnce(httpError(409, { code: 'DISPUTE_ALREADY_RESOLVED' }))
+    store.isOnline = true
+    await store.flush()
+
+    // The second entry went through and was dropped; only the frozen one is left.
+    expect(apiClient.request).toHaveBeenCalledTimes(2)
+    expect(apiClient.request.mock.calls[1][0].url).toBe('/api/v1/escrow/9/event')
+    expect(store.pendingCount).toBe(0)
+    expect(store.frozenCount).toBe(1)
+    expect(await idb.getAll()).toHaveLength(1)
+  })
+
+  it('freezes a 4xx carrying no code, with a null reason rather than a guess', async () => {
+    const store = useOfflineQueueStore()
+    store.isOnline = false
+    await store.enqueue({ method: 'post', url: '/api/v1/escrow/404/event', data: { event: 'SHIP' } })
+
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    apiClient.request.mockRejectedValueOnce(httpError(404, ''))
+    store.isOnline = true
+    await store.flush()
+
+    const [kept] = await idb.getAll()
+    expect(kept.frozen).toBe(true)
+    expect(kept.failure.code).toBeNull()
+    expect(kept.failure.status).toBe(404)
+  })
+
+  it('keeps the freeze for the session when persisting it fails', async () => {
+    const store = useOfflineQueueStore()
+    store.isOnline = false
+    await store.enqueue({ method: 'post', url: '/api/v1/escrow/7/event', data: { event: 'SHIP' } })
+
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    vi.spyOn(idb, 'put').mockRejectedValueOnce(new Error('QuotaExceededError'))
+    apiClient.request.mockRejectedValueOnce(httpError(400, { code: 'ILLEGAL_TRANSITION' }))
+    store.isOnline = true
+    await store.flush()
+
+    // A storage hiccup must not turn back into a sync failure that re-corks the queue.
+    expect(store.frozenCount).toBe(1)
+    expect(store.pendingCount).toBe(0)
+  })
+})
+
+describe('offlineQueue — transient rejections stay queued', () => {
+  it('does not freeze a coded transient conflict (409 CONCURRENT_MODIFICATION)', async () => {
+    const store = useOfflineQueueStore()
+    store.isOnline = false
+    await store.enqueue({ method: 'post', url: '/api/v1/escrow/7/event', data: { event: 'SHIP' } })
+
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    apiClient.request.mockRejectedValueOnce(httpError(409, { code: 'CONCURRENT_MODIFICATION' }))
+    const listener = vi.fn()
+    window.addEventListener('escrow:sync', listener)
+    store.isOnline = true
+    await store.flush()
+    window.removeEventListener('escrow:sync', listener)
+
+    expect(store.pendingCount).toBe(1)
+    expect(store.frozenCount).toBe(0)
+    expect(listener).not.toHaveBeenCalled()
+
+    // Retried on the next flush, and accepted this time.
+    await store.flush()
+    expect(apiClient.request).toHaveBeenCalledTimes(2)
+    expect(store.pendingCount).toBe(0)
+  })
+
+  it('does not freeze FILE_READ_ERROR even though it arrives as a 400', async () => {
+    const store = useOfflineQueueStore()
+    store.isOnline = false
+    const blob = makeBlob(2048, 'image/jpeg')
+    await store.enqueue({
+      method: 'post',
+      url: '/api/v1/escrow/7/dispute',
+      files: [blob],
+      data: { comment: 'Preuve à re-transférer' },
+    })
+
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    apiClient.request.mockRejectedValueOnce(httpError(400, { code: 'FILE_READ_ERROR' }))
+    store.isOnline = true
+    await store.flush()
+
+    expect(store.frozenCount).toBe(0)
+    expect(store.pendingCount).toBe(1)
+    const [kept] = await idb.getAll()
+    expect(kept.frozen).toBeUndefined()
+    await expectSameBytes(kept.files[0], blob)
+  })
+
+  it('does not freeze an expired session (401): the replay is valid once re-authenticated', async () => {
+    const store = useOfflineQueueStore()
+    store.isOnline = false
+    await store.enqueue({ method: 'post', url: '/api/v1/escrow/7/event', data: { event: 'SHIP' } })
+
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    apiClient.request.mockRejectedValueOnce(httpError(401, ''))
+    store.isOnline = true
+    await store.flush()
+
+    expect(store.frozenCount).toBe(0)
+    expect(store.pendingCount).toBe(1)
+  })
+})
+
 describe('offlineQueue — replay order', () => {
   it('keeps FIFO for entries sharing a timestamp, whatever their key order', async () => {
     // Two entries queued in the same millisecond: `timestamp` ties, so only the
