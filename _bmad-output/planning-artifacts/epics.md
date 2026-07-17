@@ -599,3 +599,35 @@ So that l'endpoint partenaire live soit robuste (pas de croissance non bornée, 
 **Given** la suite de tests
 **When** on exécute `mvn test`
 **Then** tout passe, avec les nouveaux tests ci-dessus.
+
+### Story 5.3 : Contrat d'erreur codé (prérequis backend de la réconciliation)
+
+As a plateforme,
+I want que l'enveloppe d'erreur porte un **code applicatif stable** par exception métier,
+So that le front (Stories 4.3/4.4/4.5) puisse classer un rejet en transitoire vs permanent de façon **fiable et testable**, comme l'exige AD-10 — sans matcher du texte instable.
+
+> **Contexte** : escalation CRITICAL de la Story 4.3. AD-10 impose un classement par code applicatif ; le backend n'en exposait aucun (enveloppe `{timestamp,status,error,message}`), et l'Epic 4 était cadré « aucune modif backend » — contradiction. Cette story corrige le trou de planification. `TransitionException.Reason` (enum machine-readable déjà présente mais jamais sérialisée) est le point d'appui.
+
+**Acceptance Criteria:**
+
+**Given** l'enveloppe d'erreur globale (`GlobalExceptionHandler`)
+**When** une exception est rendue
+**Then** l'enveloppe porte un champ **`code`** — un identifiant machine **stable** (SCREAMING_SNAKE_CASE), distinct de la reason-phrase HTTP. Un test verrouille le contrat.
+
+**Given** les exceptions métier (`ApiExceptions.*`, `TransitionException`)
+**When** elles sont levées
+**Then** chacune porte un `code` stable ; `TransitionException.Reason` est **généralisé/sérialisé** (plus jeté). En particulier, l'illégalité sur **état terminal** (litige déjà résolu / transaction `RELEASED`/`REFUNDED`) reçoit un code **distinct** (`DISPUTE_ALREADY_RESOLVED` / `TRANSACTION_TERMINAL`) de l'illégalité ordinaire.
+
+**Given** une collision de verrou optimiste (`ObjectOptimisticLockingFailureException`, `@Version`)
+**When** elle survient
+**Then** elle est mappée sur **`409` codé `CONCURRENT_MODIFICATION`** (au lieu du `500` /error par défaut de Spring), classé **transitoire**. Un test le prouve.
+
+**Given** l'ensemble des codes
+**When** on définit le contrat de réconciliation
+**Then** une **énumération faisant foi** est arrêtée et partagée (référençable par le front) :
+- **PERMANENT** (front : annuler l'optimiste, conserver le binaire, geler l'entrée, notifier) : `DISPUTE_ALREADY_RESOLVED`, `TRANSACTION_TERMINAL`, `WINDOW_CLOSED`, `EVIDENCE_INVALID` (type/taille/contenu), `NOT_A_PARTY`, `TRANSACTION_NOT_FOUND`, `EVIDENCE_FLOOR_VIOLATION`, `COMMENT_TOO_SHORT`, `TOO_MANY_FILES`.
+- **TRANSITOIRE** (front : conserver + re-tenter) : hors-ligne/réseau, `5xx`, `CONCURRENT_MODIFICATION`, `FILE_READ_ERROR` (« could not read the uploaded file »), timeout/rate-limit.
+
+**Given** la suite de tests
+**When** on exécute `mvn test`
+**Then** tout passe, avec les tests de code par exception, du mapping optimistic-lock, et de la présence du `code` dans l'enveloppe. (Le front consommera ces codes en 4.3.)

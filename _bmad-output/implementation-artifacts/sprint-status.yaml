@@ -84,9 +84,10 @@ development_status:
 
   # Epic 5 — Durcissement transverse (contrat d'API preuves)
   # Cross-cutting; EXÉCUTÉ entre Epic 2 et Epic 3 (l'ordre d'id ≠ ordre d'exécution).
-  epic-5: done
+  epic-5: in-progress
   5-1-durcissement-contrat-api-preuves: done
   5-2-corriger-reports-durcissement: done
+  5-3-codes-erreur-applicatifs-enveloppe: backlog
   epic-5-retrospective: optional
 
 action_items:
