@@ -71,7 +71,7 @@ development_status:
   3-2-deposer-une-preuve-partenaire-via-api-signee: done
   3-3-durcir-stockage-cles-hmac-partenaire: done
   3-4-durcir-endpoint-partenaire-signe: done
-  epic-3-retrospective: optional
+  epic-3-retrospective: done
 
   # Epic 4 — Dépôt & litige résilients hors-ligne (PWA)
   epic-4: done
@@ -80,7 +80,7 @@ development_status:
   4-3-reconcilier-la-file-a-la-synchronisation: done
   4-4-notifier-l-utilisateur-du-resultat-de-synchronisation: done
   4-5-recuperer-ses-preuves-apres-un-rejet-definitif: done
-  epic-4-retrospective: optional
+  epic-4-retrospective: done
 
   # Epic 5 — Durcissement transverse (contrat d'API preuves)
   # Cross-cutting; EXÉCUTÉ entre Epic 2 et Epic 3 (l'ordre d'id ≠ ordre d'exécution).
@@ -118,4 +118,20 @@ action_items:
   - epic: 2
     action: "Garder l'endpoint partenaire (Epic 3) dans l'enveloppe d'erreur JSON de la plateforme"
     owner: "session dev Story 3.2"
+    status: done
+  - epic: 4
+    action: "Validation manuelle end-to-end de la stack (docker compose Postgres+MinIO+backend+frontend : depot/litige/retrait/partenaire, UI+API) - rien n'a tourne en reel"
+    owner: "Oscard"
     status: open
+  - epic: 4
+    action: "Triage/reconciliation des 14 reports offline ouverts (Epic 4) + decision durcissement vs accept POC"
+    owner: "Oscard"
+    status: open
+  - epic: 4
+    action: "Lecon planif: croiser les dependances de chaque AD avec le perimetre des epics (bmad-check-implementation-readiness) pour eviter un gap type AD-10 (codes d'erreur supposes mais non cadres)"
+    owner: "Oscard"
+    status: open
+  - epic: 4
+    action: "Workflow salvage-on-kill + reconciliation manuelle du ledger de la boucle (documente en memoire projet)"
+    owner: "Oscard"
+    status: done
