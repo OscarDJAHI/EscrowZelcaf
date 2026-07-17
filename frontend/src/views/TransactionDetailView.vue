@@ -89,9 +89,13 @@ function onDisputeOpened() {
   // Reload the full detail (transaction + audit history) AND the evidence: the
   // store already flipped the transaction to DISPUTED, but the audit timeline
   // and the attachment(s) filed with the opening only appear after a reload.
+  // Offline there is nothing to reload — and the failed fetch would set
+  // `escrowStore.error`, replacing the optimistic detail with an error panel.
   showDisputeForm.value = false
-  load()
-  loadEvidence()
+  if (offlineQueue.isOnline) {
+    load()
+    loadEvidence()
+  }
 }
 
 function onSync() {
@@ -147,6 +151,14 @@ onBeforeUnmount(() => {
         >
           "{{ transaction._queuedEvent }}" is queued offline and will be sent automatically once
           you're back online.
+        </div>
+
+        <div
+          v-if="transaction._queuedDispute"
+          class="mt-4 rounded-lg bg-orange-50 px-3 py-2 text-sm text-orange-700"
+        >
+          This dispute and its evidence files are queued offline and will be sent automatically
+          once you're back online.
         </div>
 
         <div

@@ -76,7 +76,7 @@ development_status:
   # Epic 4 — Dépôt & litige résilients hors-ligne (PWA)
   epic-4: in-progress
   4-1-migrer-la-file-hors-ligne-vers-indexeddb-porter-le-binaire: done
-  4-2-ouvrir-un-litige-deposer-des-preuves-hors-ligne: backlog
+  4-2-ouvrir-un-litige-deposer-des-preuves-hors-ligne: done
   4-3-reconcilier-la-file-a-la-synchronisation: backlog
   4-4-notifier-l-utilisateur-du-resultat-de-synchronisation: backlog
   4-5-recuperer-ses-preuves-apres-un-rejet-definitif: backlog

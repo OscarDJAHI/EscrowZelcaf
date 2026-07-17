@@ -134,3 +134,23 @@ story that found them. Append-only.
   evidence: Les deux constantes sont aujourd'hui identiques ; le risque est la maintenance (un seul point devrait porter le message uniforme). Correctif = extraire une constante partagée unique. Différé : churn de code de production pour un gain cosmétique ; sévérité faible.
   status: ACCEPTÉ — MINEUR POC (2026-07-17) — duplication de littéral, cosmétique ; non bloquant.
 
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-4-2-ouvrir-un-litige-deposer-des-preuves-hors-ligne.md`
+  summary: Le plafond serveur de 20 fichiers par dépôt (`PlatformLimits.MAX_FILES_PER_DEPOSIT`) n'a aucun miroir côté front ; hors-ligne, aucun serveur ne dit non au moment du dépôt.
+  evidence: `utils/evidence.js:47-60` valide taille et MIME mais jamais le nombre ; `OpenDisputeForm.vue` n'exige que `length > 0`. Un litige hors-ligne à 21 photos est mis en file sans broncher, puis rejeté en 400 au rejeu. En ligne c'est un retour immédiat et corrigeable ; en file, l'entrée attend le traitement des rejets permanents de la Story 4.3.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-4-2-ouvrir-un-litige-deposer-des-preuves-hors-ligne.md`
+  summary: `navigator.onLine` est le seul déclencheur de la mise en file : un POST parti en ligne qui échoue faute de réseau n'est jamais mis en file, et ses binaires sont perdus.
+  evidence: `escrow.js` branche sur `offlineQueue.isOnline` — motif identique à `createNewTransaction` et `sendTransactionEvent` depuis 4.1, donc pré-existant. Mais sur portail captif ou une barre de réseau (le terrain visé par l'epic), `navigator.onLine` vaut `true`, le POST expire et le formulaire dit « please try again » sans que rien ne soit conservé. La Story 4.2 rend cette perte coûteuse (des photos, plus un événement JSON rejouable). Un repli « échec réseau ⇒ mise en file » demande de trancher le risque de double soumission — décision humaine.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-4-2-ouvrir-un-litige-deposer-des-preuves-hors-ligne.md`
+  summary: Un rechargement hors-ligne du détail d'une transaction efface tout signe du litige en attente : l'utilisateur voit un panneau d'erreur.
+  evidence: `TransactionDetailView.vue:onMounted` appelle `load()` sans garde `isOnline` ; hors-ligne `loadTransactionDetail` échoue, pose `escrowStore.error`, et le bloc `v-else-if="transaction"` — donc le bandeau `_queuedDispute` — n'est jamais monté. L'entrée reste en base et rejouable (prouvé au niveau du store), mais l'affichage optimiste est **scopé à la session**. Pré-existant (tout détail hors-ligne se comporte ainsi) ; le vrai correctif exige un cache du détail ou l'écran de récupération de la Story 4.5, pas un garde de plus.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-4-2-ouvrir-un-litige-deposer-des-preuves-hors-ligne.md`
+  summary: Aucun test de composant dans le repo alors que `@vue/test-utils` est installé depuis 4.1 : les trois comportements UI de cette story ne sont vérifiés qu'à l'œil.
+  evidence: Le garde `isOnline` de `onDisputeOpened` n'est pas cosmétique (sans lui, un rechargement hors-ligne remplace le détail optimiste par une erreur), et ni lui, ni le bandeau `_queuedDispute`, ni la pastille « Pending sync » de `TransactionCard.vue` n'ont de test. Le harnais qui les couvrirait a déjà été payé par la Story 4.1.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-4-2-ouvrir-un-litige-deposer-des-preuves-hors-ligne.md`
+  summary: Le dépôt de preuve **simple** (hors ouverture de litige) reste en ligne uniquement, et aucune story de l'Epic 4 ne le couvre.
+  evidence: `stores/evidence.js#uploadEvidence` et `EvidenceDeposit.vue` sont intacts : hors-ligne, un utilisateur en `SHIPPED` qui dépose une pièce obtient « Upload failed. Please try again. ». Le corps de l'Epic 4 (« il rend le dépôt de preuves **et** l'ouverture de litige utilisables sur un réseau instable ou absent ») promet plus que ses stories : 4.2 ne cible que le chemin composite, 4.3/4.4/4.5 traitent réconciliation, notification et récupération. Trou de couverture au niveau de l'epic, à arbitrer.

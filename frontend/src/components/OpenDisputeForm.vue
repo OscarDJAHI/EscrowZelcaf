@@ -1,6 +1,7 @@
 <script setup>
 import { computed, ref } from 'vue'
 import { useEscrowStore } from '@/stores/escrow'
+import { useOfflineQueueStore } from '@/stores/offlineQueue'
 import { formatBytes, validateFile } from '@/utils/evidence'
 
 const props = defineProps({
@@ -10,6 +11,7 @@ const props = defineProps({
 const emit = defineEmits(['opened', 'cancel'])
 
 const escrowStore = useEscrowStore()
+const offlineQueue = useOfflineQueueStore()
 
 const selectedFiles = ref([])
 const comment = ref('')
@@ -100,6 +102,11 @@ async function handleSubmit() {
 
     <p class="text-xs text-gray-500">
       Opening a dispute requires at least one file and a comment of 10 characters or more.
+    </p>
+
+    <p v-if="!offlineQueue.isOnline" class="rounded-lg bg-orange-50 px-3 py-2 text-sm text-orange-700">
+      You're offline: the dispute and its evidence files will be saved on this device and sent
+      automatically once you're back online.
     </p>
 
     <p v-if="validationError || serverError" class="text-sm text-red-600">

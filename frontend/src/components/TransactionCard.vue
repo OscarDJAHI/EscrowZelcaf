@@ -44,13 +44,22 @@ const formattedAmount = computed(() => {
         <p class="text-xs uppercase tracking-wide text-gray-400">{{ counterpartyRoleLabel }}</p>
         <p class="truncate font-medium text-gray-900">{{ counterparty || '—' }}</p>
       </div>
-      <StateBadge v-if="!transaction._queuedOffline" :state="transaction.state" />
-      <span
-        v-else
-        class="inline-flex shrink-0 items-center rounded-full bg-orange-100 px-2.5 py-1 text-xs font-semibold text-orange-700"
-      >
-        Queued offline
-      </span>
+      <div class="flex shrink-0 items-center gap-2">
+        <StateBadge v-if="!transaction._queuedOffline" :state="transaction.state" />
+        <span
+          v-else
+          class="inline-flex shrink-0 items-center rounded-full bg-orange-100 px-2.5 py-1 text-xs font-semibold text-orange-700"
+        >
+          Queued offline
+        </span>
+        <!-- The badge above shows the optimistic DISPUTED: say it isn't confirmed yet. -->
+        <span
+          v-if="transaction._queuedDispute"
+          class="inline-flex shrink-0 items-center rounded-full bg-orange-100 px-2.5 py-1 text-xs font-semibold text-orange-700"
+        >
+          Pending sync
+        </span>
+      </div>
     </div>
     <div class="mt-3 flex items-end justify-between gap-2">
       <p class="text-xl font-semibold text-gray-900">{{ formattedAmount }}</p>
