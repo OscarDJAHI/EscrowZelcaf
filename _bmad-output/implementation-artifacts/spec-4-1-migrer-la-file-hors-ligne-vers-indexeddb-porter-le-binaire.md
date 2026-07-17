@@ -2,8 +2,9 @@
 title: 'Story 4.1 : Migrer la file hors-ligne vers IndexedDB (porter le binaire)'
 type: 'refactor'
 created: '2026-07-17'
-status: 'in-review'
+status: 'done'
 baseline_revision: '9e91506028196d68de0dbff2756f76ecca6e1284'
+final_revision: '2603979df3d45e6fab7ae2a9328edb330adbd1ad'
 review_loop_iteration: 0
 followup_review_recommended: true
 context: []
