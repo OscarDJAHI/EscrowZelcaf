@@ -6,12 +6,19 @@ import {
   openDispute,
   sendTransactionEvent,
 } from '@/api/escrow'
+import { useAuthStore } from './auth'
 import { useOfflineQueueStore } from './offlineQueue'
 
 export const useEscrowStore = defineStore('escrow', {
   state: () => ({
     transactions: [],
     currentDetail: null, // { transaction, auditLogs }
+    // When each source was *issued* to the server, not when it landed — see
+    // `loadTransactions`. Null until a load has succeeded. `SyncFailureNotice`
+    // compares them against `failure.at` (same client clock, so no drift) to
+    // tell a row that has seen a rejection from one that predates it.
+    transactionsFetchedAt: null,
+    currentDetailFetchedAt: null,
     loading: false,
     error: null,
   }),
@@ -20,9 +27,20 @@ export const useEscrowStore = defineStore('escrow', {
     async loadTransactions() {
       this.loading = true
       this.error = null
+      // Stamped before the call, written only on success. A load issued before a
+      // replay was refused but landing after it carries the server's state from
+      // *before* that refusal: stamping on return would date it after the
+      // refusal and make a stale payload look like it had seen the verdict.
+      // Keeping data and stamp together also means two concurrent loads landing
+      // out of order stay coherent — the older response overwrites with its own
+      // older stamp, so a reader degrades to "unknown" instead of being lied to.
+      const issuedAt = new Date().toISOString()
       try {
         this.transactions = await fetchTransactions()
+        this.transactionsFetchedAt = issuedAt
       } catch (err) {
+        // Stamp untouched on failure: the previous data is still on screen, so
+        // the stamp that describes it must stay.
         this.error = err.response?.data?.message || 'Unable to load your transactions.'
       } finally {
         this.loading = false
@@ -56,7 +74,12 @@ export const useEscrowStore = defineStore('escrow', {
             method: 'post',
             url: '/api/v1/escrow',
             data: payload,
-            meta: { type: 'CREATE_TRANSACTION' },
+            // `userId` stamps who queued this. The queue is device-global and
+            // survives `logout()`, so without an owner on the entry nothing
+            // downstream can tell whose it is. Read at enqueue time, never
+            // later: by the time a frozen entry is displayed the session may
+            // belong to someone else.
+            meta: { type: 'CREATE_TRANSACTION', userId: useAuthStore().user?.id },
           })
         } catch (err) {
           // Nothing was persisted, so nothing will ever sync: take the card back
@@ -77,8 +100,10 @@ export const useEscrowStore = defineStore('escrow', {
     async loadTransactionDetail(id) {
       this.loading = true
       this.error = null
+      const issuedAt = new Date().toISOString() // before the call — see `loadTransactions`
       try {
         this.currentDetail = await fetchTransactionDetail(id)
+        this.currentDetailFetchedAt = issuedAt
       } catch (err) {
         this.error = err.response?.data?.message || 'Unable to load this transaction.'
       } finally {
@@ -99,7 +124,7 @@ export const useEscrowStore = defineStore('escrow', {
           method: 'post',
           url: `/api/v1/escrow/${id}/event`,
           data: { event },
-          meta: { type: 'SEND_EVENT', transactionId: id },
+          meta: { type: 'SEND_EVENT', transactionId: id, userId: useAuthStore().user?.id },
         })
         if (this.currentDetail?.transaction?.id === id) {
           this.currentDetail.transaction._queuedEvent = event
@@ -157,7 +182,7 @@ export const useEscrowStore = defineStore('escrow', {
           // replay may land hours later, so without this the audit trail would
           // only ever hold the reconnection time (AD-11).
           data: { comment, clientCapturedAt: new Date().toISOString() },
-          meta: { type: 'OPEN_DISPUTE', transactionId: id },
+          meta: { type: 'OPEN_DISPUTE', transactionId: id, userId: useAuthStore().user?.id },
         })
 
         if (this.currentDetail?.transaction && String(this.currentDetail.transaction.id) === String(id)) {

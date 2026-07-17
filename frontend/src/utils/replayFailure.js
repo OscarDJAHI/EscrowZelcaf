@@ -43,10 +43,76 @@ export function extractFailureReason(err) {
     code: res?.data?.code ?? null,
     status: res?.status ?? null,
     // No envelope, no message: falling back on `err.message` would hand 4.4 an
-    // axios-internal English string ("Request failed with status code 404") to
-    // show a French-speaking user. The same reason `code` refuses to guess.
+    // axios-internal string ("Request failed with status code 404") to show a
+    // user as if it were a verdict. The same reason `code` refuses to guess.
     message: res?.data?.message ?? null,
   }
+}
+
+/**
+ * User-facing sentence for each `Retryability.PERMANENT` code of
+ * `backend/src/main/java/com/zlecaf/escrow/domain/ErrorCode.java` that a frozen
+ * entry can actually carry — i.e. every one but `AUTH_FAILED`, which only the
+ * partner endpoints raise and which no queued request can ever hit.
+ *
+ * The label is derived from the `code` and never from the envelope's `message`:
+ * `ErrorCode.java:8-11` declares that text interpolated, localisable and locked
+ * by no contract, so a backend refactor may reword it without breaking a thing.
+ * The `code` is the contract (Story 5.3), so it is what the wording hangs on.
+ *
+ * English, like the rest of the chrome (`OnlineBanner.vue`) and like the server
+ * messages themselves — the repo carries no i18n infrastructure.
+ *
+ * A subset, not a mirror: only the reachable codes are spelled out, and an
+ * unknown one degrades through `describeFailure` rather than crashing. The
+ * drift guard in `__tests__/replayFailure.spec.js` holds the other direction —
+ * no key here may name a code the PERMANENT partition does not declare.
+ */
+export const FAILURE_LABELS = Object.freeze({
+  DISPUTE_ALREADY_RESOLVED: 'This dispute had already been arbitrated.',
+  TRANSACTION_TERMINAL: 'This transaction was already closed: nothing more can happen to it.',
+  ILLEGAL_TRANSITION: 'This action is not allowed from the state the transaction had reached.',
+  UNAUTHORIZED_TRANSITION: 'Your role is not allowed to perform this action on this transaction.',
+  WINDOW_CLOSED: 'Evidence can no longer be changed at this stage of the transaction.',
+  EVIDENCE_INVALID: 'One of the attached files was refused (empty, wrong type, or too large).',
+  EVIDENCE_FLOOR_VIOLATION: 'A disputed transaction must keep at least one piece of evidence.',
+  TOO_MANY_FILES: 'Too many files were attached for a single deposit.',
+  COMMENT_TOO_SHORT: 'The comment was missing or too short.',
+  NOT_A_PARTY: 'You are not a party to this transaction.',
+  TRANSACTION_NOT_FOUND: 'This transaction no longer exists.',
+  VALIDATION_ERROR: 'The server rejected the details of this request.',
+  MISSING_REQUEST_PART: 'Part of this request never reached the server.',
+  INVALID_REQUEST: 'The server rejected this request.',
+  RESOURCE_NOT_FOUND: 'What this action referred to no longer exists.',
+  CONFLICT: 'This action conflicted with the transaction as the server holds it.',
+  FORBIDDEN: 'You are not allowed to perform this action.',
+})
+
+/** Shown when neither a known code nor a server message says anything usable. */
+const GENERIC_FAILURE_LABEL = 'The server refused this action.'
+
+/**
+ * The one sentence telling the user why a queued action was refused.
+ *
+ * The fallback order is the contract, and each step is a step down in trust:
+ * the label of a known `code` (stable, ours) → the server `message` (real
+ * detail, but no contract holds its wording) → a generic refusal. Never the
+ * raw `code`: `SOME_NEW_CODE` is not a sentence.
+ *
+ * Pure — no store, no clock, no network — so Story 4.5 can reuse it as-is.
+ * @param {{code: string|null, message: string|null}|null|undefined} failure as `extractFailureReason` shapes it
+ * @returns {string}
+ */
+export function describeFailure(failure) {
+  const code = failure?.code
+  // `hasOwn`, not `FAILURE_LABELS[code]`: `code` comes off a server response, so
+  // a lookup that walks the prototype would let 'constructor' return a function.
+  if (typeof code === 'string' && Object.hasOwn(FAILURE_LABELS, code)) return FAILURE_LABELS[code]
+
+  const message = failure?.message
+  if (typeof message === 'string' && message.trim() !== '') return message
+
+  return GENERIC_FAILURE_LABEL
 }
 
 /**

@@ -2,12 +2,20 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import { IDBFactory } from 'fake-indexeddb'
 import apiClient from '@/api/client'
-import { openDispute as openDisputeApi } from '@/api/escrow'
+import {
+  fetchTransactionDetail as fetchTransactionDetailApi,
+  fetchTransactions as fetchTransactionsApi,
+  openDispute as openDisputeApi,
+} from '@/api/escrow'
+import { useAuthStore } from '@/stores/auth'
 import { useEscrowStore } from '@/stores/escrow'
 import { useOfflineQueueStore } from '@/stores/offlineQueue'
 import * as idb from '@/stores/offlineQueue.idb'
 
-vi.mock('@/api/client', () => ({ default: { request: vi.fn() } }))
+// `TOKEN_STORAGE_KEY` is re-exported because a whole-module factory drops
+// everything it does not name, and `stores/auth` — reached through
+// `stores/escrow` since it stamps `meta.userId` — imports the real constant.
+vi.mock('@/api/client', () => ({ default: { request: vi.fn() }, TOKEN_STORAGE_KEY: 'escrow_token' }))
 vi.mock('@/api/escrow', () => ({
   fetchTransactions: vi.fn(),
   fetchTransactionDetail: vi.fn(),
@@ -247,6 +255,107 @@ describe('escrow store — opening a dispute offline', () => {
 
     expect(apiClient.request).toHaveBeenCalledOnce()
     await expectSameBytes(apiClient.request.mock.calls[0][0].data.getAll('files')[0], blob)
+  })
+})
+
+describe('escrow store — when a load saw the server', () => {
+  // Sentinel instants five minutes apart, never `new Date()`: two real
+  // `toISOString()` calls land in the same millisecond, so a test built on them
+  // could not tell "stamped at issue" from "stamped on return" — the exact
+  // confusion this behaviour exists to prevent.
+  const ISSUED_AT = '2026-01-01T00:00:00.000Z'
+  const LANDED_AT = '2026-01-01T00:05:00.000Z'
+
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it('has no stamp until a load has actually succeeded', () => {
+    const escrow = useEscrowStore()
+
+    expect(escrow.transactionsFetchedAt).toBeNull()
+    expect(escrow.currentDetailFetchedAt).toBeNull()
+  })
+
+  it('stamps loadTransactions with the instant it was issued, not the one it landed', async () => {
+    const escrow = useEscrowStore()
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date(ISSUED_AT))
+    let land
+    fetchTransactionsApi.mockReturnValueOnce(new Promise((resolve) => { land = resolve }))
+
+    const loading = escrow.loadTransactions()
+    // The response is in flight while the clock moves — precisely the window in
+    // which `flush()` freezes an entry. This payload is the server's state from
+    // *before* that freeze, so a stamp of LANDED_AT would let `SyncFailureNotice`
+    // badge it as having seen the rejection.
+    vi.setSystemTime(new Date(LANDED_AT))
+    land([{ id: 7, state: 'FUNDS_LOCKED' }])
+    await loading
+
+    expect(escrow.transactionsFetchedAt).toBe(ISSUED_AT)
+  })
+
+  it('stamps loadTransactionDetail with the instant it was issued, not the one it landed', async () => {
+    const escrow = useEscrowStore()
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date(ISSUED_AT))
+    let land
+    fetchTransactionDetailApi.mockReturnValueOnce(new Promise((resolve) => { land = resolve }))
+
+    const loading = escrow.loadTransactionDetail(7)
+    vi.setSystemTime(new Date(LANDED_AT))
+    land(detailFor(7))
+    await loading
+
+    expect(escrow.currentDetailFetchedAt).toBe(ISSUED_AT)
+  })
+
+  it('leaves both stamps untouched when a load fails', async () => {
+    const escrow = useEscrowStore()
+    escrow.transactionsFetchedAt = ISSUED_AT
+    escrow.currentDetailFetchedAt = ISSUED_AT
+    fetchTransactionsApi.mockRejectedValueOnce(new Error('network down'))
+    fetchTransactionDetailApi.mockRejectedValueOnce(new Error('network down'))
+
+    await escrow.loadTransactions()
+    await escrow.loadTransactionDetail(7)
+
+    // A failed load leaves the previous data on screen, so the stamp that
+    // describes that data has to stay with it.
+    expect(escrow.transactionsFetchedAt).toBe(ISSUED_AT)
+    expect(escrow.currentDetailFetchedAt).toBe(ISSUED_AT)
+  })
+})
+
+describe('escrow store — a queued entry carries its owner', () => {
+  it('stamps meta.userId on all three offline paths', async () => {
+    const escrow = useEscrowStore()
+    const queue = useOfflineQueueStore()
+    useAuthStore().user = { id: 42, email: 'alice@corp.example' }
+    queue.isOnline = false
+    escrow.currentDetail = detailFor(7)
+
+    await escrow.createNewTransaction(payload)
+    await escrow.sendTransactionEvent(7, 'SHIP')
+    await escrow.openDispute(7, { files: [makeBlob(512)], comment: 'Colis endommagé' })
+
+    // Read back through IndexedDB: the owner has to survive the reload, since
+    // that is exactly when a frozen entry gets displayed to whoever is logged in.
+    const stored = await idb.getAll()
+    expect(stored).toHaveLength(3)
+    expect(stored.map((e) => e.meta.userId)).toEqual([42, 42, 42])
+  })
+
+  it('leaves meta.userId absent when nobody is logged in', async () => {
+    const escrow = useEscrowStore()
+    useOfflineQueueStore().isOnline = false
+
+    await escrow.createNewTransaction(payload)
+
+    // Not a crash and not a fabricated owner: an unowned entry is shown to
+    // nobody rather than to the next person to log in.
+    expect((await idb.getAll())[0].meta.userId).toBeUndefined()
   })
 })
 

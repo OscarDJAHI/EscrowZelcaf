@@ -1,4 +1,5 @@
 import { fileURLToPath, URL } from 'node:url'
+import vue from '@vitejs/plugin-vue'
 import { defineConfig } from 'vitest/config'
 
 // Separate from vite.config.js on purpose: that file imports `defineConfig`
@@ -6,6 +7,10 @@ import { defineConfig } from 'vitest/config'
 // suite has no use for. The `@` alias is re-declared here because every
 // module under src/ imports through it.
 export default defineConfig({
+  // Without it a `.vue` import reaches the suite as raw SFC text and the import
+  // analysis fails: the repo had no component test until Story 4.4, hence no
+  // Vue plugin here. Already a devDependency — package.json is untouched.
+  plugins: [vue()],
   test: {
     environment: 'jsdom',
     setupFiles: ['./vitest.setup.js'],

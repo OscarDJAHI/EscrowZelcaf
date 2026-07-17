@@ -1,7 +1,13 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { TRANSIENT_CODES, classifyReplayFailure, extractFailureReason } from '@/utils/replayFailure'
+import {
+  FAILURE_LABELS,
+  TRANSIENT_CODES,
+  classifyReplayFailure,
+  describeFailure,
+  extractFailureReason,
+} from '@/utils/replayFailure'
 
 /** Shapes an AxiosError the way `client.js` relays it: `err.response.data` is the envelope. */
 function httpError(status, data) {
@@ -92,6 +98,85 @@ describe('TRANSIENT_CODES', () => {
 
     expect(declared.length).toBeGreaterThan(0) // the regex still matches the enum's shape
     expect([...TRANSIENT_CODES].sort()).toEqual(declared.sort())
+  })
+})
+
+describe('FAILURE_LABELS', () => {
+  it('names only codes the PERMANENT partition of ErrorCode.java really declares', () => {
+    // Same rationale as the TRANSIENT_CODES guard: read the authority, never a
+    // hand-copied list. A subset assertion, not an equality — AUTH_FAILED is
+    // PERMANENT but partner-only, so it legitimately has no label. The regex is
+    // pinned to `Retryability.PERMANENT` and not to `Retryability.\w+`: a code
+    // reclassified TRANSIENT backend-side would otherwise keep its label here
+    // while becoming unreachable (`classifyReplayFailure` never freezes a
+    // transient), and the drift would pass in silence.
+    const java = readFileSync(
+      resolve(process.cwd(), '../backend/src/main/java/com/zlecaf/escrow/domain/ErrorCode.java'),
+      'utf8',
+    )
+    const permanent = [...java.matchAll(/(\w+)\(Retryability\.PERMANENT\)/g)].map((m) => m[1])
+
+    expect(permanent.length).toBeGreaterThan(0) // the regex still matches the enum's shape
+    // The subset assertion below is vacuously green on an empty map — it filters
+    // the map's own keys, so deleting every label would pass it while every user
+    // fell back to the generic refusal. This says the map is still populated.
+    // Deliberately not an equality against `permanent`: a *subset* is the spec's
+    // standing decision (AUTH_FAILED is PERMANENT but partner-only, and a new
+    // backend code must fall back on its message, not redden the front).
+    expect(Object.keys(FAILURE_LABELS).length).toBeGreaterThan(0)
+    const unknown = Object.keys(FAILURE_LABELS).filter((code) => !permanent.includes(code))
+    expect(unknown).toEqual([])
+  })
+
+})
+
+describe('describeFailure — code first, message second, generic last', () => {
+  it('prefers the label of a known code over the server message', () => {
+    // The whole point: `message` is interpolated and locked by no contract
+    // (ErrorCode.java:8-11), so it must never decide what the user reads.
+    const reason = describeFailure({
+      code: 'DISPUTE_ALREADY_RESOLVED',
+      status: 409,
+      message: 'Dispute on transaction 7 was already arbitrated',
+    })
+
+    expect(reason).toBe(FAILURE_LABELS.DISPUTE_ALREADY_RESOLVED)
+    expect(reason).not.toBe('Dispute on transaction 7 was already arbitrated')
+  })
+
+  it('falls back on the server message when the code is unknown', () => {
+    // A code added backend-side and not yet labelled here: the message is the
+    // best thing left. Never the raw code — `SOME_NEW_CODE` is not a sentence.
+    const reason = describeFailure({ code: 'SOME_NEW_CODE', status: 400, message: 'Server said no' })
+
+    expect(reason).toBe('Server said no')
+    expect(reason).not.toContain('SOME_NEW_CODE')
+  })
+
+  it('falls back on a generic refusal when there is no envelope at all', () => {
+    // A routing 404 or Spring's /error: `extractFailureReason` yields nulls
+    // rather than an axios-internal string, so this is the shape that arrives.
+    const reason = describeFailure({ code: null, status: 404, message: null })
+
+    expect(reason).toBe(describeFailure(null))
+    expect(reason).toMatch(/refused/i)
+    // Never the axios internals, whatever happens.
+    expect(reason).not.toMatch(/status code/i)
+  })
+
+  it('ignores an empty server message rather than showing a blank reason', () => {
+    expect(describeFailure({ code: null, status: 400, message: '   ' })).toBe(
+      describeFailure({ code: null, status: 400, message: null }),
+    )
+  })
+
+  it('does not walk the prototype chain for a code coming off a response', () => {
+    // `code` is attacker-adjacent data: a plain `FAILURE_LABELS[code]` lookup
+    // would return Object.prototype.constructor here — a function, rendered as
+    // source text next to the user's dispute.
+    const reason = describeFailure({ code: 'constructor', status: 400, message: 'Server said no' })
+
+    expect(reason).toBe('Server said no')
   })
 })
 
