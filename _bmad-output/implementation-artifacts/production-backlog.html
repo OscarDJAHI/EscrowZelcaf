@@ -1,0 +1,415 @@
+<title>Escrow — Backlog de mise en production</title>
+<style>
+  :root {
+    --ground: #f6f8f7;
+    --surface: #ffffff;
+    --surface-2: #eef2f0;
+    --ink: #10201c;
+    --muted: #566862;
+    --faint: #7d8e88;
+    --accent: #0b6b5f;
+    --accent-soft: #0b6b5f14;
+    --hairline: #dfe6e3;
+    --hairline-strong: #c8d3ce;
+    --crit: #bb3326;
+    --crit-bg: #bb332612;
+    --high: #b3720a;
+    --high-bg: #b3720a12;
+    --med: #3d6aa0;
+    --med-bg: #3d6aa012;
+    --low: #4c8a5f;
+    --low-bg: #4c8a5f12;
+    --p0-wash: #bb33260a;
+    --shadow: 0 1px 2px #10201c0a, 0 8px 24px #10201c08;
+    --serif: ui-serif, "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+    --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --ground: #0c1411;
+      --surface: #121d19;
+      --surface-2: #17241f;
+      --ink: #e7efeb;
+      --muted: #93a49e;
+      --faint: #6f817b;
+      --accent: #3fbaa5;
+      --accent-soft: #3fbaa51f;
+      --hairline: #223028;
+      --hairline-strong: #2e3f37;
+      --crit: #e8695c;
+      --crit-bg: #e8695c1a;
+      --high: #e0a23e;
+      --high-bg: #e0a23e1a;
+      --med: #6f9ad6;
+      --med-bg: #6f9ad61a;
+      --low: #6fb884;
+      --low-bg: #6fb8841a;
+      --p0-wash: #e8695c0d;
+      --shadow: 0 1px 2px #0006, 0 10px 30px #0004;
+    }
+  }
+  :root[data-theme="light"] {
+    --ground: #f6f8f7; --surface: #ffffff; --surface-2: #eef2f0; --ink: #10201c;
+    --muted: #566862; --faint: #7d8e88; --accent: #0b6b5f; --accent-soft: #0b6b5f14;
+    --hairline: #dfe6e3; --hairline-strong: #c8d3ce;
+    --crit: #bb3326; --crit-bg: #bb332612; --high: #b3720a; --high-bg: #b3720a12;
+    --med: #3d6aa0; --med-bg: #3d6aa012; --low: #4c8a5f; --low-bg: #4c8a5f12;
+    --p0-wash: #bb33260a; --shadow: 0 1px 2px #10201c0a, 0 8px 24px #10201c08;
+  }
+  :root[data-theme="dark"] {
+    --ground: #0c1411; --surface: #121d19; --surface-2: #17241f; --ink: #e7efeb;
+    --muted: #93a49e; --faint: #6f817b; --accent: #3fbaa5; --accent-soft: #3fbaa51f;
+    --hairline: #223028; --hairline-strong: #2e3f37;
+    --crit: #e8695c; --crit-bg: #e8695c1a; --high: #e0a23e; --high-bg: #e0a23e1a;
+    --med: #6f9ad6; --med-bg: #6f9ad61a; --low: #6fb884; --low-bg: #6fb8841a;
+    --p0-wash: #e8695c0d; --shadow: 0 1px 2px #0006, 0 10px 30px #0004;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--ground); color: var(--ink);
+    font-family: var(--sans); line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 0 24px 96px; }
+
+  /* Masthead */
+  header.mast { padding: 56px 0 28px; border-bottom: 1px solid var(--hairline); }
+  .eyebrow {
+    font-family: var(--mono); font-size: 12px; letter-spacing: .16em;
+    text-transform: uppercase; color: var(--accent); margin: 0 0 14px;
+  }
+  h1.title {
+    font-family: var(--serif); font-weight: 600; font-size: clamp(30px, 5vw, 46px);
+    line-height: 1.06; letter-spacing: -.01em; margin: 0 0 16px; text-wrap: balance;
+    max-width: 20ch;
+  }
+  .lede { font-size: 17px; color: var(--muted); max-width: 66ch; margin: 0; }
+  .lede strong { color: var(--ink); font-weight: 600; }
+
+  /* KPI row */
+  .kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin: 28px 0 8px; }
+  .kpi {
+    background: var(--surface); border: 1px solid var(--hairline); border-radius: 12px;
+    padding: 16px 18px; box-shadow: var(--shadow);
+  }
+  .kpi .n { font-family: var(--serif); font-size: 34px; font-weight: 600; line-height: 1;
+    font-variant-numeric: tabular-nums; letter-spacing: -.02em; }
+  .kpi .l { font-size: 12.5px; color: var(--muted); margin-top: 8px; }
+  .kpi.crit .n { color: var(--crit); }
+  .kpi.p0 .n { color: var(--accent); }
+
+  /* Legend */
+  .legend { display: flex; flex-wrap: wrap; gap: 8px 18px; margin: 22px 0 6px; align-items: center; }
+  .legend .grp { display: flex; gap: 8px; align-items: center; }
+  .legend .lbl { font-family: var(--mono); font-size: 11px; letter-spacing: .1em;
+    text-transform: uppercase; color: var(--faint); }
+  .sev { display: inline-flex; align-items: center; gap: 6px; font-size: 12px;
+    font-weight: 600; padding: 3px 9px; border-radius: 999px; }
+  .sev::before { content: ""; width: 7px; height: 7px; border-radius: 50%; }
+  .sev.crit { color: var(--crit); background: var(--crit-bg); } .sev.crit::before { background: var(--crit); }
+  .sev.high { color: var(--high); background: var(--high-bg); } .sev.high::before { background: var(--high); }
+  .sev.med  { color: var(--med);  background: var(--med-bg); }  .sev.med::before  { background: var(--med); }
+  .sev.low  { color: var(--low);  background: var(--low-bg); }  .sev.low::before  { background: var(--low); }
+  .eff { font-family: var(--mono); font-size: 11px; font-weight: 600; padding: 2px 7px;
+    border: 1px solid var(--hairline-strong); border-radius: 6px; color: var(--muted); }
+
+  /* Tier */
+  .tier { margin-top: 52px; }
+  .tier-head { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap;
+    padding-bottom: 6px; }
+  .tier-tag { font-family: var(--mono); font-weight: 700; font-size: 13px; letter-spacing: .08em;
+    color: var(--surface); background: var(--accent); padding: 4px 10px; border-radius: 7px; }
+  .tier.stop .tier-tag { background: var(--crit); }
+  .tier h2 { font-family: var(--serif); font-weight: 600; font-size: 24px; margin: 0;
+    letter-spacing: -.01em; }
+  .tier-note { font-size: 14px; color: var(--muted); margin: 6px 0 0; max-width: 74ch; }
+
+  /* Epic card */
+  .epic { background: var(--surface); border: 1px solid var(--hairline); border-radius: 14px;
+    margin-top: 16px; overflow: hidden; box-shadow: var(--shadow); }
+  .tier.stop .epic { background: linear-gradient(0deg, var(--p0-wash), var(--p0-wash)), var(--surface); }
+  .epic-head { display: flex; align-items: center; gap: 12px; padding: 15px 20px;
+    border-bottom: 1px solid var(--hairline); flex-wrap: wrap; }
+  .epic-code { font-family: var(--mono); font-size: 12px; font-weight: 700; letter-spacing: .06em;
+    color: var(--accent); background: var(--accent-soft); padding: 3px 9px; border-radius: 6px; }
+  .epic-name { font-weight: 650; font-size: 16px; }
+  .epic-meta { margin-left: auto; font-size: 12.5px; color: var(--faint); font-family: var(--mono); }
+
+  /* Item rows */
+  .item { display: grid; grid-template-columns: 128px 1fr auto; gap: 18px;
+    padding: 15px 20px 15px 17px; border-left: 3px solid transparent; position: relative; }
+  .item + .item { border-top: 1px solid var(--hairline); }
+  .item.crit { border-left-color: var(--crit); }
+  .item.high { border-left-color: var(--high); }
+  .item.med  { border-left-color: var(--med); }
+  .item.low  { border-left-color: var(--low); }
+  .item-sev { padding-top: 2px; }
+  .item-body h4 { margin: 0 0 4px; font-size: 15px; font-weight: 640; letter-spacing: -.005em; }
+  .item-body p { margin: 0; font-size: 13.5px; color: var(--muted); max-width: 72ch; }
+  .item-body .ev { font-family: var(--mono); font-size: 11.5px; color: var(--faint);
+    display: inline-block; margin-top: 7px; word-break: break-word; }
+  .item-right { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; white-space: nowrap; }
+  .tags { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+  .tag { font-family: var(--mono); font-size: 10.5px; letter-spacing: .04em; text-transform: uppercase;
+    color: var(--faint); border: 1px solid var(--hairline); border-radius: 5px; padding: 2px 6px; }
+
+  @media (max-width: 720px) {
+    .kpis { grid-template-columns: repeat(2, 1fr); }
+    .item { grid-template-columns: 1fr; gap: 10px; }
+    .item-right { flex-direction: row; align-items: center; justify-content: flex-start; }
+  }
+
+  /* Footer */
+  footer { margin-top: 64px; padding-top: 22px; border-top: 1px solid var(--hairline);
+    font-size: 13px; color: var(--faint); display: flex; justify-content: space-between; flex-wrap: wrap; gap: 12px; }
+  footer .mono { font-family: var(--mono); }
+  a { color: var(--accent); }
+  .callout { background: var(--accent-soft); border: 1px solid var(--hairline); border-left: 3px solid var(--accent);
+    border-radius: 10px; padding: 16px 20px; margin-top: 24px; font-size: 14.5px; color: var(--ink); }
+  .callout b { color: var(--accent); }
+</style>
+
+<div class="wrap">
+  <header class="mast">
+    <p class="eyebrow">Escrow ZLECAf · POC → Production</p>
+    <h1 class="title">Ce qui sépare le prototype d'un produit qui garde de l'argent</h1>
+    <p class="lede">Le POC est prouvé de bout en bout (20/20 E2E, Epics 1&#8209;3). Cette page re&#8209;trie les 14 reports différés <strong>sous l'angle production</strong> et y ajoute l'analyse d'écarts sécurité, opérabilité et métier menée sur le code réel. Chaque ligne est une story candidate, priorisée en tiers de sprint.</p>
+
+    <div class="kpis">
+      <div class="kpi crit"><div class="n">11</div><div class="l">écarts critiques</div></div>
+      <div class="kpi p0"><div class="n">15</div><div class="l">items « stop&#8209;ship » (P0)</div></div>
+      <div class="kpi"><div class="n">51</div><div class="l">items au backlog</div></div>
+      <div class="kpi"><div class="n">12</div><div class="l">epics candidates</div></div>
+    </div>
+
+    <div class="legend">
+      <div class="grp"><span class="lbl">Sévérité</span>
+        <span class="sev crit">Critique</span><span class="sev high">Haute</span>
+        <span class="sev med">Moyenne</span><span class="sev low">Basse</span>
+      </div>
+      <div class="grp"><span class="lbl">Effort</span>
+        <span class="eff">S</span><span class="eff">M</span><span class="eff">L</span>
+      </div>
+    </div>
+
+    <div class="callout">
+      <b>Deux verrous à trancher avant de planifier.</b> (1) <b>Le séquestre est fictif</b> — <span style="font-family:var(--mono);font-size:12.5px">PAY_FUNDS</span> ne fait que changer un enum, aucun fonds n'est jamais immobilisé. Pour un produit d'escrow, c'est LA fonction. (2) <b>Faille vivante</b> — n'importe qui peut s'enregistrer <span style="font-family:var(--mono);font-size:12.5px">role=ADMIN</span> et arbitrer les litiges / libérer les fonds. Ces deux points conditionnent l'architecture et doivent ouvrir le chantier.
+    </div>
+  </header>
+
+  <!-- ============ P0 STOP SHIP ============ -->
+  <section class="tier stop">
+    <div class="tier-head">
+      <span class="tier-tag">P0 · STOP‑SHIP</span>
+      <h2>À verrouiller avant toute mise en ligne</h2>
+    </div>
+    <p class="tier-note">Failles exploitables aujourd'hui et absence du cœur métier. Le lot sécurité est majoritairement court et doit constituer le premier sprint ; le lot paiement est un chantier d'architecture à lancer en parallèle.</p>
+
+    <div class="epic">
+      <div class="epic-head"><span class="epic-code">SEC</span><span class="epic-name">Contrôle d'accès &amp; secrets</span><span class="epic-meta">8 items · 2 crit</span></div>
+      <div class="item crit"><div class="item-sev"><span class="sev crit">Critique</span></div>
+        <div class="item-body"><h4>Auto‑enregistrement en rôle ADMIN</h4><p>L'inscription accepte le rôle depuis le client — un attaquant obtient un compte arbitre qui peut libérer ou rembourser les fonds. Octroi du rôle côté plateforme uniquement.</p><span class="ev">AuthService.register:37 setRole(request.role()) · AuthDtos.java:20</span></div>
+        <div class="item-right"><span class="eff">S</span><div class="tags"><span class="tag">sécurité</span><span class="tag">domaine</span></div></div></div>
+      <div class="item crit"><div class="item-sev"><span class="sev crit">Critique</span></div>
+        <div class="item-body"><h4>Secrets en dur &amp; defaults faibles</h4><p>Secret JWT, creds MinIO (<span style="font-family:var(--mono)">minioadmin</span>), mot de passe DB en clair dans le compose ; l'app démarre sur un secret public connu si une var manque. Externaliser + gestion de secrets, échec au démarrage si absent.</p><span class="ev">docker-compose.yml:100,103‑104 · application.yml:43,51</span></div>
+        <div class="item-right"><span class="eff">M</span><div class="tags"><span class="tag">sécurité</span><span class="tag">ops</span></div></div></div>
+      <div class="item high"><div class="item-sev"><span class="sev high">Haute</span></div>
+        <div class="item-body"><h4>Hygiène de session sur appareil partagé</h4><p>Bundle des reports offline #6/#8/#9/#10 : <span style="font-family:var(--mono)">logout()</span> vide la file &amp; <span style="font-family:var(--mono)">$reset</span> les stores, file scopée par utilisateur (pas de rejeu inter‑user), 403 nu traité comme session expirée. Sans ça : gel définitif à tort des preuves d'un utilisateur.</p><span class="ev">auth.js:74 · client.js:27 · offlineQueue.idb.js:3 · escrow store</span></div>
+        <div class="item-right"><span class="eff">M</span><div class="tags"><span class="tag">ledger C1</span><span class="tag">sécurité</span></div></div></div>
+      <div class="item high"><div class="item-sev"><span class="sev high">Haute</span></div>
+        <div class="item-body"><h4>Rate‑limiting / anti‑bruteforce sur l'auth</h4><p>Aucune limite sur <span style="font-family:var(--mono)">/auth/login</span> et <span style="font-family:var(--mono)">/register</span> : bruteforce de mots de passe, énumération de comptes, DoS d'inscription.</p><span class="ev">AuthController.java:20‑28 · aucun bucket4j/resilience4j</span></div>
+        <div class="item-right"><span class="eff">M</span><div class="tags"><span class="tag">sécurité</span></div></div></div>
+      <div class="item high"><div class="item-sev"><span class="sev high">Haute</span></div>
+        <div class="item-body"><h4>TLS / HTTPS + HSTS + en‑têtes de sécurité</h4><p>Le backend expose du HTTP nu, aucune terminaison TLS, ni HSTS, ni CSP/anti‑clickjacking. Tokens et données financières en clair.</p><span class="ev">docker-compose.yml:106 · nginx.conf:2 · SecurityConfig (headers absents)</span></div>
+        <div class="item-right"><span class="eff">M</span><div class="tags"><span class="tag">sécurité</span><span class="tag">ops</span></div></div></div>
+      <div class="item high"><div class="item-sev"><span class="sev high">Haute</span></div>
+        <div class="item-body"><h4>CORS permissif &amp; Swagger ouvert</h4><p><span style="font-family:var(--mono)">allowedOriginPatterns("*")</span> et Swagger/OpenAPI en <span style="font-family:var(--mono)">permitAll</span> : toute origine appelle l'API, cartographie complète exposée. Allowlist + fermeture en prod.</p><span class="ev">SecurityConfig.java:47‑48,58‑60</span></div>
+        <div class="item-right"><span class="eff">S</span><div class="tags"><span class="tag">sécurité</span></div></div></div>
+      <div class="item med"><div class="item-sev"><span class="sev med">Moyenne</span></div>
+        <div class="item-body"><h4>Politique mot de passe + révocation JWT</h4><p>Minimum 6 caractères, JWT 24h sans refresh ni blacklist : un token volé reste valide, un rôle changé reste exploitable. Politique renforcée + révocation.</p><span class="ev">AuthDtos.java:17 · JwtService.java:39 · application.yml:44</span></div>
+        <div class="item-right"><span class="eff">M</span><div class="tags"><span class="tag">sécurité</span></div></div></div>
+      <div class="item med"><div class="item-sev"><span class="sev med">Moyenne</span></div>
+        <div class="item-body"><h4>Oracle 403‑vs‑404 (énumération)</h4><p>Report ledger : « existe mais pas à toi » (403) se distingue de « inexistant » (404), permettant d'énumérer les transactions. Uniformiser au niveau plateforme.</p><span class="ev">EscrowService.java:210‑215 · TransactionAccess</span></div>
+        <div class="item-right"><span class="eff">S</span><div class="tags"><span class="tag">ledger</span><span class="tag">sécurité</span></div></div></div>
+    </div>
+
+    <div class="epic">
+      <div class="epic-head"><span class="epic-code">PAY</span><span class="epic-name">Séquestre réel des fonds</span><span class="epic-meta">4 items · 3 crit · décision d'archi</span></div>
+      <div class="item crit"><div class="item-sev"><span class="sev crit">Critique</span></div>
+        <div class="item-body"><h4>Intégration PSP : encaissement &amp; immobilisation</h4><p><span style="font-family:var(--mono)">PAY_FUNDS</span> n'appelle aucun prestataire — l'état « fonds bloqués » est un mensonge. Encaisser réellement et immobiliser avant de passer FUNDS_LOCKED (choix PSP cross‑border à trancher).</p><span class="ev">EscrowStateMachine.java:39 · aucun PSP dans le code</span></div>
+        <div class="item-right"><span class="eff">L</span><div class="tags"><span class="tag">domaine</span></div></div></div>
+      <div class="item crit"><div class="item-sev"><span class="sev crit">Critique</span></div>
+        <div class="item-body"><h4>Versement vendeur &amp; remboursement réels</h4><p>RELEASED et REFUNDED ne sont que des changements d'enum : aucun virement ni remboursement effectif. Boucler le cycle financier.</p><span class="ev">EscrowStateMachine.java:45‑52</span></div>
+        <div class="item-right"><span class="eff">L</span><div class="tags"><span class="tag">domaine</span></div></div></div>
+      <div class="item crit"><div class="item-sev"><span class="sev crit">Critique</span></div>
+        <div class="item-body"><h4>Compte de cantonnement &amp; grand livre</h4><p>Un séquestre régulé exige un compte ségrégué et une comptabilité en partie double auditable (soldes par transaction, rapprochement).</p><span class="ev">absent — seul escrow_transactions.amount existe</span></div>
+        <div class="item-right"><span class="eff">L</span><div class="tags"><span class="tag">domaine</span></div></div></div>
+      <div class="item high"><div class="item-sev"><span class="sev high">Haute</span></div>
+        <div class="item-body"><h4>Frais / commission de plateforme</h4><p>Le modèle économique repose sur une commission prélevée au release : à calculer, tracer et déduire du versement.</p><span class="ev">absent — aucun champ fee</span></div>
+        <div class="item-right"><span class="eff">M</span><div class="tags"><span class="tag">domaine</span></div></div></div>
+    </div>
+  </section>
+
+  <!-- ============ P1 ============ -->
+  <section class="tier">
+    <div class="tier-head"><span class="tier-tag">P1 · Régulé &amp; opérable</span><h2>Devenir déployable et conforme</h2></div>
+    <p class="tier-note">Sans ces lots, le produit n'est ni légalement exploitable pour un mouvement de fonds transfrontalier, ni tenable en exploitation.</p>
+
+    <div class="epic">
+      <div class="epic-head"><span class="epic-code">CMP</span><span class="epic-name">Conformité — KYC / KYB / AML</span><span class="epic-meta">4 items · 2 crit</span></div>
+      <div class="item crit"><div class="item-sev"><span class="sev crit">Critique</span></div>
+        <div class="item-body"><h4>KYB des entreprises</h4><p>La table <span style="font-family:var(--mono)">companies</span> n'a ni identité légale complète, ni statut de vérification, et n'est jamais peuplée par le code. Vérifier représentant légal, bénéficiaires effectifs, justificatifs avant transaction.</p><span class="ev">Company.java · V1__init.sql:6‑12 · aucun save</span></div>
+        <div class="item-right"><span class="eff">L</span><div class="tags"><span class="tag">domaine</span></div></div></div>
+      <div class="item crit"><div class="item-sev"><span class="sev crit">Critique</span></div>
+        <div class="item-body"><h4>Screening AML / sanctions</h4><p>Filtrage listes de sanctions et surveillance AML : obligation réglementaire non négociable pour un flux transfrontalier.</p><span class="ev">absent</span></div>
+        <div class="item-right"><span class="eff">L</span><div class="tags"><span class="tag">domaine</span></div></div></div>
+      <div class="item high"><div class="item-sev"><span class="sev high">Haute</span></div>
+        <div class="item-body"><h4>Lien utilisateur ↔ entreprise à l'inscription</h4><p>L'inscription ne relie jamais l'utilisateur à une company — sans quoi aucun KYB, facturation ni périmètre partenaire n'est applicable.</p><span class="ev">AuthService.register:32‑38 · RegisterRequest sans company</span></div>
+        <div class="item-right"><span class="eff">M</span><div class="tags"><span class="tag">domaine</span></div></div></div>
+      <div class="item med"><div class="item-sev"><span class="sev med">Moyenne</span></div>
+        <div class="item-body"><h4>Rétention légale &amp; inaltérabilité (WORM)</h4><p>Durée de conservation minimale et verrouillage d'objet des preuves/audit imposés par les régulateurs.</p><span class="ev">MinIO sans object‑lock · audit_logs sans politique</span></div>
+        <div class="item-right"><span class="eff">M</span><div class="tags"><span class="tag">domaine</span></div></div></div>
+    </div>
+
+    <div class="epic">
+      <div class="epic-head"><span class="epic-code">ARB</span><span class="epic-name">Arbitrage &amp; cycle de vie</span><span class="epic-meta">2 items</span></div>
+      <div class="item high"><div class="item-sev"><span class="sev high">Haute</span></div>
+        <div class="item-body"><h4>Console d'arbitrage dédiée</h4><p>Les <span style="font-family:var(--mono)">RESOLVE_*</span> passent par l'endpoint générique et un bouton sur la vue transaction. Un arbitrage crédible exige file des litiges, assignation d'arbitre, consultation des preuves, décision motivée et tracée.</p><span class="ev">EscrowStateMachine.java:49‑52 · TransactionDetailView.vue:60</span></div>
+        <div class="item-right"><span class="eff">L</span><div class="tags"><span class="tag">domaine</span></div></div></div>
+      <div class="item high"><div class="item-sev"><span class="sev high">Haute</span></div>
+        <div class="item-body"><h4>Expiration / SLA / délais</h4><p>Aucun délai sur les transactions : auto‑remboursement si non‑expédition, auto‑release après X jours sans litige, expiration d'une transaction non financée — sinon des fonds restent bloqués indéfiniment.</p><span class="ev">aucun champ deadline · seul PartnerNoncePurger est planifié</span></div>
+        <div class="item-right"><span class="eff">M</span><div class="tags"><span class="tag">domaine</span></div></div></div>
+    </div>
+
+    <div class="epic">
+      <div class="epic-head"><span class="epic-code">OPS</span><span class="epic-name">Production‑readiness</span><span class="epic-meta">7 items · 4 crit</span></div>
+      <div class="item crit"><div class="item-sev"><span class="sev crit">Critique</span></div>
+        <div class="item-body"><h4>Pipeline CI/CD</h4><p>Aucun pipeline : les 186 tests backend + suites frontend ne tournent jamais à chaque commit, aucun gate avant merge, aucune régression détectée.</p><span class="ev">absent — ni .github/workflows ni équivalent</span></div>
+        <div class="item-right"><span class="eff">M</span><div class="tags"><span class="tag">ops</span></div></div></div>
+      <div class="item crit"><div class="item-sev"><span class="sev crit">Critique</span></div>
+        <div class="item-body"><h4>Backup / restore Postgres + MinIO</h4><p>Volumes sans dump ni snapshot, aucune procédure de restore. Perte irréversible de données financières et légales en cas de crash volume.</p><span class="ev">absent</span></div>
+        <div class="item-right"><span class="eff">M</span><div class="tags"><span class="tag">ops</span></div></div></div>
+      <div class="item crit"><div class="item-sev"><span class="sev crit">Critique</span></div>
+        <div class="item-body"><h4>Stack réellement déployable</h4><p>Le compose est dev‑only : pas de <span style="font-family:var(--mono)">restart</span>, pas de limites CPU/mémoire, consoles d'admin (adminer, pgAdmin, MinIO) exposées. Pas de reverse‑proxy/TLS ni orchestration.</p><span class="ev">docker-compose.yml (name: escrow-poc) · pas de k8s/ingress</span></div>
+        <div class="item-right"><span class="eff">L</span><div class="tags"><span class="tag">ops</span></div></div></div>
+      <div class="item crit"><div class="item-sev"><span class="sev crit">Critique</span></div>
+        <div class="item-body"><h4>Observabilité</h4><p>Ni métriques Prometheus, ni logs structurés/corrélation de requêtes, ni tracing, ni alerting. Incidents détectés seulement par les clients.</p><span class="ev">pom.xml (micrometer‑prometheus absent) · pas de logback‑spring · MDC absent</span></div>
+        <div class="item-right"><span class="eff">M</span><div class="tags"><span class="tag">ops</span></div></div></div>
+      <div class="item high"><div class="item-sev"><span class="sev high">Haute</span></div>
+        <div class="item-body"><h4>Profils multi‑env &amp; secrets management</h4><p>Un seul <span style="font-family:var(--mono)">application.yml</span>, aucune séparation dev/staging/prod, API base frontend figée au build.</p><span class="ev">application.yml unique · Dockerfile ARG VITE_API_BASE bakée</span></div>
+        <div class="item-right"><span class="eff">M</span><div class="tags"><span class="tag">ops</span></div></div></div>
+      <div class="item high"><div class="item-sev"><span class="sev high">Haute</span></div>
+        <div class="item-body"><h4>Résilience dépendances &amp; idempotence du rejeu</h4><p>Aucun retry/timeout sur MinIO/RabbitMQ ; le rejeu de la file offline n'a pas d'<span style="font-family:var(--mono)">Idempotency‑Key</span> → doublons de dépôt sur réseau instable (cible explicite de l'epic 4).</p><span class="ev">MinioEvidenceStorage · offlineQueue.js · aucun idempotency côté backend</span></div>
+        <div class="item-right"><span class="eff">M</span><div class="tags"><span class="tag">ops</span></div></div></div>
+      <div class="item high"><div class="item-sev"><span class="sev high">Haute</span></div>
+        <div class="item-body"><h4>Scan de vulnérabilités / SBOM</h4><p>Aucun Trivy/Dependabot/OWASP : dépendances et images de base dérivent sans alerte CVE.</p><span class="ev">absent</span></div>
+        <div class="item-right"><span class="eff">S</span><div class="tags"><span class="tag">ops</span></div></div></div>
+    </div>
+  </section>
+
+  <!-- ============ P2 ============ -->
+  <section class="tier">
+    <div class="tier-head"><span class="tier-tag">P2 · Produit complet</span><h2>Compléter l'expérience et la résilience</h2></div>
+    <p class="tier-note">Fonctionnalités attendues d'un vrai produit transactionnel, et complétude du hors‑ligne promis par l'epic 4.</p>
+
+    <div class="epic">
+      <div class="epic-head"><span class="epic-code">NOTIF</span><span class="epic-name">Notifications &amp; comptes</span><span class="epic-meta">4 items</span></div>
+      <div class="item high"><div class="item-sev"><span class="sev high">Haute</span></div>
+        <div class="item-body"><h4>Notifications email / SMS des transitions</h4><p>Aucun canal utilisateur (seulement RabbitMQ + webhooks). Acheteur/vendeur doivent être prévenus : fonds reçus, expédition, litige, résolution.</p><span class="ev">NotificationDispatcher.java:24‑29 (pas de mail/SMS)</span></div>
+        <div class="item-right"><span class="eff">M</span><div class="tags"><span class="tag">domaine</span></div></div></div>
+      <div class="item high"><div class="item-sev"><span class="sev high">Haute</span></div>
+        <div class="item-body"><h4>Reset mot de passe &amp; invitation</h4><p>Seuls <span style="font-family:var(--mono)">/register</span> et <span style="font-family:var(--mono)">/login</span> existent : un utilisateur qui oublie son mot de passe est bloqué à vie.</p><span class="ev">AuthController.java:20‑28</span></div>
+        <div class="item-right"><span class="eff">M</span><div class="tags"><span class="tag">domaine</span></div></div></div>
+      <div class="item med"><div class="item-sev"><span class="sev med">Moyenne</span></div>
+        <div class="item-body"><h4>Livraison webhook fiable &amp; scopée</h4><p>Échec = perte silencieuse (log.warn) ; n'importe qui crée un webhook pour n'importe quelle company, secret fourni en clair par le client. Retry/DLQ + authz tenant + secret généré serveur.</p><span class="ev">WebhookService.deliver:79 · WebhookController.create:28</span></div>
+        <div class="item-right"><span class="eff">M</span><div class="tags"><span class="tag">domaine</span><span class="tag">sécurité</span></div></div></div>
+      <div class="item med"><div class="item-sev"><span class="sev med">Moyenne</span></div>
+        <div class="item-body"><h4>Multi‑utilisateur par entreprise</h4><p>Modèle User→Company présent mais aucun endpoint pour inviter/lister/gérer les membres et leurs droits internes.</p><span class="ev">User.java:30‑32 · aucun endpoint d'équipe</span></div>
+        <div class="item-right"><span class="eff">M</span><div class="tags"><span class="tag">domaine</span></div></div></div>
+    </div>
+
+    <div class="epic">
+      <div class="epic-head"><span class="epic-code">DATA</span><span class="epic-name">Données sensibles au repos</span><span class="epic-meta">2 items</span></div>
+      <div class="item high"><div class="item-sev"><span class="sev high">Haute</span></div>
+        <div class="item-body"><h4>Chiffrement au repos preuves &amp; secrets</h4><p>Binaires de preuve stockés non chiffrés ; secrets HMAC partenaire et webhook stockés en clair (un dump DB = forge de dépôts signés). Chiffrer/hasher.</p><span class="ev">MinioEvidenceStorage:43 · V4:16 · V1__init.sql:46</span></div>
+        <div class="item-right"><span class="eff">M</span><div class="tags"><span class="tag">sécurité</span></div></div></div>
+      <div class="item med"><div class="item-sev"><span class="sev med">Moyenne</span></div>
+        <div class="item-body"><h4>Scan anti‑malware des uploads</h4><p>Seuls taille + MIME sont validés : un PDF/JPEG malveillant est stocké puis re‑servi sans analyse AV.</p><span class="ev">EvidenceService.java:167‑179</span></div>
+        <div class="item-right"><span class="eff">L</span><div class="tags"><span class="tag">sécurité</span></div></div></div>
+    </div>
+
+    <div class="epic">
+      <div class="epic-head"><span class="epic-code">FX</span><span class="epic-name">Multi‑devise cross‑border</span><span class="epic-meta">2 items</span></div>
+      <div class="item high"><div class="item-sev"><span class="sev high">Haute</span></div>
+        <div class="item-body"><h4>Conversion FX &amp; devise de règlement</h4><p>La promesse ZLECAf est le cross‑border (acheteur NGN / vendeur XOF). Sans taux figé, spread et devise de règlement, une transaction bi‑devise est inhonorable.</p><span class="ev">EscrowTransaction.java:28 · currency purement stockée</span></div>
+        <div class="item-right"><span class="eff">L</span><div class="tags"><span class="tag">domaine</span></div></div></div>
+      <div class="item med"><div class="item-sev"><span class="sev med">Moyenne</span></div>
+        <div class="item-body"><h4>Validation devise ISO‑4217</h4><p>Toute chaîne de 3 lettres est acceptée : restreindre aux devises réellement réglables.</p><span class="ev">EscrowService.create:76 (toUpperCase seul)</span></div>
+        <div class="item-right"><span class="eff">S</span><div class="tags"><span class="tag">domaine</span></div></div></div>
+    </div>
+
+    <div class="epic">
+      <div class="epic-head"><span class="epic-code">PART</span><span class="epic-name">Onboarding partenaire</span><span class="epic-meta">1 item</span></div>
+      <div class="item high"><div class="item-sev"><span class="sev high">Haute</span></div>
+        <div class="item-body"><h4>Provisioning des clés HMAC via admin</h4><p>Les clés partenaire ne s'insèrent qu'à la main en SQL. Générer/afficher/révoquer/roter via une UI/API admin sécurisée et auditable.</p><span class="ev">PartnerHmacKeyRepository (lecture seule) · V4 commentaire</span></div>
+        <div class="item-right"><span class="eff">M</span><div class="tags"><span class="tag">domaine</span></div></div></div>
+    </div>
+
+    <div class="epic">
+      <div class="epic-head"><span class="epic-code">OFF</span><span class="epic-name">Complétude hors‑ligne</span><span class="epic-meta">5 items · ledger Cluster 2‑3</span></div>
+      <div class="item med"><div class="item-sev"><span class="sev med">Moyenne</span></div>
+        <div class="item-body"><h4>Échec réseau → mise en file (#2)</h4><p><span style="font-family:var(--mono)">navigator.onLine</span> est le seul déclencheur : sur portail captif, le POST expire et les binaires sont perdus. Repli « échec réseau ⇒ file » (trancher le risque double‑soumission).</p><span class="ev">escrow.js · offlineQueue.isOnline</span></div>
+        <div class="item-right"><span class="eff">M</span><div class="tags"><span class="tag">ledger</span></div></div></div>
+      <div class="item med"><div class="item-sev"><span class="sev med">Moyenne</span></div>
+        <div class="item-body"><h4>Cache du détail hors‑ligne (#3)</h4><p>Un rechargement hors‑ligne du détail efface le litige en attente (panneau d'erreur). Cache local ou écran de récupération.</p><span class="ev">TransactionDetailView.vue:onMounted</span></div>
+        <div class="item-right"><span class="eff">M</span><div class="tags"><span class="tag">ledger</span></div></div></div>
+      <div class="item med"><div class="item-sev"><span class="sev med">Moyenne</span></div>
+        <div class="item-body"><h4>Dépôt de preuve simple hors‑ligne (#5)</h4><p>Le dépôt simple reste online‑only alors que l'epic 4 le promettait — trou de couverture au niveau epic.</p><span class="ev">stores/evidence.js#uploadEvidence · EvidenceDeposit.vue</span></div>
+        <div class="item-right"><span class="eff">M</span><div class="tags"><span class="tag">ledger</span></div></div></div>
+      <div class="item low"><div class="item-sev"><span class="sev low">Basse</span></div>
+        <div class="item-body"><h4>Miroir front du plafond de fichiers (#1)</h4><p>Le plafond serveur de 20 fichiers n'est pas miroité : un litige à 21 photos est mis en file puis rejeté en 400 au rejeu.</p><span class="ev">utils/evidence.js:47‑60 (nb non validé)</span></div>
+        <div class="item-right"><span class="eff">S</span><div class="tags"><span class="tag">ledger</span></div></div></div>
+      <div class="item low"><div class="item-sev"><span class="sev low">Basse</span></div>
+        <div class="item-body"><h4>Normalisation d'id de transaction (#11)</h4><p>Comparaison <span style="font-family:var(--mono)">===</span> là où 6 chemins voisins font <span style="font-family:var(--mono)">String()===String()</span> → marqueur optimiste non posé. Fix d'une ligne.</p><span class="ev">stores/escrow.js:129</span></div>
+        <div class="item-right"><span class="eff">S</span><div class="tags"><span class="tag">ledger</span></div></div></div>
+    </div>
+  </section>
+
+  <!-- ============ P3 ============ -->
+  <section class="tier">
+    <div class="tier-head"><span class="tier-tag">P3 · Qualité &amp; dette</span><h2>Consolider la base</h2></div>
+    <p class="tier-note">Dette de tests et durcissement continu — à traiter en fil de l'eau, une fois la CI en place.</p>
+
+    <div class="epic">
+      <div class="epic-head"><span class="epic-code">QA</span><span class="epic-name">Tests, perf &amp; dette</span><span class="epic-meta">7 items</span></div>
+      <div class="item high"><div class="item-sev"><span class="sev high">Haute</span></div>
+        <div class="item-body"><h4>Tests de charge / performance</h4><p>Aucune donnée sur débit/latence ; dimensionnement pool/JVM à l'aveugle. k6/Gatling sur les parcours chauds.</p><span class="ev">absent</span></div>
+        <div class="item-right"><span class="eff">M</span><div class="tags"><span class="tag">ops</span></div></div></div>
+      <div class="item med"><div class="item-sev"><span class="sev med">Moyenne</span></div>
+        <div class="item-body"><h4>E2E frontend (Playwright)</h4><p>Le parcours PWA offline→online (cœur métier) n'est validé que par des unitaires. Automatiser en bout‑en‑bout.</p><span class="ev">vitest unitaires seuls · .playwright-mcp présent inutilisé</span></div>
+        <div class="item-right"><span class="eff">M</span><div class="tags"><span class="tag">ops</span></div></div></div>
+      <div class="item med"><div class="item-sev"><span class="sev med">Moyenne</span></div>
+        <div class="item-body"><h4>Rétention / partitionnement de l'audit</h4><p><span style="font-family:var(--mono)">audit_logs</span> croît sans limite (INSERT à chaque transition + download). Politique de rétention/partition.</p><span class="ev">V1__init.sql:52‑61</span></div>
+        <div class="item-right"><span class="eff">M</span><div class="tags"><span class="tag">ops</span></div></div></div>
+      <div class="item low"><div class="item-sev"><span class="sev low">Basse</span></div>
+        <div class="item-body"><h4>Garde de test lisant le backend (#12)</h4><p>Une suite front lit un fichier backend par chemin relatif → ENOENT en checkout/CI isolé. Skip conditionnel explicite.</p><span class="ev">replayFailure.spec.js:93‑96</span></div>
+        <div class="item-right"><span class="eff">S</span><div class="tags"><span class="tag">ledger</span></div></div></div>
+      <div class="item low"><div class="item-sev"><span class="sev low">Basse</span></div>
+        <div class="item-body"><h4>Mock recopiant TOKEN_STORAGE_KEY (#13)</h4><p>La valeur est dupliquée en dur dans un mock : un changement de clé laisserait la suite verte pendant que la prod lit une autre clé.</p><span class="ev">escrow.offline.spec.js:8</span></div>
+        <div class="item-right"><span class="eff">S</span><div class="tags"><span class="tag">ledger</span></div></div></div>
+      <div class="item low"><div class="item-sev"><span class="sev low">Basse</span></div>
+        <div class="item-body"><h4>Commentaire trompeur (#14)</h4><p>Un commentaire de test annonce que l'écran 4.5 ressuscite les entrées sans <span style="font-family:var(--mono)">meta.userId</span> — ce que 4.5 a explicitement refusé. Zéro impact runtime.</p><span class="ev">SyncFailureNotice.spec.js:241</span></div>
+        <div class="item-right"><span class="eff">S</span><div class="tags"><span class="tag">ledger</span></div></div></div>
+      <div class="item low"><div class="item-sev"><span class="sev low">Basse</span></div>
+        <div class="item-body"><h4>Couverture de tests de composant (#4)</h4><p>Report partiellement périmé : 4.4/4.5 ont ajouté des tests de composant. À réévaluer, combler les vues restantes.</p><span class="ev">partiellement résolu depuis le report</span></div>
+        <div class="item-right"><span class="eff">S</span><div class="tags"><span class="tag">ledger</span></div></div></div>
+    </div>
+  </section>
+
+  <footer>
+    <span>Backlog dérivé du re‑triage de <span class="mono">deferred-work.md</span> + analyse d'écarts sur le code réel (sécurité · ops · domaine).</span>
+    <span class="mono">2026‑07‑18 · Escrow ZLECAf</span>
+  </footer>
+</div>

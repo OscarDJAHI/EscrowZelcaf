@@ -41,7 +41,7 @@
 # - Retrospective appends its action items to action_items; sprint-status surfaces open ones
 
 generated: 2026-07-16
-last_updated: "2026-07-17 (Story 4.3 done — réconciliation de la file livrée ; Epic 4 3/5)"
+last_updated: "2026-07-18 (Validation E2E réelle de la stack : 20/20 checks Epics 1-2-3 + PWA/CORS ; 2 action items E2E fermés)"
 project: Escrow
 project_key: NOKEY
 tracking_system: file-system
@@ -114,7 +114,8 @@ action_items:
   - epic: 2
     action: "Validation manuelle end-to-end de la stack (docker compose : dépôt/litige/retrait UI+API) — planifiée à la fin de toutes les epics"
     owner: "Oscard"
-    status: open
+    status: done
+    note: "2026-07-18 : E2E API réel (build reconstruit depuis le source, DB fraîche). 20/20 checks verts sur Epics 1-2-3 : auth+JWT, machine à états, dépôt/liste/download (intégrité octets), anti-IDOR 403, litige atomique+preuve obligatoire, retrait, audit ; dépôt partenaire signé HMAC + anti-rejeu nonce + signature falsifiée + authz company. Frontend PWA servi (SW+manifest 200) et CORS préflight :5173->:8080 OK. Reste optionnel : click-through UI et E2E offline via automation navigateur."
   - epic: 2
     action: "Garder l'endpoint partenaire (Epic 3) dans l'enveloppe d'erreur JSON de la plateforme"
     owner: "session dev Story 3.2"
@@ -122,7 +123,8 @@ action_items:
   - epic: 4
     action: "Validation manuelle end-to-end de la stack (docker compose Postgres+MinIO+backend+frontend : depot/litige/retrait/partenaire, UI+API) - rien n'a tourne en reel"
     owner: "Oscard"
-    status: open
+    status: done
+    note: "2026-07-18 : constat clé — le conteneur backend qui tournait était un build PERIME du 2026-07-15 23:41 (= commit initial e53f7fe), sans AUCUN des 18 commits backend des Epics 1-5. Reconstruit (docker compose down -v + up --build), puis E2E API réel 20/20 vert sur Epics 1-2-3 (voir note action epic 2). Frontend PWA + CORS OK. Reste optionnel : E2E offline PWA (IndexedDB/file/replay) via automation Chrome — déjà couvert par 170 tests unitaires frontend."
   - epic: 4
     action: "Triage/reconciliation des 14 reports offline ouverts (Epic 4) + decision durcissement vs accept POC"
     owner: "Oscard"
