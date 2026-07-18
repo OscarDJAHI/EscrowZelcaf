@@ -97,7 +97,6 @@ async function handleSubmit() {
             >
               <option value="BUYER">Buyer</option>
               <option value="SELLER">Seller</option>
-              <option value="ADMIN">Admin (arbitrator)</option>
             </select>
           </div>
         </template>

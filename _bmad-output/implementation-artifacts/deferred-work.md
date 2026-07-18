@@ -190,3 +190,16 @@ story that found them. Append-only.
 - source_spec: `_bmad-output/implementation-artifacts/spec-4-5-recuperer-ses-preuves-apres-un-rejet-definitif.md`
   summary: Le commentaire de `frontend/src/components/__tests__/SyncFailureNotice.spec.js:241-242` annonce que « Story 4.5's recovery screen is what brings it back » à propos des entrées gelées sans `meta.userId` — or la Story 4.5 a explicitement refusé de les ressusciter (leur inventer un propriétaire rouvrirait la fuite inter-utilisateurs).
   evidence: Commentaire vérifié en place ; la Story 4.5 documente le refus dans ses Boundaries (« Ne pas faire réapparaître les entrées sans meta.userId ») et ses Design Notes. Le fichier n'a pas pu être corrigé dans la 4.5 : une de ses AC exige que les 36 tests de ce fichier restent inchangés, cette immuabilité étant la preuve que l'extraction vers `utils/frozenEntry.js` ne change aucun comportement. Portée : commentaire trompeur pour le prochain lecteur, aucun impact d'exécution.
+
+
+- source_spec: `_bmad-output/planning-artifacts/epics-production.md` (Story 1.1 — revue de code 2026-07-18)
+  summary: Les comptes ADMIN auto-attribués AVANT le correctif de la Story 1.1 ne sont ni révoqués ni audités — le correctif ferme la porte pour l'avenir mais ne remédie pas l'existant, et un ADMIN rogue préexistant bloque en plus le seed légitime (`existsByRole(ADMIN)` vrai).
+  evidence: `AdminBootstrap` s'appuie sur `existsByRole(ADMIN)`. Sur une base ayant tourné avec l'ancien code self-service, des privilèges illégitimes persistent. Correctif = migration Flyway de rétrogradation/audit des ADMIN non provisionnés + décision de politique (quels ADMIN sont légitimes) — décision humaine, hors périmètre de la story (fermer la faille ≠ nettoyer les données historiques). Notre base POC a été reconstruite (aucun rogue). Sévérité moyenne ; à traiter avant la bascule d'une base de prod ayant tourné avec l'ancien code.
+
+- source_spec: `epics-production.md` (Story 1.1 — revue de code 2026-07-18)
+  summary: L'amorçage ADMIN ne gère ni la rotation du mot de passe ni un signal fort quand l'email configuré entre en collision avec un compte existant (la plateforme démarre alors sans ADMIN, sur un simple warn).
+  evidence: `AdminBootstrap` est idempotent par rôle : une fois un ADMIN présent, changer `escrow.bootstrap.admin.password` puis redémarrer est un no-op silencieux ; une collision d'email produit un warn+skip. Relève de l'outillage d'admin complet de l'Epic 7 (générer/révoquer/roter, gestion des membres). Sévérité faible-moyenne.
+
+- source_spec: `AuthService.register` (préexistant, surfacé par la revue de la Story 1.1)
+  summary: `existsByEmail` puis `save` n'est pas atomique : deux inscriptions simultanées du même email peuvent produire une `DataIntegrityViolationException` non mappée (500) au lieu d'un 409.
+  evidence: Pré-existant, NON introduit par la Story 1.1 (la garde de rôle n'y touche pas). Correctif = catcher la violation d'unicité et la mapper en `ConflictException` (409). Sévérité faible.

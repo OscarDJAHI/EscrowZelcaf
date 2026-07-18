@@ -4,7 +4,6 @@ import com.zlecaf.escrow.domain.Role;
 import com.zlecaf.escrow.domain.User;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 
 /** Authentication request/response payloads. */
@@ -17,7 +16,9 @@ public final class AuthDtos {
             @NotBlank @Size(min = 6, max = 100) String password,
             String firstName,
             String lastName,
-            @NotNull Role role) {}
+            // Rôle optionnel et non-privilégié : le serveur retombe sur BUYER si absent et
+            // rejette toute demande d'ADMIN (voir AuthService.register). Jamais bindé en ADMIN.
+            Role role) {}
 
     public record LoginRequest(
             @Email @NotBlank String email,

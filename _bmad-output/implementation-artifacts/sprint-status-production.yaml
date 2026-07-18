@@ -1,0 +1,145 @@
+# generated: 2026-07-18
+# last_updated: 2026-07-18 (sprint planning production — depuis epics-production.md)
+# project: Escrow_claude (Production)
+# project_key: NOKEY
+# tracking_system: file-system
+# story_location: {project-root}/_bmad-output/implementation-artifacts
+#
+# PORTÉE : suivi du backlog de MISE EN PRODUCTION (10 epics / 46 stories).
+# Distinct de sprint-status.yaml (périmètre POC, tout done) — numérotation d'epics
+# indépendante, d'où un fichier séparé. Source : planning-artifacts/epics-production.md.
+
+# STATUS DEFINITIONS:
+# ==================
+# Epic Status:
+#   - backlog: Epic not yet started
+#   - in-progress: Epic actively being worked on
+#   - done: All stories in epic completed
+#
+# Story Status:
+#   - backlog: Story only exists in epic file
+#   - ready-for-dev: Story file created in stories folder
+#   - in-progress: Developer actively working on implementation
+#   - review: Ready for code review (via Dev's code-review workflow)
+#   - done: Story completed
+#
+# Retrospective Status:
+#   - optional: Can be completed but not required
+#   - done: Retrospective has been completed
+#
+# Action Item Status:
+#   - open: not yet addressed
+#   - in-progress: Actively being worked on
+#   - done: Completed
+#
+# SÉQUENCEMENT RECOMMANDÉ (sprints) :
+#   - Sprint 1 = Epic 1 (Sécurité, stop-ship) ; démarrer en parallèle le spike 2-1 (paiement) et Epic 5 (CI/CD).
+#   - Puis P1 : Epics 3, 4, 5 ; puis P2 : Epics 6-9 ; Epic 10 en continu une fois la CI en place.
+
+generated: 2026-07-18
+last_updated: "2026-07-18 (Story 1-1 DONE — revue de code + 3 patchs, 238 tests backend + 170 frontend verts)"
+project: Escrow_claude (Production)
+project_key: NOKEY
+tracking_system: file-system
+story_location: "{project-root}/_bmad-output/implementation-artifacts"
+
+development_status:
+  # Epic 1 — Sécurité & protection des données (P0 stop-ship)
+  epic-1: in-progress
+  1-1-retirer-auto-attribution-role-admin: done
+  1-2-externaliser-secrets-echec-demarrage: backlog
+  1-3-brider-bruteforce-authentification: backlog
+  1-4-restreindre-cors-fermer-swagger: backlog
+  1-5-forcer-tls-entetes-securite: backlog
+  1-6-politique-mot-de-passe-revocation-jwt: backlog
+  1-7-uniformiser-reponses-403-404: backlog
+  1-8-hygiene-session-appareil-partage: backlog
+  1-9-chiffrer-preuves-secrets-au-repos: backlog
+  1-10-scanner-fichiers-uploades-antimalware: backlog
+  epic-1-retrospective: optional
+
+  # Epic 2 — Séquestre réel des fonds (P0 ; spike 2-1 en tête)
+  epic-2: backlog
+  2-1-spike-architecture-paiement-cantonnement: backlog
+  2-2-encaisser-immobiliser-fonds: backlog
+  2-3-verser-vendeur-rembourser-acheteur: backlog
+  2-4-grand-livre-partie-double: backlog
+  2-5-prelever-commission-plateforme: backlog
+  epic-2-retrospective: optional
+
+  # Epic 3 — Conformité KYC/KYB/AML (P1 ; spike 3-1 en tête)
+  epic-3: backlog
+  3-1-spike-fournisseur-kyb-kyc-aml: backlog
+  3-2-relier-utilisateur-entreprise-inscription: backlog
+  3-3-verification-kyb-avant-transaction: backlog
+  3-4-screening-aml-sanctions: backlog
+  3-5-retention-legale-inalterabilite-preuves: backlog
+  epic-3-retrospective: optional
+
+  # Epic 4 — Arbitrage & cycle de vie (P1)
+  epic-4: backlog
+  4-1-file-litiges-assignation-arbitre: backlog
+  4-2-decision-arbitrage-motivee-tracee: backlog
+  4-3-delais-sla-auto-resolution: backlog
+  epic-4-retrospective: optional
+
+  # Epic 5 — Opérabilité & déploiement (P1 ; démarrer tôt)
+  epic-5: backlog
+  5-1-pipeline-ci-gate-tests: backlog
+  5-2-scan-vulnerabilites-sbom: backlog
+  5-3-observabilite-metriques-logs-tracing: backlog
+  5-4-sauvegarde-restauration: backlog
+  5-5-stack-deployable-orchestree: backlog
+  5-6-profils-multi-environnements-config-externalisee: backlog
+  5-7-resilience-dependances-retention-audit: backlog
+  epic-5-retrospective: optional
+
+  # Epic 6 — Notifications fiables (P2)
+  epic-6: backlog
+  6-1-notifications-email-sms-transitions: backlog
+  6-2-livraison-webhook-fiable-securisee: backlog
+  epic-6-retrospective: optional
+
+  # Epic 7 — Comptes & administration (P2)
+  epic-7: backlog
+  7-1-reinitialisation-mot-de-passe: backlog
+  7-2-invitation-utilisateur: backlog
+  7-3-multi-utilisateur-roles-internes-entreprise: backlog
+  7-4-provisioning-cles-hmac-partenaire-admin: backlog
+  epic-7-retrospective: optional
+
+  # Epic 8 — Devises cross-border (P2)
+  epic-8: backlog
+  8-1-validation-iso-4217-devises: backlog
+  8-2-reglement-bi-devise-cross-border: backlog
+  epic-8-retrospective: optional
+
+  # Epic 9 — Résilience hors-ligne complète (P2 ; reprise ledger Cluster 2-3)
+  epic-9: backlog
+  9-1-corrections-front-rapides-plafond-id: backlog
+  9-2-idempotence-du-rejeu: backlog
+  9-3-mise-en-file-echec-reseau: backlog
+  9-4-cache-detail-hors-ligne: backlog
+  9-5-depot-preuve-simple-hors-ligne: backlog
+  epic-9-retrospective: optional
+
+  # Epic 10 — Qualité & dette technique (P3 ; en continu)
+  epic-10: backlog
+  10-1-resorber-dette-tests-ledger: backlog
+  10-2-tests-charge-performance: backlog
+  10-3-tests-e2e-frontend-offline-online: backlog
+  epic-10-retrospective: optional
+
+action_items:
+  - epic: 2
+    action: "Scinder les stories L (2-2 encaissement PSP, 2-3 versement/remboursement) en sous-stories au moment de la mise en sprint (bmad-create-story) ; elles dépendent de la sortie du spike 2-1."
+    owner: "Oscard"
+    status: open
+  - epic: 3
+    action: "Scinder les stories L (3-3 KYB, 3-4 AML) ; elles dépendent de la sortie du spike 3-1."
+    owner: "Oscard"
+    status: open
+  - epic: 5
+    action: "Prioriser 5-1 (pipeline CI) tôt : fiabilise la livraison de toutes les epics suivantes."
+    owner: "Oscard"
+    status: open
