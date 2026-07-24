@@ -170,9 +170,9 @@ Every push / pull request on `develop` and `main` runs
 
 | Job | What it runs | Gate |
 |-----|--------------|------|
-| **Backend (Maven + Testcontainers)** | `./mvnw -B verify` — full suite, real PostgreSQL via Docker | required |
-| **Frontend (Vitest + build PWA)** | `npm ci && npm run test && npm run build` | required |
-| **SBOM + scan vulnérabilités** | CycloneDX SBOMs (deps + Docker images, artefact `sbom`) + Trivy fail on unexempted CRITICAL/HIGH | advisory (until triage stabilises) |
+| **Backend (Maven + Testcontainers)** | `./mvnw -B verify` — full suite, real PostgreSQL via Docker | required check (branch protection: `main` strict, `develop` admin-bypassable) |
+| **Frontend (Vitest + build PWA)** | `npm ci && npm run test && npm run build` | required check (idem) |
+| **SBOM + scan vulnérabilités** | CycloneDX SBOMs (deps + Docker images, artefact `sbom`) + Trivy: secrets, deps, images — fail on unexempted CRITICAL/HIGH | advisory + weekly cron (until triage stabilises) |
 
 **Reading a CI failure:**
 
@@ -182,7 +182,7 @@ Every push / pull request on `develop` and `main` runs
 - *Frontend red* — Vitest prints the failing spec; `npm run build` failures are
   usually import/PWA config errors.
 - *SBOM/scan red* — a new CRITICAL/HIGH CVE appeared. Either bump the dependency
-  (trivial patch) or add a **dated, justified** entry to [`.trivyignore`](.trivyignore)
+  (trivial patch) or add a **dated, `exp:`-bounded** entry to [`.trivyignore-backend`](.trivyignore-backend) (backend-scoped only — frontend/images run without exemptions)
   (all current exemptions trace to the Boot 3.3.5 EOL debt, purged by Story 11.9).
 
 ---

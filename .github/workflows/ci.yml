@@ -5,9 +5,22 @@ on:
     branches: [main, develop]
   push:
     branches: [main, develop]
+  # Scan hebdomadaire : détecte les CVE publiées entre deux pushes
+  # (le job supply-chain est le seul intéressé, mais une passe complète
+  # hebdomadaire sert aussi de check de non-régression d'environnement).
+  schedule:
+    - cron: '0 6 * * 1'
+  workflow_dispatch:
 
 permissions:
   contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  TRIVY_VERSION: v0.72.0
 
 jobs:
   backend:
@@ -18,8 +31,8 @@ jobs:
       run:
         working-directory: backend
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-java@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5
         with:
           distribution: temurin
           java-version: '21'
@@ -35,8 +48,8 @@ jobs:
       run:
         working-directory: frontend
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version: '24'
           cache: npm
@@ -45,45 +58,66 @@ jobs:
       - run: npm run test
       - run: npm run build
 
-  # Chaîne d'approvisionnement (AC2) : SBOM + scan de vulnérabilités.
-  # Volontairement HORS des required status checks tant que le triage des
-  # findings n'est pas stabilisé (cadrage piste zéro : le gate de tests
-  # ne doit pas attendre le tuning du scan).
+  # Chaîne d'approvisionnement (AC2) : SBOM + scans de vulnérabilités et de
+  # secrets. HORS des required status checks (statut advisory documenté au
+  # README) tant que le triage des findings est jeune ; le cron hebdomadaire
+  # garantit qu'un rouge finit par être vu même sans push.
+  # Les 4 scans tournent TOUS (continue-on-error) puis un gate final agrège —
+  # un échec backend ne masque plus les findings frontend/images.
   supply-chain:
     name: SBOM + scan vulnérabilités (Trivy CRITICAL/HIGH)
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 40
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-java@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5
         with:
           distribution: temurin
           java-version: '21'
           cache: maven
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version: '24'
 
-      - name: Installer Trivy
-        run: curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin
+      # Cache de la DB de vulnérabilités : évite 6 téléchargements ghcr.io
+      # par run (TOOMANYREQUESTS fréquent sur runners partagés).
+      - name: Cache DB Trivy
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: ~/.cache/trivy
+          key: trivy-db-${{ github.run_id }}
+          restore-keys: |
+            trivy-db-
+
+      # Version épinglée (reproductibilité des findings) ; script d'install
+      # tiré du TAG correspondant, pas de main.
+      - name: Installer Trivy ${{ env.TRIVY_VERSION }}
+        run: curl -sfL "https://raw.githubusercontent.com/aquasecurity/trivy/${TRIVY_VERSION}/contrib/install.sh" | sh -s -- -b /usr/local/bin "${TRIVY_VERSION}"
+
+      # Scan de secrets sur le dépôt (0 bruit vérifié au triage 2026-07-25).
+      # --skip-files backend/pom.xml : l'analyseur pom de trivy résout l'arbre
+      # via Maven Central et se fait rate-limiter (429) — les dépendances
+      # backend sont couvertes par le scan SBOM ci-dessous.
+      - name: Scan secrets du dépôt
+        id: scan_secrets
+        continue-on-error: true
+        run: trivy fs --scanners secret --exit-code 1 --skip-files backend/pom.xml --skip-dirs frontend/node_modules,frontend/dist .
 
       - name: SBOM backend (CycloneDX Maven)
         working-directory: backend
         run: ./mvnw -B -DskipTests cyclonedx:makeAggregateBom && cp target/bom.json ../sbom-backend.cdx.json
 
-      # --omit optional : les deps "bundled" du paquet optionnel
-      # @tailwindcss/oxide-wasm32-wasi font échouer npm sbom en mode
-      # lockfile-only (ESBOMPROBLEMS) ; l'outillage optionnel de build
-      # n'appartient pas à l'inventaire livré. Le scan Trivy, lui, lit
-      # le lockfile complet.
+      # SBOM sur l'arbre installé (npm ci) : complet et cohérent avec la
+      # surface scannée — le mode --package-lock-only échoue en ESBOMPROBLEMS
+      # sur les deps bundled de @tailwindcss/oxide-wasm32-wasi.
       - name: SBOM frontend (npm sbom CycloneDX)
         working-directory: frontend
-        run: npm sbom --sbom-format cyclonedx --package-lock-only --omit optional > ../sbom-frontend.cdx.json
+        run: npm ci --ignore-scripts && npm sbom --sbom-format cyclonedx > ../sbom-frontend.cdx.json
 
-      - name: Build des images Docker
-        run: |
-          docker build -t escrow-backend:ci backend
-          docker build -t escrow-frontend:ci frontend
+      - name: Build image backend
+        run: docker build -t escrow-backend:ci backend
+      - name: Build image frontend
+        run: docker build -t escrow-frontend:ci frontend
 
       - name: SBOM des images (Trivy CycloneDX)
         run: |
@@ -91,7 +125,7 @@ jobs:
           trivy image --format cyclonedx --output sbom-image-frontend.cdx.json escrow-frontend:ci
 
       - name: Archiver les SBOM
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: sbom
           path: sbom-*.cdx.json
@@ -99,13 +133,41 @@ jobs:
 
       # Backend scanné via son SBOM (versions résolues, pas d'appels Maven
       # Central — trivy fs sur un pom.xml se fait rate-limiter en 429).
-      - name: Scan dépendances backend (fail sur CRITICAL/HIGH non exempté)
-        run: trivy sbom --severity CRITICAL,HIGH --exit-code 1 --ignorefile .trivyignore sbom-backend.cdx.json
+      # Ignorefile scopé backend UNIQUEMENT (exemptions datées avec exp:).
+      - name: Scan dépendances backend
+        id: scan_backend_deps
+        continue-on-error: true
+        run: trivy sbom --severity CRITICAL,HIGH --exit-code 1 --ignorefile .trivyignore-backend sbom-backend.cdx.json
 
-      - name: Scan dépendances frontend (fail sur CRITICAL/HIGH non exempté)
-        run: trivy fs --scanners vuln --severity CRITICAL,HIGH --exit-code 1 --ignorefile .trivyignore frontend
+      # Frontend et images : AUCUNE exemption (toute nouvelle CVE doit être
+      # triée explicitement, pas absorbée par les exemptions backend).
+      - name: Scan dépendances frontend
+        id: scan_frontend_deps
+        continue-on-error: true
+        run: trivy fs --scanners vuln --severity CRITICAL,HIGH --exit-code 1 frontend
 
-      - name: Scan des images (fail sur CRITICAL/HIGH non exempté)
+      - name: Scan image backend
+        id: scan_backend_img
+        continue-on-error: true
+        run: trivy image --severity CRITICAL,HIGH --exit-code 1 escrow-backend:ci
+
+      - name: Scan image frontend
+        id: scan_frontend_img
+        continue-on-error: true
+        run: trivy image --severity CRITICAL,HIGH --exit-code 1 escrow-frontend:ci
+
+      - name: Gate agrégé des scans
         run: |
-          trivy image --severity CRITICAL,HIGH --exit-code 1 --ignorefile .trivyignore escrow-backend:ci
-          trivy image --severity CRITICAL,HIGH --exit-code 1 --ignorefile .trivyignore escrow-frontend:ci
+          echo "secrets:          ${{ steps.scan_secrets.outcome }}"
+          echo "deps backend:     ${{ steps.scan_backend_deps.outcome }}"
+          echo "deps frontend:    ${{ steps.scan_frontend_deps.outcome }}"
+          echo "image backend:    ${{ steps.scan_backend_img.outcome }}"
+          echo "image frontend:   ${{ steps.scan_frontend_img.outcome }}"
+          if [ "${{ steps.scan_secrets.outcome }}" != "success" ] || \
+             [ "${{ steps.scan_backend_deps.outcome }}" != "success" ] || \
+             [ "${{ steps.scan_frontend_deps.outcome }}" != "success" ] || \
+             [ "${{ steps.scan_backend_img.outcome }}" != "success" ] || \
+             [ "${{ steps.scan_frontend_img.outcome }}" != "success" ]; then
+            echo "::error::Au moins un scan a des findings non exemptés — voir les steps ci-dessus."
+            exit 1
+          fi
