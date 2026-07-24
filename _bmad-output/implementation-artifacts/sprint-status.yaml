@@ -74,7 +74,7 @@
 # Epics 6-7-8 → Epics 9-10 → Epic 11 en continu (11-9 avant production).
 
 generated: 2026-07-24
-last_updated: "2026-07-24 (sprint planning production — backlog re-dérivé 11 epics / 64 stories, IR READY ; Story 1-1 done héritée)"
+last_updated: "2026-07-24 (Story 11-1 créée ready-for-dev — piste zéro ouverte, epic-11 in-progress)"
 project: Escrow_claude (Production)
 project_key: NOKEY
 tracking_system: file-system
@@ -177,8 +177,8 @@ development_status:
   epic-10-retrospective: optional
 
   # Epic 11 — Opérabilité, qualité & déploiement (piste parallèle continue)
-  epic-11: backlog
-  11-1-pipeline-ci-cd-gate-tests: backlog # PISTE ZÉRO — démarrer en "lite" (gate de tests), premier candidat dev
+  epic-11: in-progress
+  11-1-pipeline-ci-cd-gate-tests: ready-for-dev # PISTE ZÉRO — story créée (gate de tests d'abord, SBOM/scan ensuite) ; PRÉREQUIS: décision remote git (Task 0)
   11-2-configuration-externalisee-profils: backlog
   11-3-stack-production-durcie-hebergement: backlog # vérifier région commune aux corridors (tenabilité report AR-P5)
   11-4-observabilite-metriques-logs-tracing: backlog # PRÉREQUIS DUR de l'ouverture de l'Epic 4 (AD-16)
