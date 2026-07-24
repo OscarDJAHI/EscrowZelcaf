@@ -44,3 +44,63 @@ jobs:
       - run: npm ci
       - run: npm run test
       - run: npm run build
+
+  # Chaîne d'approvisionnement (AC2) : SBOM + scan de vulnérabilités.
+  # Volontairement HORS des required status checks tant que le triage des
+  # findings n'est pas stabilisé (cadrage piste zéro : le gate de tests
+  # ne doit pas attendre le tuning du scan).
+  supply-chain:
+    name: SBOM + scan vulnérabilités (Trivy CRITICAL/HIGH)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: Installer Trivy
+        run: curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin
+
+      - name: SBOM backend (CycloneDX Maven)
+        working-directory: backend
+        run: ./mvnw -B -DskipTests cyclonedx:makeAggregateBom && cp target/bom.json ../sbom-backend.cdx.json
+
+      - name: SBOM frontend (npm sbom CycloneDX)
+        working-directory: frontend
+        run: npm sbom --sbom-format cyclonedx --package-lock-only > ../sbom-frontend.cdx.json
+
+      - name: Build des images Docker
+        run: |
+          docker build -t escrow-backend:ci backend
+          docker build -t escrow-frontend:ci frontend
+
+      - name: SBOM des images (Trivy CycloneDX)
+        run: |
+          trivy image --format cyclonedx --output sbom-image-backend.cdx.json escrow-backend:ci
+          trivy image --format cyclonedx --output sbom-image-frontend.cdx.json escrow-frontend:ci
+
+      - name: Archiver les SBOM
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom
+          path: sbom-*.cdx.json
+          if-no-files-found: error
+
+      # Backend scanné via son SBOM (versions résolues, pas d'appels Maven
+      # Central — trivy fs sur un pom.xml se fait rate-limiter en 429).
+      - name: Scan dépendances backend (fail sur CRITICAL/HIGH non exempté)
+        run: trivy sbom --severity CRITICAL,HIGH --exit-code 1 --ignorefile .trivyignore sbom-backend.cdx.json
+
+      - name: Scan dépendances frontend (fail sur CRITICAL/HIGH non exempté)
+        run: trivy fs --scanners vuln --severity CRITICAL,HIGH --exit-code 1 --ignorefile .trivyignore frontend
+
+      - name: Scan des images (fail sur CRITICAL/HIGH non exempté)
+        run: |
+          trivy image --severity CRITICAL,HIGH --exit-code 1 --ignorefile .trivyignore escrow-backend:ci
+          trivy image --severity CRITICAL,HIGH --exit-code 1 --ignorefile .trivyignore escrow-frontend:ci
