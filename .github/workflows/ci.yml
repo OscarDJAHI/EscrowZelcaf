@@ -146,10 +146,12 @@ jobs:
         continue-on-error: true
         run: trivy fs --scanners vuln --severity CRITICAL,HIGH --exit-code 1 frontend
 
+      # L'image backend embarque le JAR Boot 3.3.5 : les exemptions backend
+      # (mêmes CVE, même source, même purge 11.9) s'appliquent aussi ici.
       - name: Scan image backend
         id: scan_backend_img
         continue-on-error: true
-        run: trivy image --severity CRITICAL,HIGH --exit-code 1 escrow-backend:ci
+        run: trivy image --severity CRITICAL,HIGH --exit-code 1 --ignorefile .trivyignore-backend escrow-backend:ci
 
       - name: Scan image frontend
         id: scan_frontend_img

@@ -1,6 +1,7 @@
 # Exemptions de scan de vulnérabilités (Story 11.1, AC2).
-# SCOPE : ce fichier n'est passé QU'AU scan du SBOM backend (ci.yml).
-# Les scans frontend et images tournent SANS exemption.
+# SCOPE : ce fichier n'est passé qu'aux scans des ARTEFACTS BACKEND (SBOM deps
+# + image Docker backend, qui embarque le même JAR). Les scans frontend et
+# image frontend tournent SANS exemption.
 # exp:2026-10-31 = date butoir machine — si la Story 11.9 (migration Boot 4.1)
 # n'est pas livrée d'ici là, le scan redevient rouge et force le re-triage.
 # Règle : chaque entrée = CVE + justification + date d'exemption. Revue à chaque
