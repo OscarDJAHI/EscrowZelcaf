@@ -1,6 +1,9 @@
+---
+baseline_commit: 91c221d0618caa48d92bd8272035049cb60a50ca
+---
 # Story 11.1: Pipeline CI/CD avec gate de tests et scan de vulnérabilités
 
-Status: ready-for-dev
+Status: review
 
 ## Story
 
@@ -18,30 +21,30 @@ So that aucune régression ni vulnérabilité connue n'atteigne la branche princ
 
 ## Tasks / Subtasks
 
-- [ ] Task 0 — PRÉREQUIS BLOQUANT : remote git + plateforme CI (AC: 1, 3)
-  - [ ] Le dépôt est **local-only** (aucun remote). Créer un dépôt GitHub **privé** et pousser `develop` + `main`. ⚠️ DÉCISION OSCARD REQUISE avant exécution : confirmation plateforme (GitHub supposé — `gh` CLI utilisable) et nom du dépôt. NE PAS pousser sans accord explicite.
-  - [ ] Vérifier que `main` existe comme branche par défaut (le repo local n'a peut-être que `develop` — créer `main` depuis l'état stable si absent).
-- [ ] Task 1 — Workflow CI backend (AC: 1, 3)
-  - [ ] `.github/workflows/ci.yml`, déclencheurs `pull_request` + `push` sur `develop`/`main`.
-  - [ ] Job `backend`: `actions/checkout` → `actions/setup-java` (Temurin 21, cache maven) → `mvn -B verify` dans `backend/`. Docker est présent sur `ubuntu-latest` → Testcontainers fonctionne sans service additionnel.
-  - [ ] Pas de wrapper Maven dans le repo (`backend/mvnw` absent) : soit ajouter le wrapper (recommandé, versionne Maven), soit utiliser le Maven du runner — trancher et documenter.
-- [ ] Task 2 — Workflow CI frontend (AC: 1, 3)
-  - [ ] Job `frontend`: `actions/setup-node` (Node 24 — version locale v24.16.0, pas de champ `engines` : en fixer un dans `package.json` pour verrouiller la CI) → `npm ci` → `npm run test` (Vitest run) → `npm run build` (le build Vite/PWA doit rester vert, précédent établi depuis Story 1.5 POC).
-- [ ] Task 3 — Gate bloquant (AC: 1, 3)
-  - [ ] Branch protection sur `main` ET `develop` : required status checks = jobs backend + frontend, `strict` (à jour avec la base), pas de bypass admin par défaut. Via `gh api` ou UI (documenter la config appliquée).
-  - [ ] PR de démonstration avec un test volontairement rouge → capturer la preuve du merge bloqué (URL/screenshot dans le Dev Agent Record) → fermer la PR sans merger.
-- [ ] Task 4 — SBOM (AC: 2)
-  - [ ] Backend : plugin `cyclonedx-maven-plugin` (goal `makeAggregateBom`) → `bom.json`.
-  - [ ] Frontend : SBOM npm (ex. `npm sbom --sbom-format cyclonedx` natif npm ≥ 9, ou `@cyclonedx/cyclonedx-npm`).
-  - [ ] Images Docker : `syft` ou `trivy sbom` sur les images buildées depuis `backend/Dockerfile` et `frontend/Dockerfile`.
-  - [ ] Tous archivés via `actions/upload-artifact` (rétention par défaut OK).
-- [ ] Task 5 — Scan de vulnérabilités avec seuil (AC: 2)
-  - [ ] `trivy` (fs + image) avec `--severity CRITICAL,HIGH --exit-code 1` + fichier `.trivyignore` versionné pour les exemptions (chaque entrée = CVE + justification + date, revue périodique).
-  - [ ] Première exécution : trier les findings existants — corriger les triviaux (bump de version), exempter avec date le reste. La stack a une dette EOL CONNUE (Boot 3.3.5, cf. Story 11.9) : des CVE HIGH sont probables ; les exemptions datées sont le mécanisme prévu, ne pas « verdir » en désactivant le scan.
-  - [ ] Ajouter les jobs scan aux required status checks une fois stabilisés (pas avant — le gate de tests ne doit pas attendre le tuning du scan).
-- [ ] Task 6 — Vérification finale (AC: 3)
-  - [ ] CI verte sur `develop` : suite backend complète (238 tests, Docker/Testcontainers) + frontend (170 tests Vitest) + build.
-  - [ ] README : badge CI + section « comment lire un échec CI ».
+- [x] Task 0 — PRÉREQUIS BLOQUANT : remote git + plateforme CI (AC: 1, 3)
+  - [x] Le dépôt est **local-only** (aucun remote). Créer un dépôt GitHub **privé** et pousser `develop` + `main`. Décision Oscard actée : GitHub privé `OscarDJAHI/EscrowZelcaf` — créé via gh CLI, develop+main poussées.
+  - [x] Vérifier que `main` existe comme branche par défaut (le repo local n'a peut-être que `develop` — créer `main` depuis l'état stable si absent).
+- [x] Task 1 — Workflow CI backend (AC: 1, 3)
+  - [x] `.github/workflows/ci.yml`, déclencheurs `pull_request` + `push` sur `develop`/`main`.
+  - [x] Job `backend`: `actions/checkout` → `actions/setup-java` (Temurin 21, cache maven) → `mvn -B verify` dans `backend/`. Docker est présent sur `ubuntu-latest` → Testcontainers fonctionne sans service additionnel.
+  - [x] Pas de wrapper Maven dans le repo (`backend/mvnw` absent) : wrapper 3.9.9 AJOUTÉ (backend/.gitignore corrigé — il ignorait `.mvn/`).
+- [x] Task 2 — Workflow CI frontend (AC: 1, 3)
+  - [x] Job `frontend`: `actions/setup-node` (Node 24 — version locale v24.16.0, pas de champ `engines` : en fixer un dans `package.json` pour verrouiller la CI) → `npm ci` → `npm run test` (Vitest run) → `npm run build` (le build Vite/PWA doit rester vert, précédent établi depuis Story 1.5 POC).
+- [x] Task 3 — Gate bloquant (AC: 1, 3)
+  - [x] Branch protection sur `main` ET `develop` : **IMPOSSIBLE sur le plan GitHub Free avec un dépôt privé** (HTTP 403 « Upgrade to GitHub Pro », vérifié sur l'API branch-protection ET l'API rulesets). Limitation documentée + commandes prêtes dans le Dev Agent Record ; décision Oscard requise (Pro ~4$/mois ou passage en public). En attendant, le gate est *visible* (croix rouge sur PR) mais pas *inviolable*.
+  - [x] PR de démonstration avec un test volontairement rouge → preuve capturée (PR #1, job frontend fail, mergeStateStatus UNSTABLE — détails au Dev Agent Record) → fermée sans merge.
+- [x] Task 4 — SBOM (AC: 2)
+  - [x] Backend : plugin `cyclonedx-maven-plugin` 2.9.1 (goal `makeAggregateBom`) → `bom.json`.
+  - [x] Frontend : `npm sbom --sbom-format cyclonedx --package-lock-only --omit optional` (le mode lockfile-only échoue en ESBOMPROBLEMS sur les deps bundled de @tailwindcss/oxide-wasm32-wasi sans --omit optional).
+  - [x] Images Docker : `trivy image --format cyclonedx` sur les deux images buildées en CI.
+  - [x] Tous archivés via `actions/upload-artifact` (artefact `sbom`, 4 fichiers .cdx.json).
+- [x] Task 5 — Scan de vulnérabilités avec seuil (AC: 2)
+  - [x] Trivy `--severity CRITICAL,HIGH --exit-code 1` + `.trivyignore` versionné. Backend scanné via son SBOM (trivy fs sur un pom résout l'arbre à distance → 429 Maven Central, appris à nos dépens), frontend via lockfile, images via trivy image.
+  - [x] Triage fait : 44 CVE backend CRITICAL/HIGH, TOUTES transitives du parent Boot 3.3.5 → exemptées datées 2026-07-24 avec purge obligatoire à la 11.9 (aucun bump applicatif, conforme au cadrage). Corrigés (triviaux) : postcss 8.5.16→8.5.23 (seul finding frontend), apk upgrade au build des 2 images (5 HIGH OS libexpat/p11-kit → 0).
+  - [x] Job supply-chain stabilisé (vert en CI) mais requis-checks impossibles sans Pro — même décision que Task 3 ; le README documente son statut advisory.
+- [x] Task 6 — Vérification finale (AC: 3)
+  - [x] CI verte sur `develop` (run 30125261303, 3 jobs verts) : « Tests run: 238, Failures: 0 » confirmé dans le log CI + 170 tests Vitest + build PWA.
+  - [x] README : badge CI + tableau des jobs + section « comment lire un échec CI ».
 
 ## Dev Notes
 
@@ -88,8 +91,43 @@ So that aucune régression ni vulnérabilité connue n'atteigne la branche princ
 
 ### Agent Model Used
 
+claude-fable-5 (Claude Fable 5) — session dev-story du 2026-07-24
+
 ### Debug Log References
+
+- Run CI vert final sur develop : https://github.com/OscarDJAHI/EscrowZelcaf/actions/runs/30125261303 (3 jobs verts ; log backend : « Tests run: 238, Failures: 0 »)
+- Premier run vert gate (backend+frontend) : run 30124023513 (1m52 — runner rapide, comptage vérifié dans le log)
+- Échec intermédiaire supply-chain #1 : npm sbom ESBOMPROBLEMS (deps bundled @tailwindcss/oxide-wasm32-wasi en lockfile-only) → --omit optional (reproduit et validé localement)
+- Échec intermédiaire supply-chain #2 : 5 HIGH OS sur l'image backend (libexpat 2.8.1, p11-kit 0.25.5) → apk upgrade au build ; image frontend re-scannée localement = 0 vuln
+- Rate-limit appris : trivy fs sur pom.xml résout l'arbre via Maven Central → 429 (blocage IP 30 min) ; scan backend basculé sur le SBOM CycloneDX
 
 ### Completion Notes List
 
+- **Dépôt GitHub créé (décision Oscard)** : privé `OscarDJAHI/EscrowZelcaf`, branches develop+main poussées, main = défaut. Premier push en HTTP 400 → `http.postBuffer` monté à 500 Mo (config locale).
+- **AC1 partiellement satisfait — SEUL point en écart** : la CI tourne sur chaque PR/push (AC1 partie 1 ✅) mais le caractère « non contournable » du gate est IMPOSSIBLE sur plan GitHub Free + dépôt privé : branch protection ET rulesets renvoient 403 « Upgrade to GitHub Pro ». Le gate est visible (croix rouge, mergeStateStatus UNSTABLE) mais le bouton merge reste cliquable. **Décision Oscard requise : GitHub Pro (~4 $/mois) ou dépôt public.** Dès que débloqué, appliquer (commandes prêtes) :
+  `gh api -X PUT repos/OscarDJAHI/EscrowZelcaf/branches/{main,develop}/protection` avec required_status_checks strict = [« Backend (Maven + Testcontainers) », « Frontend (Vitest + build PWA) »], enforce_admins=true (payload exact dans l'historique de session ; ajouter le job supply-chain aux checks requis dans un second temps).
+- **Preuve AC3 (PR démo)** : PR #1 https://github.com/OscarDJAHI/EscrowZelcaf/pull/1 — test Vitest volontairement rouge, run final 30125560469 : frontend FAIL (seul rouge), backend PASS, supply-chain PASS, mergeStateStatus UNSTABLE. Fermée sans merge, branche supprimée.
+- **AC2 satisfait** : 4 SBOM CycloneDX archivés (artefact `sbom` : deps backend via plugin Maven 2.9.1, deps frontend via npm sbom, 2 images via trivy) ; scans Trivy CRITICAL/HIGH bloquants avec `.trivyignore` daté. Triage initial : 44 CVE backend exemptées (100 % transitives du parent Boot 3.3.5, purge obligatoire Story 11.9 — aucun bump applicatif conformément au cadrage) ; postcss bumpé 8.5.16→8.5.23 ; `apk upgrade` au build des 2 images (5 HIGH OS → 0).
+- Wrapper Maven 3.9.9 ajouté ; `backend/.gitignore` corrigé (ignorait `.mvn/`, la négation `!maven-wrapper.jar` était morte sous un répertoire ignoré).
+- `engines: node >=22` ajouté au package.json (image Docker builde en node:22, CI épinglée à 24).
+- Actions épinglées aux majors courants (checkout v7, setup-java v5, setup-node v7, upload-artifact v7) — les v4 tournaient en mode dépréciation Node 20.
+- **Périmètre non traité (assumé)** : job supply-chain hors required-checks (même blocage plan Free ; statut advisory documenté au README).
+
 ### File List
+
+- .github/workflows/ci.yml (nouveau)
+- .trivyignore (nouveau)
+- backend/mvnw, backend/mvnw.cmd, backend/.mvn/wrapper/maven-wrapper.properties (nouveaux)
+- backend/.gitignore (modifié — .mvn/ n'est plus ignoré)
+- backend/pom.xml (modifié — plugin cyclonedx-maven 2.9.1)
+- backend/Dockerfile (modifié — apk upgrade)
+- frontend/Dockerfile (modifié — apk upgrade)
+- frontend/package.json (modifié — engines node >=22)
+- frontend/package-lock.json (modifié — postcss 8.5.23)
+- README.md (modifié — badge CI + section CI)
+- _bmad-output/implementation-artifacts/sprint-status.yaml (suivi)
+- _bmad-output/implementation-artifacts/11-1-pipeline-ci-cd-gate-tests.md (ce fichier)
+
+## Change Log
+
+- 2026-07-24 : Story implémentée en une session. Dépôt GitHub privé EscrowZelcaf créé (Task 0), CI gate de tests backend/frontend verte (238+170 tests), SBOM+scan Trivy verts après triage (44 exemptions datées → 11.9, postcss bumpé, images patchées apk upgrade), PR démo #1 rouge fermée sans merge. Écart AC1 documenté : protection de branche impossible en plan Free/privé — décision Pro-ou-public à prendre.
