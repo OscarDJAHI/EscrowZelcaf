@@ -1,5 +1,7 @@
 # Escrow B2B Platform — POC (ZLECAf intra-African trade)
 
+[![CI](https://github.com/OscarDJAHI/EscrowZelcaf/actions/workflows/ci.yml/badge.svg?branch=develop)](https://github.com/OscarDJAHI/EscrowZelcaf/actions/workflows/ci.yml)
+
 Proof of Concept for a **B2B escrow (séquestre) platform** securing cross-border
 trade under the African Continental Free Trade Area (ZLECAf). A buyer's funds are
 held by the platform and only released to the seller once delivery is validated —
@@ -155,6 +157,33 @@ The state machine and HMAC signer are covered by fast, pure unit tests (no DB/br
 An HTTP end-to-end scenario (register → escrow lifecycle → dispute → resolution,
 plus audit-trail and RabbitMQ-fan-out assertions) was validated against a live
 PostgreSQL + RabbitMQ stack.
+
+> The backend suite needs a running **Docker** daemon (Testcontainers spins up
+> PostgreSQL/MinIO). Frontend: `cd frontend && npm run test` (Vitest).
+
+---
+
+## CI (gate de tests)
+
+Every push / pull request on `develop` and `main` runs
+[`ci.yml`](.github/workflows/ci.yml):
+
+| Job | What it runs | Gate |
+|-----|--------------|------|
+| **Backend (Maven + Testcontainers)** | `./mvnw -B verify` — full suite, real PostgreSQL via Docker | required |
+| **Frontend (Vitest + build PWA)** | `npm ci && npm run test && npm run build` | required |
+| **SBOM + scan vulnérabilités** | CycloneDX SBOMs (deps + Docker images, artefact `sbom`) + Trivy fail on unexempted CRITICAL/HIGH | advisory (until triage stabilises) |
+
+**Reading a CI failure:**
+
+- *Backend red* — open the job log and search `Tests run:` / `FAILURE`; a test
+  that is green locally but red in CI is an environment issue (fix the workflow,
+  not the test).
+- *Frontend red* — Vitest prints the failing spec; `npm run build` failures are
+  usually import/PWA config errors.
+- *SBOM/scan red* — a new CRITICAL/HIGH CVE appeared. Either bump the dependency
+  (trivial patch) or add a **dated, justified** entry to [`.trivyignore`](.trivyignore)
+  (all current exemptions trace to the Boot 3.3.5 EOL debt, purged by Story 11.9).
 
 ---
 
