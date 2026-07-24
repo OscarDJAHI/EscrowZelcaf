@@ -1,10 +1,17 @@
-# generated: 2026-07-16
-# last_updated: 2026-07-16 (Epic 1 done + retrospective)
-# project: Escrow
+# generated: 2026-07-24
+# last_updated: 2026-07-24 (sprint planning production — depuis epics.md re-dérivé, 11 epics / 64 stories)
+# project: Escrow_claude (Production)
 # project_key: NOKEY
 # tracking_system: file-system
 # story_location: {project-root}/_bmad-output/implementation-artifacts
-
+#
+# PORTÉE : suivi du backlog de MISE EN PRODUCTION re-dérivé le 2026-07-24
+# (planning-artifacts/epics.md — PRD production final + UX contractuelle + spine AD-13..30,
+# 7 amendements post-architecture appliqués, IR ✅ READY le 2026-07-24).
+# Remplace sprint-status-production.yaml (2026-07-18, ancien backlog 10 epics/46 stories,
+# numérotation caduque). Le suivi POC Evidence Upload (tout done) est archivé dans
+# sprint-status-poc-evidence-upload.yaml.
+#
 # STATUS DEFINITIONS:
 # ==================
 # Epic Status:
@@ -39,101 +46,179 @@
 # - Developer typically creates next story after previous one is 'done' to incorporate learnings
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 # - Retrospective appends its action items to action_items; sprint-status surfaces open ones
+#
+# ============================================================================
+# SÉQUENCEMENT (contrat du spine production + rapport IR 2026-07-24)
+# ============================================================================
+# PISTE ZÉRO (à démarrer immédiatement, en parallèle) :
+#   1. 11-1 pipeline CI/CD en version "lite" (gate de tests) — prérequis de toute la suite
+#   2. Spike 4-1 (AR-P2, cantonnement/comptabilité — VALIDATION contre le partenaire bancaire)
+#   3. Spike 4-2 (AR-P1, choix PSP agrégateur + POC sandbox)
+#   4. Spike 3-1 (AR-P3, fournisseur KYB/AML)
+#   5. HORS LOGICIEL : ouvrir la conversation partenaire bancaire (dépendance critique n°1
+#      du PRD §8 — bloque le lancement commercial, pas le développement)
+#
+# CONTRAINTES D'ORDONNANCEMENT INTER-PISTES (dures, issues du spine — NE PAS PERDRE) :
+#   - 11-4 (observabilité) AVANT l'ouverture de l'Epic 4 (critère d'entrée dur, AD-16) :
+#     aucun flux d'argent réel sans métriques/logs corrélés/alerting.
+#   - 7-2 (AC octroi/révocation ARBITRATOR, AD-21) AVANT 6-1 (console d'arbitrage).
+#     Cet AC est tirable en avance sans le reste de la 7-2.
+#   - 7-3 (configuration produit versionnée) AVANT 10-2 (pages légales éditables).
+#   - 11-9 (migrations runtime Boot 4.1 / RabbitMQ 4.2 LTS / backend objet) BLOQUANTE
+#     avant le lancement production (exigence de lancement, pas de post-lancement).
+#   - Vigilance Story 11-3 : vérifier la tenabilité d'une région d'hébergement commune
+#     aux corridors de lancement, sinon la question multi-région remonte au spine.
+#
+# ORDRE GÉNÉRAL : Epic 1 (sécurité, hérité en cours) + piste zéro → Epic 2 (fondation UI
+# 2-1..2-3 puis onboarding) → Epics 3-4-5 (cœur métier, gates spikes en tête d'epic) →
+# Epics 6-7-8 → Epics 9-10 → Epic 11 en continu (11-9 avant production).
 
-generated: 2026-07-16
-last_updated: "2026-07-18 (Validation E2E réelle de la stack : 20/20 checks Epics 1-2-3 + PWA/CORS ; 2 action items E2E fermés)"
-project: Escrow
+generated: 2026-07-24
+last_updated: "2026-07-24 (sprint planning production — backlog re-dérivé 11 epics / 64 stories, IR READY ; Story 1-1 done héritée)"
+project: Escrow_claude (Production)
 project_key: NOKEY
 tracking_system: file-system
 story_location: "{project-root}/_bmad-output/implementation-artifacts"
 
 development_status:
-  # Epic 1 — Socle : dépôt & consultation contradictoire des preuves
-  epic-1: done
-  1-1-fondations-de-stockage-des-preuves: done
-  1-2-deposer-une-piece-sur-une-transaction: done
-  1-3-consulter-la-liste-chronologique-des-preuves: done
-  1-4-telecharger-une-preuve-en-toute-securite: done
-  1-5-interface-pwa-depot-liste-des-preuves: done
-  epic-1-retrospective: done
+  # Epic 1 — Sécurité & protection des données (hérité, en cours)
+  epic-1: in-progress
+  1-1-role-admin-non-auto-attribuable: done # fichier story: 1-1-retirer-auto-attribution-role-admin.md (commit 204def7)
+  1-2-externalisation-des-secrets: backlog
+  1-3-anti-bruteforce-authentification: backlog
+  1-4-tls-bout-en-bout-entetes-securite: backlog
+  1-5-cors-allowlist-swagger-ferme-production: backlog
+  1-6-politique-mots-de-passe-revocation-jwt: backlog
+  1-7-chiffrement-au-repos: backlog
+  1-8-scan-anti-malware-ingestion: backlog
+  1-9-hygiene-session-appareil-partage: backlog
+  1-10-anti-enumeration-ressources: backlog
+  epic-1-retrospective: optional
 
-  # Epic 2 — Litige adossé à la preuve
-  epic-2: done
-  2-1-ouvrir-un-litige-avec-preuve-obligatoire-atomique: done
-  2-2-verrouiller-depot-retrait-aux-etats-terminaux: done
-  2-3-retirer-sa-propre-piece-avec-plancher-de-preuve: done
-  2-4-interface-pwa-ouvrir-un-litige-fil-contradictoire: done
-  epic-2-retrospective: done
+  # Epic 2 — Onboarding & comptes d'entreprise (2-1..2-3 = fondation UI, dérogation "As a développeur" assumée)
+  epic-2: backlog
+  2-1-fondation-ui-tokens-design-i18n: backlog
+  2-2-bibliotheque-composants-base: backlog
+  2-3-layout-trois-espaces-navigation: backlog
+  2-4-inscription-otp-consentement-entreprise: backlog
+  2-5-multi-utilisateur-roles-invitations: backlog
+  2-6-securite-compte-reset-2fa-totp: backlog
+  epic-2-retrospective: optional
 
-  # Epic 3 — Preuve neutre du transporteur (partenaire machine)
-  epic-3: done
-  3-1-provisionner-les-cles-hmac-entrantes-le-magasin-de-nonces: done
-  3-2-deposer-une-preuve-partenaire-via-api-signee: done
-  3-3-durcir-stockage-cles-hmac-partenaire: done
-  3-4-durcir-endpoint-partenaire-signe: done
-  epic-3-retrospective: done
+  # Epic 3 — Conformité KYB/AML (gate: spike 3-1 en tête d'epic)
+  epic-3: backlog
+  3-1-spike-ar-p3-fournisseur-kyb-aml: backlog # PISTE ZÉRO — spike ADR, gate de l'epic
+  3-2-formulaire-kyb-soumission-dossier: backlog
+  3-3-file-revue-kyb-operateur: backlog
+  3-4-gating-global-kyb: backlog
+  3-5-screening-aml-retention-worm: backlog # dense (AML + WORM) — candidate à scission en sprint
+  epic-3-retrospective: optional
 
-  # Epic 4 — Dépôt & litige résilients hors-ligne (PWA)
-  epic-4: done
-  4-1-migrer-la-file-hors-ligne-vers-indexeddb-porter-le-binaire: done
-  4-2-ouvrir-un-litige-deposer-des-preuves-hors-ligne: done
-  4-3-reconcilier-la-file-a-la-synchronisation: done
-  4-4-notifier-l-utilisateur-du-resultat-de-synchronisation: done
-  4-5-recuperer-ses-preuves-apres-un-rejet-definitif: done
-  epic-4-retrospective: done
+  # Epic 4 — Wallet & circuit financier réel (CRITÈRE D'ENTRÉE DUR: 11-4 observabilité livrée, AD-16)
+  epic-4: backlog
+  4-1-spike-ar-p2-cantonnement-comptabilite: backlog # PISTE ZÉRO — validation plan de comptes contre partenaire bancaire
+  4-2-spike-ar-p1-choix-psp-agregateur: backlog # PISTE ZÉRO — Flutterwave vs Paystack + POC sandbox
+  4-3-grand-livre-partie-double-wallet: backlog
+  4-4-depot-fonds-psp-heberge: backlog
+  4-5-depot-virement-manuel-file-approbation: backlog # statuts en enums anglais, libellés i18n
+  4-6-financement-transaction-wallet-frais: backlog
+  4-7-liberation-remboursement-credits-wallet: backlog
+  4-8-ledger-utilisateur-carte-wallet-ui: backlog
+  4-9-retraits-approbation-reservation: backlog # statuts en enums anglais, libellés i18n
+  epic-4-retrospective: optional
 
-  # Epic 5 — Durcissement transverse (contrat d'API preuves)
-  # Cross-cutting; EXÉCUTÉ entre Epic 2 et Epic 3 (l'ordre d'id ≠ ordre d'exécution).
-  epic-5: done
-  5-1-durcissement-contrat-api-preuves: done
-  5-2-corriger-reports-durcissement: done
-  5-3-codes-erreur-applicatifs-enveloppe: done
+  # Epic 5 — Transaction escrow de bout en bout (expirations via outbox AD-19/AD-22, acteur SYSTEM)
+  epic-5: backlog
+  5-1-wizard-creation-transaction-invitation: backlog
+  5-2-acceptation-financement-sla-amont: backlog # producteur outbox (livraison notifications = Epic 8)
+  5-3-expedition-dossier-documentaire-coo: backlog
+  5-4-livraison-confirmation-sla-denouement: backlog # producteur outbox (livraison notifications = Epic 8)
+  5-5-timeline-recapitulatif-verrouillage: backlog
   epic-5-retrospective: optional
 
+  # Epic 6 — Litige, arbitrage & messagerie (PRÉREQUIS: AC ARBITRATOR de 7-2 livré avant 6-1)
+  epic-6: backlog
+  6-1-file-litiges-console-arbitrage: backlog # BLOQUÉE par l'AC octroi/révocation ARBITRATOR (Story 7-2, AD-21)
+  6-2-dossier-litige-decision-motivee: backlog
+  6-3-messagerie-transaction-backend: backlog
+  6-4-messagerie-interface-ui: backlog
+  epic-6-retrospective: optional
+
+  # Epic 7 — Back-office opérateur
+  epic-7: backlog
+  7-1-ui-provisioning-cles-hmac: backlog
+  7-2-gestion-utilisateurs-entreprises: backlog # contient l'AC octroi/révocation ARBITRATOR — tirable en avance pour débloquer 6-1
+  7-3-configuration-produit-versionnee: backlog # prérequis de 10-2
+  7-4-tickets-support-pieces-jointes: backlog
+  7-5-supervision-transactions-vue-accueil: backlog
+  epic-7-retrospective: optional
+
+  # Epic 8 — Notifications & webhooks fiables (gate: spike 8-1 en tête d'epic)
+  epic-8: backlog
+  8-1-spike-ar-p6-fournisseur-email-sms: backlog # spike ADR, gate de l'epic
+  8-2-notifications-email-sms-transitions: backlog # consommateur outbox (producteurs Epic 5)
+  8-3-webhooks-sortants-fiables: backlog
+  8-4-notifications-in-app-cloche: backlog
+  epic-8-retrospective: optional
+
+  # Epic 9 — Offline complet (hors périmètre: brouillons de messages offline, UX-DR44 retiré)
+  epic-9: backlog
+  9-1-idempotence-rejeu-file-offline: backlog
+  9-2-file-echec-reseau-sans-perte: backlog
+  9-3-cache-local-detail-transaction: backlog
+  9-4-versement-preuve-hors-ligne: backlog
+  9-5-plafond-20-fichiers-frontiere-financiere: backlog
+  epic-9-retrospective: optional
+
+  # Epic 10 — Site public
+  epic-10: backlog
+  10-1-landing-publique-portes-entree: backlog
+  10-2-pages-legales-editables-config: backlog # BLOQUÉE par 7-3 (configuration produit versionnée)
+  epic-10-retrospective: optional
+
+  # Epic 11 — Opérabilité, qualité & déploiement (piste parallèle continue)
+  epic-11: backlog
+  11-1-pipeline-ci-cd-gate-tests: backlog # PISTE ZÉRO — démarrer en "lite" (gate de tests), premier candidat dev
+  11-2-configuration-externalisee-profils: backlog
+  11-3-stack-production-durcie-hebergement: backlog # vérifier région commune aux corridors (tenabilité report AR-P5)
+  11-4-observabilite-metriques-logs-tracing: backlog # PRÉREQUIS DUR de l'ouverture de l'Epic 4 (AD-16)
+  11-5-sauvegarde-restauration-testees: backlog
+  11-6-resilience-dependances-croissance-audit: backlog
+  11-7-tests-e2e-offline-online-dette: backlog
+  11-8-tests-charge-parcours-chauds: backlog
+  11-9-migrations-runtime-boot-rabbitmq-storage: backlog # BLOQUANTE avant lancement production (EOL Boot 4.1 / RabbitMQ 4.2 / backend objet)
+  epic-11-retrospective: optional
+
 action_items:
-  - epic: 1
-    action: "Traiter les orphelins MinIO au rollback : ajouter EvidenceStorage.delete() + cleanup best-effort afterCompletion (amender AD-6 dans la spine)"
-    owner: "session dev Story 2.1"
-    status: done
-  - epic: 1
-    action: "Poursuivre bmad-loop story-par-story avec point de contrôle coût/diff entre chaque ; worktree propre entre runs"
-    owner: "Oscard"
-    status: done
-  - epic: 1
-    action: "Durcissement contrat d'API : pagination liste preuves + liste audit, et borne sur files[] (bundle avant volume prod)"
-    owner: "deferred-work ledger"
-    status: done
-  - epic: 1
-    action: "Maintenir les notes opérationnelles bmad-loop en mémoire projet (acceptation bypass une fois, reprise après kill, runs par story)"
-    owner: "Oscard"
-    status: done
-  - epic: 2
-    action: "Story de durcissement transverse avant Epic 3 : bundle des 6 reports ouverts (pagination/plafond liste preuves+audit, borne files[], audit du download, enveloppe d'erreur S3, métadonnées de retrait au DTO, course UI loadSeq)"
-    owner: "session dev nouvelle story"
-    status: done
-  - epic: 2
-    action: "Validation manuelle end-to-end de la stack (docker compose : dépôt/litige/retrait UI+API) — planifiée à la fin de toutes les epics"
-    owner: "Oscard"
-    status: done
-    note: "2026-07-18 : E2E API réel (build reconstruit depuis le source, DB fraîche). 20/20 checks verts sur Epics 1-2-3 : auth+JWT, machine à états, dépôt/liste/download (intégrité octets), anti-IDOR 403, litige atomique+preuve obligatoire, retrait, audit ; dépôt partenaire signé HMAC + anti-rejeu nonce + signature falsifiée + authz company. Frontend PWA servi (SW+manifest 200) et CORS préflight :5173->:8080 OK. Reste optionnel : click-through UI et E2E offline via automation navigateur."
-  - epic: 2
-    action: "Garder l'endpoint partenaire (Epic 3) dans l'enveloppe d'erreur JSON de la plateforme"
-    owner: "session dev Story 3.2"
-    status: done
+  # --- Hérités du backlog production 2026-07-18 (sprint-status-production.yaml, remappés sur la numérotation 2026-07-24) ---
   - epic: 4
-    action: "Validation manuelle end-to-end de la stack (docker compose Postgres+MinIO+backend+frontend : depot/litige/retrait/partenaire, UI+API) - rien n'a tourne en reel"
-    owner: "Oscard"
-    status: done
-    note: "2026-07-18 : constat clé — le conteneur backend qui tournait était un build PERIME du 2026-07-15 23:41 (= commit initial e53f7fe), sans AUCUN des 18 commits backend des Epics 1-5. Reconstruit (docker compose down -v + up --build), puis E2E API réel 20/20 vert sur Epics 1-2-3 (voir note action epic 2). Frontend PWA + CORS OK. Reste optionnel : E2E offline PWA (IndexedDB/file/replay) via automation Chrome — déjà couvert par 170 tests unitaires frontend."
-  - epic: 4
-    action: "Triage/reconciliation des 14 reports offline ouverts (Epic 4) + decision durcissement vs accept POC"
+    action: "Scinder si besoin les stories lourdes du circuit financier (4-4 dépôt PSP, 4-7 libération/remboursement) au moment de la mise en sprint ; elles dépendent des sorties des spikes 4-1 (AR-P2) et 4-2 (AR-P1)."
     owner: "Oscard"
     status: open
-  - epic: 4
-    action: "Lecon planif: croiser les dependances de chaque AD avec le perimetre des epics (bmad-check-implementation-readiness) pour eviter un gap type AD-10 (codes d'erreur supposes mais non cadres)"
+  - epic: 3
+    action: "Scinder les stories lourdes KYB/AML (3-3 file de revue, 3-5 screening AML + WORM — dense, deux préoccupations) ; elles dépendent de la sortie du spike 3-1 (AR-P3)."
     owner: "Oscard"
     status: open
-  - epic: 4
-    action: "Workflow salvage-on-kill + reconciliation manuelle du ledger de la boucle (documente en memoire projet)"
+  - epic: 11
+    action: "Prioriser 11-1 (pipeline CI, version lite) immédiatement : gate de tests prérequis de toutes les pistes (piste zéro)."
+    owner: "Oscard"
+    status: open
+  # --- Hérités du POC Evidence Upload (sprint-status-poc-evidence-upload.yaml) ---
+  - epic: 9
+    action: "Triage/réconciliation des 14 reports offline ouverts du POC (Epic 4 POC) + décision durcissement vs accept — à absorber lors de l'ouverture de l'Epic 9 (offline complet) et de la Story 11-7 (dette de tests)."
+    owner: "Oscard"
+    status: open
+  - epic: 11
+    action: "Leçon planif POC : croiser les dépendances de chaque AD avec le périmètre des epics pour éviter un gap type AD-10."
     owner: "Oscard"
     status: done
+    note: "2026-07-24 : réalisé par bmad-check-implementation-readiness (rapport IR READY) — réconciliations PRD/epics/UX + contraintes d'ordonnancement matérialisées ici."
+  # --- Issus du rapport IR 2026-07-24 ---
+  - epic: 0
+    action: "HORS LOGICIEL — Ouvrir la conversation partenaire bancaire (voie réglementaire wallet, dépendance critique n°1 du PRD §8) : envoyer l'email dès la piste zéro. Ne bloque pas le dev (sandbox), bloque le lancement commercial."
+    owner: "Oscard"
+    status: open
+  - epic: 0
+    action: "Générer project-context.md (bmad-generate-project-context) — recherché par tous les skills à chaque activation, manquant."
+    owner: "Oscard"
+    status: open
