@@ -18,8 +18,8 @@ jobs:
       run:
         working-directory: backend
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '21'
@@ -35,8 +35,8 @@ jobs:
       run:
         working-directory: frontend
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: '24'
           cache: npm
@@ -54,13 +54,13 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '21'
           cache: maven
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: '24'
 
@@ -71,9 +71,14 @@ jobs:
         working-directory: backend
         run: ./mvnw -B -DskipTests cyclonedx:makeAggregateBom && cp target/bom.json ../sbom-backend.cdx.json
 
+      # --omit optional : les deps "bundled" du paquet optionnel
+      # @tailwindcss/oxide-wasm32-wasi font échouer npm sbom en mode
+      # lockfile-only (ESBOMPROBLEMS) ; l'outillage optionnel de build
+      # n'appartient pas à l'inventaire livré. Le scan Trivy, lui, lit
+      # le lockfile complet.
       - name: SBOM frontend (npm sbom CycloneDX)
         working-directory: frontend
-        run: npm sbom --sbom-format cyclonedx --package-lock-only > ../sbom-frontend.cdx.json
+        run: npm sbom --sbom-format cyclonedx --package-lock-only --omit optional > ../sbom-frontend.cdx.json
 
       - name: Build des images Docker
         run: |
@@ -86,7 +91,7 @@ jobs:
           trivy image --format cyclonedx --output sbom-image-frontend.cdx.json escrow-frontend:ci
 
       - name: Archiver les SBOM
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: sbom
           path: sbom-*.cdx.json
