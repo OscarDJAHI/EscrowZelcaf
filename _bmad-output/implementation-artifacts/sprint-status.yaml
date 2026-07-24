@@ -74,7 +74,7 @@
 # Epics 6-7-8 → Epics 9-10 → Epic 11 en continu (11-9 avant production).
 
 generated: 2026-07-24
-last_updated: "2026-07-24 (Story 11-1 en review — CI livrée verte, PR démo fermée)"
+last_updated: "2026-07-25 (11-1 done post-review ; spikes 3-1 review, 4-1/4-2 in-progress ; project-context.md généré)"
 project: Escrow_claude (Production)
 project_key: NOKEY
 tracking_system: file-system
@@ -106,8 +106,8 @@ development_status:
   epic-2-retrospective: optional
 
   # Epic 3 — Conformité KYB/AML (gate: spike 3-1 en tête d'epic)
-  epic-3: backlog
-  3-1-spike-ar-p3-fournisseur-kyb-aml: backlog # PISTE ZÉRO — spike ADR, gate de l'epic
+  epic-3: in-progress
+  3-1-spike-ar-p3-fournisseur-kyb-aml: review # ADR-AR-P3 PROPOSÉE (duo Smile ID + ComplyAdvantage, repli OpenSanctions) — à ratifier par Oscard
   3-2-formulaire-kyb-soumission-dossier: backlog
   3-3-file-revue-kyb-operateur: backlog
   3-4-gating-global-kyb: backlog
@@ -115,9 +115,9 @@ development_status:
   epic-3-retrospective: optional
 
   # Epic 4 — Wallet & circuit financier réel (CRITÈRE D'ENTRÉE DUR: 11-4 observabilité livrée, AD-16)
-  epic-4: backlog
-  4-1-spike-ar-p2-cantonnement-comptabilite: backlog # PISTE ZÉRO — validation plan de comptes contre partenaire bancaire
-  4-2-spike-ar-p1-choix-psp-agregateur: backlog # PISTE ZÉRO — Flutterwave vs Paystack + POC sandbox
+  epic-4: in-progress # SEULS les spikes piste zéro sont ouverts — les stories d'argent réel restent gated par 11-4 (AD-16)
+  4-1-spike-ar-p2-cantonnement-comptabilite: in-progress # ADR draft (écritures M1-M11 finales) — BLOQUÉE par l'entretien partenaire bancaire (email à envoyer)
+  4-2-spike-ar-p1-choix-psp-agregateur: in-progress # ADR pré-décision (Paystack primaire) — BLOQUÉE par création comptes sandbox (Oscard)
   4-3-grand-livre-partie-double-wallet: backlog
   4-4-depot-fonds-psp-heberge: backlog
   4-5-depot-virement-manuel-file-approbation: backlog # statuts en enums anglais, libellés i18n
@@ -178,7 +178,7 @@ development_status:
 
   # Epic 11 — Opérabilité, qualité & déploiement (piste parallèle continue)
   epic-11: in-progress
-  11-1-pipeline-ci-cd-gate-tests: review # CI verte sur develop (EscrowZelcaf) ; écart AC1: protection de branche exige GitHub Pro (décision Oscard)
+  11-1-pipeline-ci-cd-gate-tests: done # code-review 2026-07-25: 14 patchs appliqués, run vert ; protection branches = pose auto armée (D1: main dur/develop souple)
   11-2-configuration-externalisee-profils: backlog
   11-3-stack-production-durcie-hebergement: backlog # vérifier région commune aux corridors (tenabilité report AR-P5)
   11-4-observabilite-metriques-logs-tracing: backlog # PRÉREQUIS DUR de l'ouverture de l'Epic 4 (AD-16)
@@ -221,4 +221,5 @@ action_items:
   - epic: 0
     action: "Générer project-context.md (bmad-generate-project-context) — recherché par tous les skills à chaque activation, manquant."
     owner: "Oscard"
-    status: open
+    status: done
+    note: "2026-07-25 : généré (_bmad-output/project-context.md, 58 règles) via agent."

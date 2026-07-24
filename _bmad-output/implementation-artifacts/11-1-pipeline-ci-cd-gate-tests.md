@@ -3,7 +3,7 @@ baseline_commit: 91c221d0618caa48d92bd8272035049cb60a50ca
 ---
 # Story 11.1: Pipeline CI/CD avec gate de tests et scan de vulnérabilités
 
-Status: review
+Status: done
 
 ## Story
 
@@ -152,6 +152,8 @@ claude-fable-5 (Claude Fable 5) — session dev-story du 2026-07-24
 - _bmad-output/implementation-artifacts/11-1-pipeline-ci-cd-gate-tests.md (ce fichier)
 
 ## Change Log
+
+- 2026-07-25 (clôture) : run CI 30131669761 entièrement vert avec les 14 patchs (le gate agrégé a démontré son utilité dès le run précédent en isolant le seul scan rouge). Statut → done. Reste hors-repo : pose de la protection de branches (boucle automatique armée, politique D1 main dur/develop souple — en attente propagation plan Pro) ; à vérifier sur la première PR réelle.
 
 - 2026-07-25 : Code review (3 relecteurs) — 14 patchs appliqués : Trivy épinglé v0.72.0 (script par tag), exemptions scopées backend + exp:2026-10-31, actions épinglées par SHA, distributionSha256Sum wrapper (vérifié par re-téléchargement forcé), cron hebdo + workflow_dispatch, cache DB Trivy, scans découplés + gate agrégé, concurrency, SBOM frontend sur arbre installé, engine-strict, scan secrets dépôt (0 finding), timeout 40 min, jar wrapper ré-ignoré, README/File List corrigés. D1 tranché : main dur / develop souple. W1/W2 au ledger.
 
