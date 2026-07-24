@@ -1,6 +1,6 @@
 # ADR AR-P3 — Fournisseur KYB/AML
 
-- **Statut : PROPOSÉE** (décision argumentée, à ratifier par Oscard ; contractualisation non engagée)
+- **Statut : ACCEPTÉE** — ratifiée par Oscard le 2026-07-25 (contractualisation fournisseurs non engagée ; le repli manuel/OpenSanctions couvre l'intervalle)
 - **Date : 2026-07-25** · **Story : 3.1** · **Spine : port `KybScreeningProvider`, FR-P8, FR-P30, NFR-P23**
 - **Base factuelle :** `planning-artifacts/spikes/annexe-AR-P3-recherche-kyb-aml-2026-07-25.md` (6 candidats comparés, sources datées)
 

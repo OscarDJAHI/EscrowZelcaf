@@ -3,7 +3,7 @@ baseline_commit: aucune (spike ADR-only, zéro code produit)
 ---
 # Story 3.1: Spike AR-P3 — décision d'architecture fournisseur KYB/AML
 
-Status: review
+Status: done
 
 ## Livrables (AC1-AC3 couverts)
 
@@ -14,4 +14,4 @@ Status: review
 
 ## Dev Agent Record
 
-claude-fable-5, 2026-07-25 — recherche par agent web (sources primaires datées), ADR compilée en session. Prochaine étape : ratification Oscard → status done ; les stories 3.2+ peuvent être créées dès maintenant (elles s'écrivent contre le port).
+claude-fable-5, 2026-07-25 — recherche par agent web (sources primaires datées), ADR compilée en session. Ratifiée par Oscard le 2026-07-25 → done ; les stories 3.2+ peuvent être créées dès maintenant (elles s'écrivent contre le port).

@@ -74,7 +74,7 @@
 # Epics 6-7-8 → Epics 9-10 → Epic 11 en continu (11-9 avant production).
 
 generated: 2026-07-24
-last_updated: "2026-07-25 (11-1 done post-review ; spikes 3-1 review, 4-1/4-2 in-progress ; project-context.md généré)"
+last_updated: "2026-07-25 (3-1 done — ADR KYB/AML ratifiée ; cycle dev suivant: 1-2 secrets)"
 project: Escrow_claude (Production)
 project_key: NOKEY
 tracking_system: file-system
@@ -107,7 +107,7 @@ development_status:
 
   # Epic 3 — Conformité KYB/AML (gate: spike 3-1 en tête d'epic)
   epic-3: in-progress
-  3-1-spike-ar-p3-fournisseur-kyb-aml: review # ADR-AR-P3 PROPOSÉE (duo Smile ID + ComplyAdvantage, repli OpenSanctions) — à ratifier par Oscard
+  3-1-spike-ar-p3-fournisseur-kyb-aml: done # ADR-AR-P3 ACCEPTÉE (ratifiée 2026-07-25): duo Smile ID + ComplyAdvantage Mesh, Ghana manuel, repli OpenSanctions — débloque 3-2..3-5
   3-2-formulaire-kyb-soumission-dossier: backlog
   3-3-file-revue-kyb-operateur: backlog
   3-4-gating-global-kyb: backlog
