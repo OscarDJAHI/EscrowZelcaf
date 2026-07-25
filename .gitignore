@@ -18,6 +18,10 @@ _bmad/config.user.toml
 .bmad-loop/cache/
 .bmad-loop/policy.toml
 
+# Références lourdes non versionnées (maquettes + PDF ZLECAf)
+Docs/Maquettes/
+Docs/PDF/
+
 # Secrets locaux (Story 1.2) — jamais versionnés (toutes variantes, sauf l'exemple)
 .env
 *.env
