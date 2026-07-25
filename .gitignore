@@ -10,6 +10,8 @@ backend/target/
 .playwright-mcp/
 .claude/settings.local.json
 _bmad/config.toml.bak
+_bmad/config.user.yaml
+_bmad/config.user.toml
 
 # bmad-loop runtime state
 .bmad-loop/runs/
