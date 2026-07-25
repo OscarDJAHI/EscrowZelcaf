@@ -3,7 +3,7 @@ baseline_commit: dc3647620d1c1e2e6a5639cc5e9d71b67567d195
 ---
 # Story 1.4: TLS de bout en bout et en-têtes de sécurité
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 

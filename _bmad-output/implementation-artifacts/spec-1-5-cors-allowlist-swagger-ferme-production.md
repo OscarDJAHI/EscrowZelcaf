@@ -2,7 +2,7 @@
 title: 'Story 1.5 — CORS allowlist et Swagger fermé en production'
 type: 'feature'
 created: '2026-07-25'
-status: 'in-review'
+status: 'done'
 baseline_revision: 'd368b240323463d398f22dfd9c2e004dd9e214f7'
 review_loop_iteration: 0
 followup_review_recommended: false
