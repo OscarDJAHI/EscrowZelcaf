@@ -2,6 +2,10 @@
 # Prérequis (Story 1.2) : cp infra/.env.example infra/.env  (jamais versionné)
 # puis :  docker compose -f infra/docker-compose.yml up --build
 # Sans .env, compose échoue en nommant la variable manquante (syntaxe :?).
+#
+# Ingress (Story 1.4) : tout passe par le reverse-proxy TLS (service frontend).
+#   Accès local : https://localhost:8443  (HTTP :8080 -> redirigé HTTPS).
+#   Le backend n'est PAS publié — joignable seulement via /api sur le proxy.
 name: escrow-poc
 
 services:
@@ -112,8 +116,11 @@ services:
       # Optionnels (Story 1.1) — vides = aucun ADMIN créé au démarrage.
       ESCROW_BOOTSTRAP_ADMIN_EMAIL: ${ESCROW_BOOTSTRAP_ADMIN_EMAIL:-}
       ESCROW_BOOTSTRAP_ADMIN_PASSWORD: ${ESCROW_BOOTSTRAP_ADMIN_PASSWORD:-}
-    ports:
-      - "8080:8080"
+    # Pas de publication de port (Story 1.4) : le backend n'est joignable QUE via
+    # le reverse-proxy TLS (frontend), sur le réseau interne compose. C'est la
+    # frontière de confiance qui rend X-Forwarded-For fiable (résolution DEF2).
+    expose:
+      - "8080"
     depends_on:
       postgres:
         condition: service_healthy
@@ -131,13 +138,19 @@ services:
       retries: 12
       start_period: 40s
 
+  # Reverse-proxy TLS + PWA (Story 1.4) : ingress unique de la stack.
   frontend:
     build:
       context: ../frontend
       args:
-        VITE_API_BASE: http://localhost:8080
+        # Vide = appels API en MÊME ORIGINE (/api/v1/...), proxifiés vers le
+        # backend par nginx. Plus d'appel HTTP direct au backend depuis le PWA.
+        VITE_API_BASE: ""
     ports:
-      - "5173:80"
+      # Redirection HTTP -> HTTPS sur le port HTTP, PWA + API sur le port HTTPS.
+      # Ports hôte paramétrables (défauts hors des collisions connues 8080/5432).
+      - "${INGRESS_HTTP_PORT:-8080}:80"
+      - "${INGRESS_HTTPS_PORT:-8443}:443"
     depends_on:
       backend:
         condition: service_healthy

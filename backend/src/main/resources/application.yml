@@ -78,6 +78,13 @@ escrow:
 
 server:
   port: ${SERVER_PORT:8080}
+  # Derriere le reverse-proxy TLS (Story 1.4) qui termine le SSL : Spring derive
+  # le schema d'origine de X-Forwarded-Proto (=> request.isSecure(), donc HSTS) et
+  # l'IP client reelle de X-Forwarded-For, via ForwardedHeaderFilter. Consequence :
+  # le rate-limiter (Story 1.3) cle sur l'IP client, jamais sur celle du proxy
+  # (resolution du report DEF2). La confiance en X-Forwarded-For repose sur
+  # l'isolation reseau : le backend n'est joignable QUE par le proxy (compose).
+  forward-headers-strategy: framework
 
 management:
   endpoints:

@@ -3,7 +3,7 @@ baseline_commit: dc3647620d1c1e2e6a5639cc5e9d71b67567d195
 ---
 # Story 1.4: TLS de bout en bout et en-têtes de sécurité
 
-Status: ready-for-dev
+Status: review
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -21,20 +21,19 @@ So that mes données financières ne puissent être interceptées ou détournée
 
 ## Tasks / Subtasks
 
-- [ ] **Task 1 — Reverse-proxy TLS sur la stack compose (local/staging)** (AC: #1, #3)
-  - [ ] Faire du nginx frontend le point d'ingress unique de la stack compose : terminer TLS en `listen 443 ssl` + `listen 80` avec redirection `return 301 https://$host$request_uri`, servir le SPA, et **proxifier `/api` → `backend:8080`** (`proxy_pass`, `proxy_set_header Host/X-Real-IP/X-Forwarded-For/X-Forwarded-Proto`). Le proxy **écrase** (ne concatène pas) `X-Forwarded-For` avec l'IP client réelle (`$remote_addr`) pour empêcher le spoofing.
-  - [ ] `infra/docker-compose.yml` : ne plus publier `backend:8080` sur l'hôte (réseau interne uniquement, joignable seulement par le proxy) ; publier le proxy sur `443` (et `80` pour la redirection). Ne PAS fermer les consoles d'admin (Adminer/pgAdmin/MinIO/RabbitMQ) — c'est un AC de la Story 11.3.
-  - [ ] Certificats : self-signed/mkcert en local, montés par volume ; en staging/prod, injectés hors-repo via le pattern `.env` (Story 1.2). Documenter la génération locale. Mettre à jour `VITE_API_BASE` pour un appel **même-origine** (`/api`) plutôt que `http://localhost:8080` — supprime le besoin CORS navigateur (le durcissement CORS reste Story 1.5 pour l'accès direct/partenaire).
-- [ ] **Task 2 — En-têtes de sécurité au niveau proxy (couvre HTML + API)** (AC: #1, #2)
-  - [ ] Dans `frontend/nginx.conf`, poser sur toutes les réponses (bloc serveur HTTPS) : `Strict-Transport-Security: max-age=31536000; includeSubDomains` (HSTS uniquement sur HTTPS), `Content-Security-Policy` (politique restrictive adaptée au PWA : `default-src 'self'` + sources réellement nécessaires — auditer les besoins réels du build Vite, éviter `unsafe-inline` si possible ; documenter tout assouplissement), `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin`, `Permissions-Policy` minimale.
-- [ ] **Task 3 — Durcissement Spring : forward-headers + en-têtes en défense en profondeur** (AC: #2, #3)
-  - [ ] `application.yml` : ajouter `server.forward-headers-strategy: FRAMEWORK` pour que Spring dérive `request.isSecure()` de `X-Forwarded-Proto` et l'IP client de `X-Forwarded-For` (via `ForwardedHeaderFilter`). Conséquence directe : `AuthRateLimitFilter` (Story 1.3) reçoit alors l'IP client réelle par `getRemoteAddr()` — vérifier ce comportement par test.
-  - [ ] `SecurityConfig.java` : ajouter un bloc `.headers(...)` explicite sur la chaîne (HSTS conditionné au HTTPS, `frameOptions().deny()`, `contentTypeOptions()`, `referrerPolicy(...)`, CSP alignée sur celle du proxy) — expliciter et tester ce que Spring pose aujourd'hui implicitement, en défense en profondeur pour les réponses API. Injection par constructeur, conforme au style du repo.
-- [ ] **Task 4 — Tests** (AC: #2, #3)
-  - [ ] Intégration MockMvc (pattern `AuthRateLimitIntegrationTest` : `@SpringBootTest` + `@AutoConfigureMockMvc` + `@Testcontainers`) : asserter la présence/valeur des en-têtes Spring (`header().string("X-Frame-Options", "DENY")`, `header().exists("Content-Security-Policy")`, `header().string("X-Content-Type-Options", "nosniff")`, Referrer-Policy).
-  - [ ] Test forward-headers : requête avec `X-Forwarded-Proto: https` + `X-Forwarded-For: <ip>` → vérifier que Spring voit HTTPS / l'IP client (et que le rate-limiter clé dessus, pas sur l'IP du proxy).
-  - [ ] Redirection HTTP→HTTPS et en-têtes posés par nginx : **non couvrables par MockMvc** (couche proxy). Fournir un script de vérification (`curl -I`) documenté et/ou un test léger Testcontainers sur l'image proxy ; sinon consigner la validation E2E comme dette Story 11.7. Documenter le choix.
-  - [ ] Suites backend + frontend complètes vertes avant `review`.
+- [x] **Task 1 — Reverse-proxy TLS sur la stack compose (local/staging)** (AC: #1, #3)
+  - [x] nginx frontend = ingress unique : serveur HTTP `listen 80` → `return 301 https://$host$request_uri` ; serveur HTTPS `listen 443 ssl` + `http2 on`, sert le SPA, **proxifie `/api/` → `backend:8080`** ; `proxy_set_header X-Forwarded-For $remote_addr` **écrase** (ne concatène pas) avec l'IP client réelle.
+  - [x] `infra/docker-compose.yml` : backend en `expose` seulement (plus de publication `8080` sur l'hôte) ; proxy publié `${INGRESS_HTTP_PORT:-8080}:80` + `${INGRESS_HTTPS_PORT:-8443}:443`. Consoles d'admin laissées ouvertes (fermeture = Story 11.3).
+  - [x] Certificat auto-signé généré dans le `Dockerfile` (openssl) pour local/staging, surchargé par volume `/etc/nginx/certs` en staging/prod (pattern `.env`, documenté dans `.env.example`). `VITE_API_BASE=""` → appels **même-origine** `/api/v1/...` ; `client.js` traite `""` comme même-origine (garde le défaut dev). Durcissement CORS = Story 1.5.
+- [x] **Task 2 — En-têtes de sécurité au niveau proxy (couvre HTML + API)** (AC: #1, #2)
+  - [x] `frontend/security-headers.conf` (inclus au serveur HTTPS ET ré-inclus dans les locations sw.js/manifest/assets — contourne le piège d'héritage `add_header` de nginx) : HSTS (HTTPS only), CSP restrictive PWA (`default-src 'self'`, `unsafe-inline` sur style-src documenté, à resserrer via audit navigateur → dette 11.7), `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Referrer-Policy`, `Permissions-Policy`.
+- [x] **Task 3 — Durcissement Spring : forward-headers + en-têtes en défense en profondeur** (AC: #2, #3)
+  - [x] `application.yml` : `server.forward-headers-strategy: framework` → Spring dérive `request.isSecure()` de `X-Forwarded-Proto` et l'IP client de `X-Forwarded-For` (`ForwardedHeaderFilter`). `AuthRateLimitFilter` (Story 1.3) reçoit dès lors l'IP client par `getRemoteAddr()` — **prouvé par test** (aucune modif du filtre nécessaire).
+  - [x] `SecurityConfig.java` : bloc `.headers(...)` explicite (HSTS conditionné HTTPS `includeSubDomains`/`max-age=31536000`, `frameOptions().deny()`, `contentTypeOptions()`, `referrerPolicy(STRICT_ORIGIN_WHEN_CROSS_ORIGIN)`, CSP `default-src 'self'; frame-ancestors 'none'; base-uri 'self'; object-src 'none'`). Injection par constructeur.
+- [x] **Task 4 — Tests** (AC: #2, #3)
+  - [x] `SecurityHeadersIntegrationTest` (MockMvc + Testcontainers + horloge figée, pattern `AuthRateLimitIntegrationTest`) — 5 tests : en-têtes présents ; HSTS servi ssi `X-Forwarded-Proto=https` ; HSTS absent en HTTP nu ; **DEF2** clients XFF distincts non verrouillés collectivement (clé ≠ IP proxy) + même client XFF verrouillé malgré proxys distincts (clé = IP client). Emails distincts pour isoler la dimension origine.
+  - [x] Redirection HTTP→HTTPS + en-têtes nginx : non couvrables par MockMvc → script `infra/verify-tls-headers.sh` (curl) documenté ; validation E2E automatisée = dette Story 11.7 (consignée).
+  - [x] Suites backend + frontend complètes vertes (frontend 170/170 ; backend 272/272, BUILD SUCCESS).
 
 ## Dev Notes
 
@@ -80,12 +79,37 @@ So that mes données financières ne puissent être interceptées ou détournée
 
 ### Agent Model Used
 
+claude-opus-4-8, 2026-07-25
+
 ### Debug Log References
+
+- Piège de test évité : une première version en `@SpringBootTest(RANDOM_PORT)` + `TestRestTemplate` provoquait des blocages massifs (une méthode à 900 s, classe à 3866 s) car les requêtes HTTP réelles butent sur RabbitMQ absent des Testcontainers. Bascule sur MockMvc + horloge figée (pattern `AuthRateLimitIntegrationTest`) → 5 tests en ~28 s, déterministes.
+- Piège de test #2 : les 2 tests DEF2 utilisaient d'abord le même email → la clé COMPTE du rate-limiter verrouillait au seuil indépendamment de l'IP, masquant le keying XFF. Corrigé avec des emails distincts pour isoler la dimension origine (technique d'`independentOrigins`).
 
 ### Completion Notes List
 
+- **AC #1/#2 (en-têtes)** : posés à deux niveaux. Reverse-proxy nginx (`security-headers.conf`) = source pour les réponses HTML du PWA ; `SecurityConfig.headers()` = défense en profondeur pour les réponses API émises en direct. HSTS n'est servi que sur requête HTTPS (`request.isSecure()`), donc jamais sur du HTTP nu (prouvé).
+- **AC #1 (redirection)** : serveur nginx `:80` → 301 vers HTTPS ; serveur `:443` en TLS (certificat auto-signé embarqué pour local/staging, surchargeable par volume).
+- **AC #3 / DEF2** : `server.forward-headers-strategy: framework` suffit — le `ForwardedHeaderFilter` (haute précédence) réécrit `getRemoteAddr()` depuis `X-Forwarded-For` avant l'`AuthRateLimitFilter` (`LOWEST_PRECEDENCE`) ; aucune modif du filtre 1.3. La confiance en XFF repose sur l'isolation réseau (backend non publié, joignable seulement via le proxy) + l'écrasement de XFF par nginx. Prouvé par 2 tests croisés (clé = IP client, pas IP proxy).
+- **Même-origine** : le PWA appelle `/api/v1/...` en relatif (`VITE_API_BASE=""`), proxifié par nginx → plus de CORS navigateur en compose (le durcissement CORS reste Story 1.5 pour l'accès direct/partenaire). `client.js` distingue `""` (même-origine) de `undefined` (défaut dev `http://localhost:8080`).
+- **Couche nginx** : non couvrable par MockMvc → `infra/verify-tls-headers.sh` (curl -I) pour la validation manuelle ; E2E automatisée déférée à la Story 11.7. `docker compose config` validé.
+- Frontières respectées : consoles d'admin laissées ouvertes (11.3), CORS `*` et Swagger non touchés (1.5).
+
 ### File List
+
+- backend/src/main/java/com/zlecaf/escrow/config/SecurityConfig.java (bloc `.headers(...)`)
+- backend/src/main/resources/application.yml (`server.forward-headers-strategy: framework`)
+- backend/src/test/java/com/zlecaf/escrow/security/SecurityHeadersIntegrationTest.java (nouveau, 5 tests)
+- frontend/nginx.conf (ingress TLS + proxy /api + redirection + en-têtes)
+- frontend/security-headers.conf (nouveau, snippet en-têtes)
+- frontend/Dockerfile (openssl + certificat auto-signé + snippet + EXPOSE 80 443)
+- frontend/src/api/client.js (même-origine si `VITE_API_BASE=""`)
+- infra/docker-compose.yml (backend en `expose`, proxy publié HTTP/HTTPS, `VITE_API_BASE=""`)
+- infra/.env.example (ports d'ingress + note certificat TLS)
+- infra/verify-tls-headers.sh (nouveau, vérification manuelle de la couche proxy)
+- _bmad-output/implementation-artifacts/sprint-status.yaml + ce fichier
 
 ## Change Log
 
+- 2026-07-25 : Story implémentée — reverse-proxy TLS (compose local/staging) + redirection HTTP→HTTPS + HSTS + CSP/X-Frame-Options & co (nginx + défense en profondeur Spring) + `forward-headers-strategy` soldant le report DEF2 du rate-limiter 1.3. Backend +5 tests d'intégration (MockMvc/Testcontainers), frontend 170/170 vert. Couche nginx validée par script (E2E → dette 11.7).
 - 2026-07-25 : Story créée (context engine) — périmètre tranché via spine AR-P5 (reverse-proxy TLS compose local/staging), report DEF2 (trusted-proxy/XFF du rate-limiter 1.3) intégré comme AC #3, frontières 1.5 (CORS/Swagger) et 11.3 (consoles d'admin, ingress prod) explicitement exclues.

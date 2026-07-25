@@ -2,8 +2,12 @@ import axios from 'axios'
 
 export const TOKEN_STORAGE_KEY = 'escrow_token'
 
+// VITE_API_BASE défini (même "") => on l'utilise tel quel : "" signifie MÊME
+// ORIGINE (chemins relatifs /api/v1/... proxifiés par le reverse-proxy, Story 1.4).
+// Non défini (dev sans build arg) => défaut historique vers le backend local.
+const configuredApiBase = import.meta.env.VITE_API_BASE
 const apiClient = axios.create({
-  baseURL: import.meta.env.VITE_API_BASE || 'http://localhost:8080',
+  baseURL: configuredApiBase === undefined ? 'http://localhost:8080' : configuredApiBase,
   headers: {
     'Content-Type': 'application/json',
   },
