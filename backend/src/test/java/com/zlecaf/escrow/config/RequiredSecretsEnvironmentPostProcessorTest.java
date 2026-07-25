@@ -80,12 +80,53 @@ class RequiredSecretsEnvironmentPostProcessorTest {
     }
 
     @Test
-    @DisplayName("le registre couvre exactement les 4 secrets critiques de la story")
-    void registryCoversTheFourCriticalSecrets() {
-        assertThat(RequiredSecretsEnvironmentPostProcessor.REQUIRED_SECRETS).containsOnlyKeys(
-                "spring.datasource.password",
-                "spring.rabbitmq.password",
-                "escrow.jwt.secret",
-                "escrow.storage.secret-key");
+    @DisplayName("valeur sentinelle de .env.example (remplacez-moi…) -> refusée explicitement")
+    void sentinelValue_isRejected() {
+        MockEnvironment env = envWithAllSecrets();
+        env.setProperty("spring.datasource.password", "remplacez-moi");
+
+        assertThatThrownBy(() -> processor.postProcessEnvironment(env, null))
+                .hasMessageContaining("SPRING_DATASOURCE_PASSWORD")
+                .hasMessageContaining("exemple");
+    }
+
+    @Test
+    @DisplayName("secret JWT < 32 octets -> refusé au fail-fast (pas de WeakKeyException tardive)")
+    void shortJwtSecret_isRejected() {
+        MockEnvironment env = envWithAllSecrets();
+        env.setProperty("escrow.jwt.secret", "x".repeat(31));
+
+        assertThatThrownBy(() -> processor.postProcessEnvironment(env, null))
+                .hasMessageContaining("ESCROW_JWT_SECRET")
+                .hasMessageContaining("32");
+    }
+
+    @Test
+    @DisplayName("garde anti-dérive : chaque secret requis est bien un placeholder SANS défaut dans application.yml")
+    void applicationYml_hasNoDefaultForRequiredSecrets() throws Exception {
+        String yml = java.nio.file.Files.readString(
+                java.nio.file.Path.of("src/main/resources/application.yml"));
+        for (var entry : RequiredSecretsEnvironmentPostProcessor.REQUIRED_SECRETS.entrySet()) {
+            String envVar = entry.getValue();
+            assertThat(yml)
+                    .as("le placeholder ${%s} doit exister dans application.yml", envVar)
+                    .contains("${" + envVar + "}");
+            assertThat(yml)
+                    .as("${%s:...} ne doit avoir AUCUNE valeur par défaut", envVar)
+                    .doesNotContain("${" + envVar + ":");
+        }
+    }
+
+    @Test
+    @DisplayName("le post-processor est réellement enregistré dans META-INF/spring.factories")
+    void springFactories_registersTheProcessor() throws Exception {
+        String factories = java.nio.file.Files.readString(
+                java.nio.file.Path.of("src/main/resources/META-INF/spring.factories"));
+        assertThat(factories.replace("\\\n", "").replaceAll("\\s", ""))
+                .contains("org.springframework.boot.env.EnvironmentPostProcessor="
+                        + RequiredSecretsEnvironmentPostProcessor.class.getName());
+        // et l'ordre le place bien APRÈS le chargement des fichiers de config
+        assertThat(processor.getOrder())
+                .isGreaterThan(org.springframework.boot.context.config.ConfigDataEnvironmentPostProcessor.ORDER);
     }
 }

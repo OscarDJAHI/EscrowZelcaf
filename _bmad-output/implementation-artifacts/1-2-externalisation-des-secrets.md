@@ -25,6 +25,23 @@ So that une fuite du dépôt ne compromette pas la production.
 - [x] Task 5 — Audit + rotation (AC2) : scan Trivy secrets (déjà en CI, 0 finding), grep des motifs connus, constat sur les valeurs historiques (dev-only, jamais déployées — rotation = exigence .env local + injection runtime en staging/prod, AR-P4/Story 11.2) documenté ici.
 - [x] Task 6 — README quick-start mis à jour (étape `cp infra/.env.example infra/.env`).
 
+
+### Review Findings (code review 2026-07-25, 3 relecteurs — 25 findings bruts, forte convergence)
+
+- [x] [Review][Patch] RP1 — Volumes persistants : les nouveaux mots de passe ne s'appliquent qu'au premier initdb → note de migration `down -v` (README + .env.example) [convergent ×3, l'auditor a vérifié que escrow-poc_pgdata existe sur ce poste]
+- [x] [Review][Patch] RP2 — `cp .env.example` sans édition passait tous les gardes → sentinelles `remplacez-moi` REJETÉES par le post-processor backend [convergent ×2]
+- [x] [Review][Patch] RP3 — JWT < 32 octets refusé au fail-fast (fini la WeakKeyException tardive de JwtService)
+- [x] [Review][Patch] RP4 — Défauts d'identifiants alignés sur le compose (rabbitmq user `escrow`, access-key `escrow-storage`) — le dev hors Docker ne casse plus [convergent ×3]
+- [x] [Review][Patch] RP5 — Test d'enregistrement réel : spring.factories parsé + ordre vérifié > ConfigData
+- [x] [Review][Patch] RP6 — Test tautologique du registre remplacé par une garde anti-dérive (placeholders sans défaut vérifiés DANS application.yml)
+- [x] [Review][Patch] RP7 — Caractères spéciaux ($ " \ `) altérés par l'interpolation compose/shell minio-init → charset base64 imposé par la doc
+- [x] [Review][Patch] RP8 — README : claim « same contract » corrigé (compose `:?` = première variable seulement) + exigence Compose v2
+- [x] [Review][Patch] RP9 — Flux backend hors Docker documenté (`set -a; source infra/.env; set +a`)
+- [x] [Review][Patch] RP10 — Bootstrap ADMIN exposé (.env.example + passthrough compose, vide = skip)
+- [x] [Review][Patch] RP11 — REQUIRED_SECRETS immuable (Map.of) + message d'erreur trié déterministe
+- [x] [Review][Patch] RP12 — .gitignore élargi (.env, *.env, variantes ; !*.env.example)
+- Rejetés (3) : access-key en secret REQUIS (c'est un identifiant, aligné et non secret) ; catch IllegalArgumentException « large » dans resolveOrNull (commenté, reste actionnable) ; renommage `name: escrow-poc` (orphelinerait les volumes — contraire à RP1).
+
 ## Dev Notes
 
 - **État vérifié 2026-07-25** : `application.yml` lignes 8/27/43/52 = défauts faibles (`escrow`, `guest`, `change-me…`, `minioadmin`) ; compose = POSTGRES_PASSWORD, PGADMIN_DEFAULT_PASSWORD, RABBITMQ guest/guest, MINIO_ROOT_*, ESCROW_JWT_SECRET, SPRING_DATASOURCE_PASSWORD, ESCROW_STORAGE_SECRET_KEY en dur + `minio-init` avec creds inline dans l'entrypoint.
@@ -64,4 +81,5 @@ claude-fable-5, session du 2026-07-25
 
 ## Change Log
 
+- 2026-07-25 (post-review) : 12 patchs de revue appliqués (sentinelles, longueur JWT, alignement identifiants, gardes anti-dérive, doc volumes/charset/hors-Docker/bootstrap ADMIN). CI verte pré-review : run 30142168510.
 - 2026-07-25 : Story implémentée en une session — externalisation des 4 secrets critiques backend + 5 secrets compose, fail-fast agrégé prouvé, 244 tests verts, audit AC2 documenté.

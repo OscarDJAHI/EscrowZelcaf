@@ -87,10 +87,21 @@ cp infra/.env.example infra/.env   # puis remplacez chaque valeur (openssl rand 
 docker compose -f infra/docker-compose.yml up --build
 ```
 
-Without `infra/.env`, compose fails fast **naming the missing variable** — same
-contract as the backend, which refuses to boot without its critical secrets
-(`ESCROW_JWT_SECRET`, `SPRING_DATASOURCE_PASSWORD`, `SPRING_RABBITMQ_PASSWORD`,
-`ESCROW_STORAGE_SECRET_KEY`) and lists every missing one in a single error.
+Without `infra/.env`, compose fails fast naming the **first** missing variable
+(`:?` syntax, Docker Compose v2 required). The backend goes further: it refuses
+to boot unless its critical secrets (`ESCROW_JWT_SECRET`,
+`SPRING_DATASOURCE_PASSWORD`, `SPRING_RABBITMQ_PASSWORD`,
+`ESCROW_STORAGE_SECRET_KEY`) are present, **not left at the `remplacez-moi`
+sentinel values**, and ≥ 32 bytes for the JWT — every problem listed in one error.
+
+> **Stack déjà initialisée ?** Postgres/pgAdmin/MinIO n'appliquent les mots de
+> passe qu'à la création de leurs volumes. Après un changement de secrets :
+> `docker compose -f infra/docker-compose.yml down -v` (supprime les données locales).
+
+**Backend hors Docker** (IDE, `./mvnw spring-boot:run`) : exporter les mêmes
+variables avant de lancer — par exemple `set -a; source infra/.env; set +a`.
+Les identifiants non secrets (utilisateur RabbitMQ `escrow`, access-key MinIO
+`escrow-storage`) ont des défauts alignés sur la stack compose.
 
 - PWA:            http://localhost:5173
 - API:            http://localhost:8080

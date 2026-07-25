@@ -23,7 +23,7 @@ spring:
   rabbitmq:
     host: ${SPRING_RABBITMQ_HOST:localhost}
     port: ${SPRING_RABBITMQ_PORT:5672}
-    username: ${SPRING_RABBITMQ_USERNAME:guest}
+    username: ${SPRING_RABBITMQ_USERNAME:escrow}  # aligné sur le compose (guest est de toute façon restreint à localhost)
     password: ${SPRING_RABBITMQ_PASSWORD}  # REQUIS — aucun défaut (Story 1.2, NFR-P1)
     # Keep API responsive if the broker is unreachable at startup.
     connection-timeout: 3000ms
@@ -48,7 +48,7 @@ escrow:
     # secret-key REQUIS — aucun défaut (Story 1.2, NFR-P1).
     endpoint: ${ESCROW_STORAGE_ENDPOINT:http://localhost:9000}
     bucket: ${ESCROW_STORAGE_BUCKET:escrow-evidence}
-    access-key: ${ESCROW_STORAGE_ACCESS_KEY:minioadmin}
+    access-key: ${ESCROW_STORAGE_ACCESS_KEY:escrow-storage}  # identifiant (non secret), aligné sur le compose
     secret-key: ${ESCROW_STORAGE_SECRET_KEY}
 
   partner:

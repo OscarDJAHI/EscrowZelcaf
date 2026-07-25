@@ -16,5 +16,8 @@ _bmad/config.toml.bak
 .bmad-loop/cache/
 .bmad-loop/policy.toml
 
-# Secrets locaux (Story 1.2) — jamais versionnés
-infra/.env
+# Secrets locaux (Story 1.2) — jamais versionnés (toutes variantes, sauf l'exemple)
+.env
+*.env
+*.env.*
+!*.env.example

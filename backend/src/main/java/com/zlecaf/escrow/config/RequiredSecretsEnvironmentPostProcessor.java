@@ -1,7 +1,6 @@
 package com.zlecaf.escrow.config;
 
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -24,36 +23,62 @@ import org.springframework.core.env.ConfigurableEnvironment;
 public class RequiredSecretsEnvironmentPostProcessor implements EnvironmentPostProcessor, Ordered {
 
     /** property Spring -> variable d'environnement attendue par l'opérateur. */
-    static final Map<String, String> REQUIRED_SECRETS = new LinkedHashMap<>();
-    static {
-        REQUIRED_SECRETS.put("spring.datasource.password", "SPRING_DATASOURCE_PASSWORD");
-        REQUIRED_SECRETS.put("spring.rabbitmq.password", "SPRING_RABBITMQ_PASSWORD");
-        REQUIRED_SECRETS.put("escrow.jwt.secret", "ESCROW_JWT_SECRET");
-        REQUIRED_SECRETS.put("escrow.storage.secret-key", "ESCROW_STORAGE_SECRET_KEY");
-    }
+    static final Map<String, String> REQUIRED_SECRETS = Map.of(
+            "spring.datasource.password", "SPRING_DATASOURCE_PASSWORD",
+            "spring.rabbitmq.password", "SPRING_RABBITMQ_PASSWORD",
+            "escrow.jwt.secret", "ESCROW_JWT_SECRET",
+            "escrow.storage.secret-key", "ESCROW_STORAGE_SECRET_KEY");
+
+    /**
+     * Valeurs sentinelles de infra/.env.example : leur présence signifie que
+     * l'opérateur a copié le fichier d'exemple sans le remplir. La syntaxe
+     * compose {@code :?} ne teste que la présence — c'est ici qu'on attrape
+     * le « cp sans édition ».
+     */
+    static final String SENTINEL_PREFIX = "remplacez-moi";
+
+    /** HS256 impose >= 32 octets ; échouer ici plutôt qu'en WeakKeyException dans JwtService. */
+    private static final String JWT_SECRET_PROPERTY = "escrow.jwt.secret";
+    private static final int JWT_SECRET_MIN_BYTES = 32;
 
     @Override
     public void postProcessEnvironment(ConfigurableEnvironment environment, SpringApplication application) {
-        List<String> missing = new ArrayList<>();
-        for (Map.Entry<String, String> entry : REQUIRED_SECRETS.entrySet()) {
-            if (!isResolvable(environment, entry.getKey())) {
-                missing.add(entry.getValue() + " (" + entry.getKey() + ")");
+        List<String> problems = new ArrayList<>();
+        for (Map.Entry<String, String> entry : sortedRequiredSecrets().entrySet()) {
+            String property = entry.getKey();
+            String envVar = entry.getValue();
+            String value = resolveOrNull(environment, property);
+            if (value == null || value.isBlank()) {
+                problems.add(envVar + " (" + property + ") : manquant");
+            } else if (value.startsWith(SENTINEL_PREFIX)) {
+                problems.add(envVar + " (" + property + ") : valeur d'exemple de infra/.env.example non remplacée");
+            } else if (JWT_SECRET_PROPERTY.equals(property)
+                    && value.getBytes(java.nio.charset.StandardCharsets.UTF_8).length < JWT_SECRET_MIN_BYTES) {
+                problems.add(envVar + " (" + property + ") : trop court — >= " + JWT_SECRET_MIN_BYTES
+                        + " octets requis pour HS256");
             }
         }
-        if (!missing.isEmpty()) {
+        if (!problems.isEmpty()) {
             throw new IllegalStateException(
-                    "Démarrage refusé : secret(s) obligatoire(s) manquant(s) — "
-                            + String.join(", ", missing)
+                    "Démarrage refusé : secret(s) obligatoire(s) invalide(s) — "
+                            + String.join(" ; ", problems)
                             + ". Fournir ces variables d'environnement (NFR-P1) ; aucune valeur par défaut n'existe.");
         }
     }
 
-    private boolean isResolvable(ConfigurableEnvironment environment, String property) {
+    /** Ordre stable pour un message d'erreur déterministe (Map.of ne garantit rien). */
+    private Map<String, String> sortedRequiredSecrets() {
+        return new java.util.TreeMap<>(REQUIRED_SECRETS);
+    }
+
+    private String resolveOrNull(ConfigurableEnvironment environment, String property) {
         try {
-            String value = environment.getProperty(property);
-            return value != null && !value.isBlank();
+            return environment.getProperty(property);
         } catch (IllegalArgumentException unresolvablePlaceholder) {
-            return false;
+            // Placeholder ${...} non résoluble = variable absente. Une autre
+            // IllegalArgumentException serait re-signalée comme « manquant »,
+            // ce qui reste actionnable : la variable fautive est nommée.
+            return null;
         }
     }
 
