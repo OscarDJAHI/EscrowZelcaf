@@ -14,26 +14,29 @@ import java.time.ZoneOffset;
 
 import com.zlecaf.escrow.repository.AuditLogRepository;
 
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Primary;
 import org.springframework.http.MediaType;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.ResultActions;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 /**
- * Story 1.3 (AC1 + AC2) sur la vraie chaîne : filtre servlet, enveloppe 429,
- * Retry-After, journalisation audit_logs et rétablissement automatique —
- * contre un Postgres réel, avec une horloge de test pilotable.
+ * Story 1.3 (AC1 + AC2) sur la vraie chaîne : filtre servlet, enveloppe 429
+ * standard, Retry-After, audit au franchissement, rétablissement automatique,
+ * et preuve que le succès ne réarme pas le quota d'origine — Postgres réel,
+ * horloge pilotable.
  */
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -41,20 +44,17 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 class AuthRateLimitIntegrationTest {
 
     @Container
-    static final PostgreSQLContainer<?> POSTGRES =
-            new PostgreSQLContainer<>("postgres:16-alpine");
+    static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>("postgres:16-alpine");
 
     @DynamicPropertySource
     static void properties(DynamicPropertyRegistry registry) {
         registry.add("spring.datasource.url", POSTGRES::getJdbcUrl);
         registry.add("spring.datasource.username", POSTGRES::getUsername);
         registry.add("spring.datasource.password", POSTGRES::getPassword);
-        // Seuil bas pour un test rapide ; verrou 30 s.
         registry.add("escrow.auth.ratelimit.max-attempts", () -> "3");
         registry.add("escrow.auth.ratelimit.base-lock-seconds", () -> "30");
     }
 
-    /** Horloge pilotable substituée au bean de production. */
     static final class SteppingClock extends Clock {
         volatile Instant now = Instant.parse("2026-07-25T00:00:00Z");
         @Override public Instant instant() { return now; }
@@ -65,75 +65,119 @@ class AuthRateLimitIntegrationTest {
     @TestConfiguration
     static class ClockConfig {
         static final SteppingClock CLOCK = new SteppingClock();
-        @Bean @Primary
-        Clock testClock() { return CLOCK; }
+        @Bean @Primary Clock testClock() { return CLOCK; }
     }
 
     @Autowired MockMvc mvc;
     @Autowired AuditLogRepository auditLogs;
+    @Autowired AuthRateLimiter rateLimiter;
 
-    private static final String LOGIN = "/api/v1/auth/login";
+    @BeforeEach
+    void isolate() {
+        // Singleton à état : on repart propre entre méthodes (pas de pollution
+        // ni de dépendance à l'ordre), et l'horloge revient à son origine.
+        rateLimiter.reset();
+        ClockConfig.CLOCK.now = Instant.parse("2026-07-25T00:00:00Z");
+    }
 
-    private org.springframework.test.web.servlet.ResultActions tryLogin(String ip, String email) throws Exception {
-        return mvc.perform(post(LOGIN)
-                .with(request -> { request.setRemoteAddr(ip); return request; })
+    private ResultActions login(String ip, String email) throws Exception {
+        return mvc.perform(post("/api/v1/auth/login")
+                .with(r -> { r.setRemoteAddr(ip); return r; })
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"email\":\"" + email + "\",\"password\":\"wrong-password-123\"}"));
     }
 
     @Test
-    @DisplayName("AC1+AC2 : seuil -> 429 + Retry-After + audit ; expiration -> accès rétabli seul")
-    void thresholdBlocks_thenAutoRecovers() throws Exception {
+    @DisplayName("AC1+AC2 : seuil -> 429 enveloppe standard + Retry-After + audit ; expiration -> rétabli")
+    void thresholdBlocks_thenRecovers() throws Exception {
         String ip = "10.9.9.1";
         long auditBefore = auditLogs.count();
 
-        // 3 échecs (utilisateur inconnu) : comptés, pas encore bloqués
         for (int i = 0; i < 3; i++) {
-            tryLogin(ip, "nobody@example.com").andExpect(status().is4xxClientError());
+            login(ip, "victim@example.com").andExpect(status().isUnauthorized());
         }
 
-        // 4e tentative : bloquée AVANT le contrôleur — 429, enveloppe, Retry-After
-        tryLogin(ip, "nobody@example.com")
+        login(ip, "victim@example.com")
                 .andExpect(status().isTooManyRequests())
                 .andExpect(header().exists("Retry-After"))
                 .andExpect(jsonPath("$.code").value("RATE_LIMITED"))
+                .andExpect(jsonPath("$.status").value(429))
+                .andExpect(jsonPath("$.error").value("Too Many Requests"))
+                .andExpect(jsonPath("$.timestamp").exists())
                 .andExpect(jsonPath("$.retryAfterSeconds").isNumber());
 
-        // AC1 : l'événement est journalisé dans audit_logs (transaction_id null)
-        assertThat(auditLogs.count()).isGreaterThan(auditBefore);
+        // AC1 : audité UNE fois (au franchissement) — pas à chaque requête bloquée
+        long afterLock = auditLogs.count();
+        assertThat(afterLock).isGreaterThan(auditBefore);
+        login(ip, "victim@example.com").andExpect(status().isTooManyRequests());
+        assertThat(auditLogs.count()).as("une requête déjà bloquée n'ajoute pas d'audit").isEqualTo(afterLock);
 
-        // AC2 : après la fenêtre, l'accès se rétablit sans intervention
+        // AC2 : après la fenêtre, l'accès revient seul
         ClockConfig.CLOCK.now = ClockConfig.CLOCK.now.plus(Duration.ofSeconds(31));
-        tryLogin(ip, "nobody@example.com").andExpect(status().is4xxClientError()); // 401, plus 429
+        login(ip, "victim@example.com").andExpect(status().isUnauthorized());
     }
 
     @Test
-    @DisplayName("les origines sont indépendantes : une IP bloquée n'affecte pas les autres")
-    void otherOrigin_unaffected() throws Exception {
-        String blocked = "10.9.9.2";
-        for (int i = 0; i < 4; i++) {
-            tryLogin(blocked, "nobody2@example.com");
-        }
-        tryLogin(blocked, "nobody2@example.com").andExpect(status().isTooManyRequests());
-
-        tryLogin("10.9.9.3", "nobody2@example.com").andExpect(status().is4xxClientError());
+    @DisplayName("SÉCURITÉ : un succès sur le compte de l'attaquant ne débloque pas l'origine")
+    void attackerSuccess_doesNotResetOrigin() throws Exception {
+        String ip = "10.9.9.2";
+        // Emails DISTINCTS à chaque essai : aucune clé compte n'atteint le seuil,
+        // seule l'ORIGINE accumule — le 429 final prouve donc bien le verrou
+        // d'origine, non celui d'un compte.
+        login(ip, "a@example.com").andExpect(status().isUnauthorized());
+        login(ip, "b@example.com").andExpect(status().isUnauthorized());
+        rateLimiter.recordAccountSuccess("account|attacker@example.com"); // succès sur SON compte
+        login(ip, "c@example.com").andExpect(status().isUnauthorized()); // 3e échec d'origine
+        login(ip, "d@example.com").andExpect(status().isTooManyRequests());
     }
 
     @Test
-    @DisplayName("register est limité comme login")
-    void register_isRateLimitedToo() throws Exception {
-        String ip = "10.9.9.4";
-        for (int i = 0; i < 3; i++) {
+    @DisplayName("les 400 de validation ne verrouillent pas un onboarding honnête")
+    void validationErrors_doNotLock() throws Exception {
+        String ip = "10.9.9.3";
+        for (int i = 0; i < 6; i++) {
             mvc.perform(post("/api/v1/auth/register")
-                            .with(request -> { request.setRemoteAddr(ip); return request; })
+                            .with(r -> { r.setRemoteAddr(ip); return r; })
                             .contentType(MediaType.APPLICATION_JSON)
                             .content("{}"))
-                    .andExpect(status().is4xxClientError());
+                    .andExpect(status().isBadRequest());
         }
+        // Toujours pas bloqué : un 400 de validation n'est pas un échec d'auth
         mvc.perform(post("/api/v1/auth/register")
-                        .with(request -> { request.setRemoteAddr(ip); return request; })
+                        .with(r -> { r.setRemoteAddr(ip); return r; })
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{}"))
-                .andExpect(status().isTooManyRequests());
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    @DisplayName("origines indépendantes (emails distincts pour isoler la dimension IP)")
+    void independentOrigins() throws Exception {
+        String blocked = "10.9.9.4";
+        // Emails distincts → seule l'origine 10.9.9.4 accumule (3 → verrou)
+        login(blocked, "e@example.com");
+        login(blocked, "f@example.com");
+        login(blocked, "g@example.com");
+        login(blocked, "h@example.com").andExpect(status().isTooManyRequests());
+        // Une autre origine, email neuf → intacte
+        login("10.9.9.5", "i@example.com").andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    @DisplayName("aucun contournement du limiteur par variante de chemin (pare-feu + normalisation)")
+    void pathVariant_noBypass() throws Exception {
+        String ip = "10.9.9.6";
+        for (int i = 0; i < 3; i++) {
+            login(ip, "j@example.com").andExpect(status().isUnauthorized());
+        }
+        // Variante à paramètre de matrice : rejetée par le pare-feu StrictHttpFirewall
+        // (400) OU bloquée par le limiteur (429) — dans les deux cas, PAS de 2xx :
+        // la tentative n'atteint jamais une authentification réussie contournée.
+        mvc.perform(post("/api/v1/auth/login;jsessionid=x")
+                        .with(r -> { r.setRemoteAddr(ip); return r; })
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"email\":\"j@example.com\",\"password\":\"x\"}"))
+                .andExpect(status().is4xxClientError())
+                .andExpect(status().is(org.hamcrest.Matchers.not(200)));
     }
 }

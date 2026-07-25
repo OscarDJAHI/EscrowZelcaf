@@ -5,6 +5,7 @@ import com.zlecaf.escrow.domain.User;
 import com.zlecaf.escrow.repository.UserRepository;
 import com.zlecaf.escrow.security.JwtService;
 import com.zlecaf.escrow.web.ApiExceptions.BadRequestException;
+import com.zlecaf.escrow.web.ApiExceptions.UnauthorizedException;
 import com.zlecaf.escrow.web.ApiExceptions.ConflictException;
 import com.zlecaf.escrow.web.dto.AuthDtos.*;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -53,10 +54,14 @@ public class AuthService {
     @Transactional(readOnly = true)
     public AuthResponse login(LoginRequest request) {
         String email = request.email().trim().toLowerCase();
+        // Identifiants invalides = 401 (AUTH_FAILED), pas 400 : c'est une vraie
+        // issue d'authentification (le rate-limiter la distingue d'un corps
+        // malformé) et le message reste opaque (email inconnu vs mauvais mot de
+        // passe indistinguables — anti-énumération).
         User user = users.findByEmail(email)
-                .orElseThrow(() -> new BadRequestException("Invalid credentials"));
+                .orElseThrow(() -> new UnauthorizedException("Invalid credentials"));
         if (!passwordEncoder.matches(request.password(), user.getPasswordHash())) {
-            throw new BadRequestException("Invalid credentials");
+            throw new UnauthorizedException("Invalid credentials");
         }
         return new AuthResponse(jwtService.generateToken(user), UserDto.from(user));
     }

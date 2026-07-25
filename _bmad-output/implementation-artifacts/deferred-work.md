@@ -209,3 +209,9 @@ story that found them. Append-only.
 
 - W1 — `apk upgrade` au build des images = non-reproductibilité (2 builds du même commit ≠ mêmes images ; SBOM d'image tracé au run CI, pas au commit) et dépendance réseau aux miroirs Alpine. Trade-off assumé tant que rien n'est déployé ; résolution cible en Story 11.3 : base images épinglées par digest + processus de refresh (Renovate ou équivalent).
 - W2 — RÉSOLU 2026-07-25 : protection posée (repo public) + exports JSON commités (branch-protection-*.json). Ré-exporter à chaque modification de la politique.
+
+## Deferred from: code review de 1-3-anti-bruteforce-authentification (2026-07-25)
+
+- DEF1 — Race check-then-act du rate-limiter : la vérification (avant la chaîne) et le comptage (après la réponse) ne sont pas atomiques ; une rafale concurrente place un burst > seuil avant que le verrou ne s'arme. Inhérent à un filtre servlet ; l'attaquant gagne un burst borné puis est bloqué. Durcissement (token bucket atomique, ou pré-incrément optimiste) déféré — non trivial, gain marginal au MVP.
+- DEF2 — Stratégie trusted-proxy / X-Forwarded-For pour le rate-limiter : BLOQUANT une fois le reverse proxy TLS posé (Story 1.4). Sans proxy de confiance, XFF est spoofable ; avec proxy mais sans config, toutes les requêtes portent l'IP du proxy → une seule clé partagée → DoS global potentiel. À traiter DANS la Story 1.4 (config du proxy + lecture XFF derrière une allowlist d'IP de confiance). Contrainte de séquencement : 1.4 doit intégrer ce point.
+- DEF3 — Rate-limiting distribué multi-instances : l'état est en mémoire process (correct en mono-instance MVP). Post-Story 11.3 (stack de production) : si plusieurs répliques backend, déplacer le compteur vers un store partagé (Redis/bucket4j-hazelcast) sinon le seuil effectif est multiplié par le nombre de répliques.
