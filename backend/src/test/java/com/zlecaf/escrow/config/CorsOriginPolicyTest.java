@@ -89,6 +89,11 @@ class CorsOriginPolicyTest {
                 "https://",                   // hôte absent
                 "https://a.test/",            // '/' final : l'en-tête Origin n'en porte pas
                 "https://a.test/api",         // chemin : une origine n'en a pas
+                "https://a b.test",           // espace interne : jamais dans un en-tête Origin
+                "https://a.test?x=1",         // query : une origine n'en a pas
+                "https://a.test#frag",        // fragment : idem
+                "https://a.test:",            // port vide après ':'
+                "https://a.test:abc",         // port non numérique
         })
         @DisplayName("entrée permissive ou malformée -> échec nommant la variable ET l'entrée fautive")
         void malformedEntryRejected(String rejected) {
@@ -97,6 +102,19 @@ class CorsOriginPolicyTest {
                     .isInstanceOf(IllegalStateException.class)
                     .hasMessageContaining("ESCROW_CORS_ALLOWED_ORIGINS")
                     .hasMessageContaining(rejected);
+        }
+
+        @ParameterizedTest(name = "IPv6 littéral accepté : {0}")
+        @ValueSource(strings = {
+                "https://[::1]",              // IPv6 sans port : les ':' internes ne délimitent pas un port
+                "https://[::1]:8443",         // IPv6 avec port valide
+                "http://[2001:db8::1]:8080",  // IPv6 étendue avec port
+        })
+        @DisplayName("un littéral IPv6 (avec ou sans port) reste accepté — non-régression")
+        void ipv6LiteralAccepted(String origin) {
+            List<String> origins = CorsOriginPolicy.parse(origin);
+            assertThatCode(() -> CorsOriginPolicy.requireValidProductionOrigins(origins))
+                    .doesNotThrowAnyException();
         }
 
         @Test

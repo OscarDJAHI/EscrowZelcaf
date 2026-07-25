@@ -100,6 +100,14 @@ warnings: ['oversized'] # story transverse (config backend + sécurité + ingres
 
 ## Review Triage Log
 
+Code review 2026-07-25 (3 relecteurs adversariaux) :
+
+- [x] [Review][Patch] CORS profil-aware (décision : ceinture + bretelles) — sous profil `prod`, `corsConfigurationSource` doit refuser le repli permissif `*` lui-même (pas seulement via `ProductionApiSurfaceGuard`), pour supprimer le piège si le garde était un jour retiré [SecurityConfig.java]
+- [x] [Review][Patch] `CorsOriginPolicy.describeProblem` accepte des entrées jamais matchables (espace interne, `?`, `#`, port vide/non numérique) → 403 silencieux en prod, exactement ce que la classe existe pour éliminer au boot [CorsOriginPolicy.java]
+- [x] [Review][Patch] `ProductionApiSurfaceGuard` ne couvre pas les surcharges `springdoc.api-docs.enabled` / `swagger-ui.enabled` par variable d'env → handlers réactivés en prod, lisibles par un utilisateur JWT authentifié (le claim « aucune combinaison ne rouvre » vaut pour l'anonyme seulement) [ProductionApiSurfaceGuard.java]
+- [x] [Review][Patch] `.env.example` affirme à tort « Swagger ouvert sur :8443/swagger-ui.html » en dev — l'ingress nginx renvoie 404 inconditionnellement et le backend n'est plus publié : Swagger est injoignable via la stack conteneurisée [infra/.env.example]
+- [x] [Review][Defer] CSP backend `default-src 'self'` casse Swagger UI servi en direct par le backend en dev hôte (`mvn spring-boot:run`) — deferred, hors topologie livrée (ingress 404 + backend non publié), tuning CSP si le Swagger dev-hôte devient nécessaire
+
 ## Design Notes
 
 **Pourquoi une allowlist exacte ne casse pas le PWA de production (vérifié dans les sources Spring 6.2.7).** `CorsUtils.isCorsRequest` compare le `Origin` au scheme/host/port **de la requête** et renvoie `false` s'ils coïncident : une requête same-origin n'entre jamais dans le traitement CORS et n'a donc pas besoin d'être allowlistée. C'est essentiel ici car la prod est same-origin (`VITE_API_BASE: ""`, appels `/api/v1/...` proxifiés par nginx). Ce mécanisme repose sur les valeurs **côté client** de `getScheme()/getServerName()/getServerPort()`, que `server.forward-headers-strategy: framework` (Story 1.4) dérive de `X-Forwarded-Proto`/`X-Forwarded-Host`. Si ces en-têtes étaient mal posés, le same-origin serait vu comme cross-origin et l'API répondrait 403 à tout le PWA : d'où le scénario de test dédié.

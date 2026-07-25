@@ -35,6 +35,17 @@ So that mes données financières ne puissent être interceptées ou détournée
   - [x] Redirection HTTP→HTTPS + en-têtes nginx : non couvrables par MockMvc → script `infra/verify-tls-headers.sh` (curl) documenté ; validation E2E automatisée = dette Story 11.7 (consignée).
   - [x] Suites backend + frontend complètes vertes (frontend 170/170 ; backend 272/272, BUILD SUCCESS).
 
+### Review Findings (code review 2026-07-25, 3 relecteurs adversariaux)
+
+- [x] [Review][Defer] Redirection HTTP→HTTPS perd le port non standard (`$host` sans port) : local `:8080` → `https://localhost/` refusé ; prod (443) OK — deferred (décision) : limite purement locale, l'ingress prod définitif appartient à la Story 11.3
+- [x] [Review][Defer] Confiance en `X-Forwarded-For` (`forward-headers=framework`, sans allowlist de proxy) — deferred (décision) : non exploitable en topologie compose (backend `expose` seul) ; durcissement trusted-proxy va de pair avec l'ingress réel (Story 11.3), lignée du report DEF2
+- [x] [Review][Patch] nginx sans `client_max_body_size` → 413 sur les uploads de preuves 1–15 Mo (le PWA poste `/api/v1/escrow/{id}/evidence` en multipart via le proxy ; backend accepte 15 Mo) [frontend/nginx.conf]
+- [x] [Review][Patch] `X-Forwarded-Port` non posé par nginx → same-origin du PWA vu comme CORS (403) en prod sur port ≠ 443 [frontend/nginx.conf]
+- [x] [Review][Patch] Certificat auto-signé sans `subjectAltName` → rejet dur des navigateurs modernes (`ERR_CERT_COMMON_NAME_INVALID`) [frontend/docker-entrypoint.d/40-generate-tls-cert.sh]
+- [x] [Review][Patch] File List de cette story incomplet — n'inclut pas le script d'entrypoint ni la génération de cert au runtime [ce fichier]
+- [x] [Review][Defer] Montage partiel de certificat (crt XOR key) → le script régénère/écrase ou crash — deferred, cas rare, garde XOR explicite à ajouter
+- [x] [Review][Defer] `proxy_pass http://backend:8080` met le DNS en cache au démarrage → 502 si l'IP backend change — deferred, pertinent pour l'ingress prod (Story 11.3, `resolver`)
+
 ## Dev Notes
 
 ### État actuel (à modifier — lu au préalable)
@@ -102,7 +113,8 @@ claude-opus-4-8, 2026-07-25
 - backend/src/test/java/com/zlecaf/escrow/security/SecurityHeadersIntegrationTest.java (nouveau, 5 tests)
 - frontend/nginx.conf (ingress TLS + proxy /api + redirection + en-têtes)
 - frontend/security-headers.conf (nouveau, snippet en-têtes)
-- frontend/Dockerfile (openssl + certificat auto-signé + snippet + EXPOSE 80 443)
+- frontend/Dockerfile (openssl + snippet + EXPOSE 80 443 ; PAS de cert baked)
+- frontend/docker-entrypoint.d/40-generate-tls-cert.sh (nouveau — génération du cert TLS auto-signé au DÉMARRAGE du conteneur, jamais dans l'image ; corrige le finding Trivy « clé privée baked »)
 - frontend/src/api/client.js (même-origine si `VITE_API_BASE=""`)
 - infra/docker-compose.yml (backend en `expose`, proxy publié HTTP/HTTPS, `VITE_API_BASE=""`)
 - infra/.env.example (ports d'ingress + note certificat TLS)

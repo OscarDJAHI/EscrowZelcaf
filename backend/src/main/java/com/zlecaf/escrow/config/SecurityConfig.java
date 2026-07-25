@@ -4,6 +4,8 @@ import com.zlecaf.escrow.security.JwtAuthFilter;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.core.env.Environment;
+import org.springframework.core.env.Profiles;
 import org.springframework.http.HttpMethod;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.config.Customizer;
@@ -33,12 +35,17 @@ public class SecurityConfig {
     /** Documentation d'API exposée (Story 1.5) : false en profil prod, true partout ailleurs. */
     private final boolean docsExposed;
 
+    /** Profil prod actif (Story 1.5) : interdit tout repli CORS permissif dans le producteur. */
+    private final boolean prodProfile;
+
     public SecurityConfig(JwtAuthFilter jwtAuthFilter,
                           @Value("${escrow.api.cors-allowed-origins:}") String corsAllowedOrigins,
-                          @Value("${escrow.api.docs-exposed:true}") boolean docsExposed) {
+                          @Value("${escrow.api.docs-exposed:true}") boolean docsExposed,
+                          Environment environment) {
         this.jwtAuthFilter = jwtAuthFilter;
         this.corsAllowedOrigins = CorsOriginPolicy.parse(corsAllowedOrigins);
         this.docsExposed = docsExposed;
+        this.prodProfile = environment.acceptsProfiles(Profiles.of("prod"));
     }
 
     @Bean
@@ -93,7 +100,18 @@ public class SecurityConfig {
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration config = new CorsConfiguration();
         if (corsAllowedOrigins.isEmpty()) {
-            // POC: permissive origins so the PWA (any dev host) can call the API.
+            // Défense en profondeur (revue 1.5) : le producteur CORS lui-même refuse le
+            // repli permissif sous prod, indépendamment de ProductionApiSurfaceGuard —
+            // si ce garde était un jour retiré, une allowlist vide ne rouvrirait pas
+            // silencieusement le CORS à toutes les origines.
+            if (prodProfile) {
+                throw new IllegalStateException(
+                        "Configuration CORS refusée (profil prod) : allowlist vide — ESCROW_CORS_ALLOWED_ORIGINS "
+                                + "(escrow.api.cors-allowed-origins) doit lister les origines autorisées. Aucun repli "
+                                + "permissif '*' n'est admis en production (NFR-P4).");
+            }
+            // Hors prod : origines permissives pour que le PWA (n'importe quel hôte dev)
+            // puisse appeler l'API.
             config.setAllowedOriginPatterns(List.of("*"));
         } else {
             // Allowlist fournie par l'opérateur (Story 1.5, NFR-P4) : setAllowedOrigins

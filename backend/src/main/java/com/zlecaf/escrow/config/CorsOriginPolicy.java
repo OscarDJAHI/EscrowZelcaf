@@ -82,6 +82,20 @@ public final class CorsOriginPolicy {
             // qui les interprète) : un « https://*.exemple.com » ne matcherait JAMAIS.
             return "le joker '*' est inopérant en comparaison exacte et n'est pas admis en production";
         }
+        // Un en-tête Origin navigateur ne contient jamais d'espace, de query ni de
+        // fragment : de telles entrées passeraient le boot puis ne matcheraient JAMAIS
+        // (403 silencieux en prod) — exactement le piège que cette classe élimine.
+        for (int i = 0; i < origin.length(); i++) {
+            if (Character.isWhitespace(origin.charAt(i))) {
+                return "espace interdit — une origine ne contient aucun caractère d'espacement";
+            }
+        }
+        if (origin.indexOf('?') >= 0) {
+            return "query interdite ('?') — une origine se limite au scheme, à l'hôte et au port";
+        }
+        if (origin.indexOf('#') >= 0) {
+            return "fragment interdit ('#') — une origine se limite au scheme, à l'hôte et au port";
+        }
         String host;
         if (origin.startsWith(HTTPS)) {
             host = origin.substring(HTTPS.length());
@@ -100,6 +114,37 @@ public final class CorsOriginPolicy {
         }
         if (host.indexOf('/') >= 0) {
             return "chemin interdit — une origine se limite au scheme, à l'hôte et au port";
+        }
+        // Validation du port. Attention à l'IPv6 littéral (« [::1] », « [::1]:8443 ») :
+        // les ':' internes aux crochets ne délimitent pas le port.
+        String port;
+        if (host.startsWith("[")) {
+            int close = host.indexOf(']');
+            if (close < 0) {
+                return "littéral IPv6 mal formé — crochet ']' manquant";
+            }
+            String afterBracket = host.substring(close + 1);
+            if (afterBracket.isEmpty()) {
+                return null; // IPv6 sans port
+            }
+            if (afterBracket.charAt(0) != ':') {
+                return "caractère inattendu après le littéral IPv6";
+            }
+            port = afterBracket.substring(1);
+        } else {
+            int colon = host.lastIndexOf(':');
+            if (colon < 0) {
+                return null; // pas de port
+            }
+            port = host.substring(colon + 1);
+        }
+        if (port.isEmpty()) {
+            return "port vide après ':'";
+        }
+        for (int i = 0; i < port.length(); i++) {
+            if (!Character.isDigit(port.charAt(i))) {
+                return "port non numérique — la portion après ':' doit être un nombre";
+            }
         }
         return null;
     }

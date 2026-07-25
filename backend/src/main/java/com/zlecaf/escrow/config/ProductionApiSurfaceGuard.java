@@ -26,13 +26,26 @@ public class ProductionApiSurfaceGuard {
 
     public ProductionApiSurfaceGuard(
             @Value("${escrow.api.cors-allowed-origins:}") String corsAllowedOrigins,
-            @Value("${escrow.api.docs-exposed:true}") boolean docsExposed) {
+            @Value("${escrow.api.docs-exposed:true}") boolean docsExposed,
+            @Value("${springdoc.api-docs.enabled:true}") boolean springdocApiDocsEnabled,
+            @Value("${springdoc.swagger-ui.enabled:true}") boolean springdocSwaggerUiEnabled) {
         CorsOriginPolicy.requireValidProductionOrigins(CorsOriginPolicy.parse(corsAllowedOrigins));
         if (docsExposed) {
             throw new IllegalStateException(
                     "Démarrage refusé (profil prod) : escrow.api.docs-exposed=true — la documentation d'API "
                             + "(OpenAPI + Swagger UI) ne doit jamais être servie en production (NFR-P4). "
                             + "Retirer la surcharge ESCROW_API_DOCS_EXPOSED ; application-prod.yml la fixe à false.");
+        }
+        // Seconde fermeture, indépendante : docs-exposed=false retire les matchers
+        // permitAll mais NE désactive PAS les handlers springdoc. Si une variable
+        // d'environnement les réactive, un utilisateur JWT authentifié pourrait lire
+        // /v3/api-docs. On refuse donc aussi ce cas — « aucune combinaison ne rouvre ».
+        if (springdocApiDocsEnabled || springdocSwaggerUiEnabled) {
+            throw new IllegalStateException(
+                    "Démarrage refusé (profil prod) : springdoc.api-docs.enabled / springdoc.swagger-ui.enabled=true — "
+                            + "les handlers de documentation (OpenAPI + Swagger UI) doivent rester désactivés en "
+                            + "production (NFR-P4). Retirer la surcharge SPRINGDOC_API_DOCS_ENABLED / "
+                            + "SPRINGDOC_SWAGGER_UI_ENABLED ; application-prod.yml les fixe à false.");
         }
     }
 }

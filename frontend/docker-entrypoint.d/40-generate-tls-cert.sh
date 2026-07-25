@@ -21,7 +21,11 @@ fi
 
 echo "[tls] aucun certificat monté — génération d'un pair auto-signé (local/staging uniquement)"
 mkdir -p "$CERT_DIR"
+# subjectAltName obligatoire : les navigateurs modernes ignorent le CN et
+# rejettent d'office un certificat sans SAN (ERR_CERT_COMMON_NAME_INVALID),
+# au-delà du simple avertissement « auto-signé » attendu en local.
 openssl req -x509 -newkey rsa:2048 -nodes -days 365 \
     -keyout "$CERT_DIR/tls.key" -out "$CERT_DIR/tls.crt" \
-    -subj "/CN=localhost"
+    -subj "/CN=localhost" \
+    -addext "subjectAltName=DNS:localhost,IP:127.0.0.1"
 chmod 600 "$CERT_DIR/tls.key"
