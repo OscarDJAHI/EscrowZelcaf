@@ -3,7 +3,7 @@ baseline_commit: 77cd3ffe8ded419fed2d0964e2cbea07ed22fb07
 ---
 # Story 1.3: Anti-bruteforce sur l'authentification
 
-Status: review
+Status: done
 
 ## Story
 
