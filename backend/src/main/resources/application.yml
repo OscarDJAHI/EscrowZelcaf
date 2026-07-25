@@ -5,7 +5,7 @@ spring:
   datasource:
     url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/escrow}
     username: ${SPRING_DATASOURCE_USERNAME:escrow}
-    password: ${SPRING_DATASOURCE_PASSWORD:escrow}
+    password: ${SPRING_DATASOURCE_PASSWORD}  # REQUIS — aucun défaut (Story 1.2, NFR-P1)
 
   jpa:
     hibernate:
@@ -24,7 +24,7 @@ spring:
     host: ${SPRING_RABBITMQ_HOST:localhost}
     port: ${SPRING_RABBITMQ_PORT:5672}
     username: ${SPRING_RABBITMQ_USERNAME:guest}
-    password: ${SPRING_RABBITMQ_PASSWORD:guest}
+    password: ${SPRING_RABBITMQ_PASSWORD}  # REQUIS — aucun défaut (Story 1.2, NFR-P1)
     # Keep API responsive if the broker is unreachable at startup.
     connection-timeout: 3000ms
 
@@ -39,17 +39,17 @@ spring:
 
 escrow:
   jwt:
-    # Override in every real environment. Must be >= 32 bytes for HS256.
-    secret: ${ESCROW_JWT_SECRET:change-me-in-production-please-32-bytes-minimum-secret}
+    # REQUIS — aucun défaut. Must be >= 32 bytes for HS256.
+    secret: ${ESCROW_JWT_SECRET}
     ttl-seconds: 86400
 
   storage:
     # S3-compatible object storage (MinIO) holding the evidence binaries.
-    # Override the credentials in every real environment.
+    # secret-key REQUIS — aucun défaut (Story 1.2, NFR-P1).
     endpoint: ${ESCROW_STORAGE_ENDPOINT:http://localhost:9000}
     bucket: ${ESCROW_STORAGE_BUCKET:escrow-evidence}
     access-key: ${ESCROW_STORAGE_ACCESS_KEY:minioadmin}
-    secret-key: ${ESCROW_STORAGE_SECRET_KEY:minioadmin}
+    secret-key: ${ESCROW_STORAGE_SECRET_KEY}
 
   partner:
     # Anti-replay window for signed partner deposits: an X-Escrow-Timestamp more

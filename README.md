@@ -80,13 +80,22 @@ rollback.
 Requires Docker + Docker Compose.
 
 ```bash
+# 1. Secrets locaux (une fois) — infra/.env n'est JAMAIS versionné :
+cp infra/.env.example infra/.env   # puis remplacez chaque valeur (openssl rand -base64 48)
+
+# 2. Stack complète :
 docker compose -f infra/docker-compose.yml up --build
 ```
+
+Without `infra/.env`, compose fails fast **naming the missing variable** — same
+contract as the backend, which refuses to boot without its critical secrets
+(`ESCROW_JWT_SECRET`, `SPRING_DATASOURCE_PASSWORD`, `SPRING_RABBITMQ_PASSWORD`,
+`ESCROW_STORAGE_SECRET_KEY`) and lists every missing one in a single error.
 
 - PWA:            http://localhost:5173
 - API:            http://localhost:8080
 - Health:         http://localhost:8080/actuator/health
-- RabbitMQ admin: http://localhost:15672  (guest / guest)
+- RabbitMQ admin: http://localhost:15672  (credentials: your `infra/.env`)
 
 > **Port note:** the backend publishes on host port `8080`. If another service
 > already holds `8080` (e.g. a local nginx), stop it or change the mapping in
