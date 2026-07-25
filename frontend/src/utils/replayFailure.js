@@ -10,7 +10,7 @@
  */
 
 /**
- * Mirror of the three `Retryability.TRANSIENT` codes of
+ * Mirror of the four `Retryability.TRANSIENT` codes of
  * `backend/src/main/java/com/zlecaf/escrow/domain/ErrorCode.java` — that file is
  * the authority; the envelope does not serialise retryability (deliberate: the
  * policy belongs to the client), so the front has to mirror it.
@@ -23,6 +23,8 @@
  */
 export const TRANSIENT_CODES = new Set([
   'CONCURRENT_MODIFICATION',
+  // Story 1.3 — anti-bruteforce auth (429) : se resorbe seul (Retry-After).
+  'RATE_LIMITED',
   'FILE_READ_ERROR',
   'STORAGE_UNAVAILABLE',
 ])

@@ -114,6 +114,21 @@ public class AuditService {
         save(transactionId, actorId, currentState, currentState, payload);
     }
 
+    /**
+     * Journalise un blocage anti-bruteforce (Story 1.3, AC1). Hors de toute
+     * transaction metier : transaction_id, action_by et etats sont null (colonnes
+     * nullables depuis V1) — le payload JSONB porte tout le contexte. REQUIRES_NEW :
+     * l'appelant (filtre servlet) n'a aucune transaction en cours.
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void recordAuthRateLimited(String path, String clientIp) {
+        ObjectNode payload = objectMapper.createObjectNode();
+        payload.put("event", "AUTH_RATE_LIMITED");
+        payload.put("path", path);
+        payload.put("clientIp", clientIp);
+        save(null, null, null, null, payload);
+    }
+
     private void save(Long transactionId, Long actorId, EscrowState previous, EscrowState next, ObjectNode payload) {
         AuditLog logEntry = new AuditLog();
         logEntry.setTransactionId(transactionId);

@@ -40,7 +40,9 @@ class ErrorCodeContractTest {
     private static final Set<ErrorCode> TRANSIENT = EnumSet.of(
             ErrorCode.CONCURRENT_MODIFICATION,
             ErrorCode.FILE_READ_ERROR,
-            ErrorCode.STORAGE_UNAVAILABLE);
+            ErrorCode.STORAGE_UNAVAILABLE,
+            // Story 1.3 : ajout coordonne (miroir frontend replayFailure.js mis a jour).
+            ErrorCode.RATE_LIMITED);
 
     @ParameterizedTest
     @EnumSource(ErrorCode.class)
@@ -58,7 +60,7 @@ class ErrorCodeContractTest {
     }
 
     @Test
-    @DisplayName("Exactly CONCURRENT_MODIFICATION, FILE_READ_ERROR and STORAGE_UNAVAILABLE are TRANSIENT")
+    @DisplayName("Exactly CONCURRENT_MODIFICATION, FILE_READ_ERROR, STORAGE_UNAVAILABLE and RATE_LIMITED are TRANSIENT")
     void transientPartitionIsExact() {
         Set<ErrorCode> actual = Arrays.stream(ErrorCode.values())
                 .filter(c -> c.retryability() == Retryability.TRANSIENT)

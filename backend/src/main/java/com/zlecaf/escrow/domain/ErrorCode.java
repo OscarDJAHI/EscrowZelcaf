@@ -94,6 +94,13 @@ public enum ErrorCode {
     /** The object store is unreachable or failed; the deposit may succeed later. */
     STORAGE_UNAVAILABLE(Retryability.TRANSIENT),
 
+    /**
+     * Anti-bruteforce (Story 1.3, NFR-P2) : l'origine a depasse le seuil de
+     * tentatives sur /auth/login ou /auth/register. TRANSIENT — l'acces se
+     * retablit seul a l'expiration de la fenetre (Retry-After la porte).
+     */
+    RATE_LIMITED(Retryability.TRANSIENT),
+
     // --- Framework / completeness defaults ------------------------------------
 
     /** Bean-validation rejected the request body. */
