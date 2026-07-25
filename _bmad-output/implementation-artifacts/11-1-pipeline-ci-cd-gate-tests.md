@@ -65,7 +65,7 @@ So that aucune régression ni vulnérabilité connue n'atteigne la branche princ
 - [x] [Review][Patch] P13 — Ré-ignorer .mvn/wrapper/maven-wrapper.jar (wrapper only-script, pas de jar versionné) [backend/.gitignore]
 - [x] [Review][Patch] P14 — Doc : colonne Gate du README alignée sur l'état réel ; File List complété (nanoid 3.3.15→3.3.16 entraîné par postcss) ; claim « verrouille la CI » de Task 2 reformulé [README.md + ce fichier]
 - [x] [Review][Defer] W1 — apk upgrade rend les images non reproductibles (SBOM du run ≠ image rebuildée ailleurs) — trade-off assumé pré-prod (sécurité > reproductibilité) ; à retraiter en Story 11.3 (pinning par digest + refresh orchestré)
-- [x] [Review][Defer] W2 — Politique de protection de branches hors dépôt, invérifiable depuis le code — à matérialiser (export de config ou note d'audit versionnée) une fois la protection effective ; lié à D1
+- [x] [Review][Defer] W2 — RÉSOLU 2026-07-25 : protection posée (repo passé public — le 403 Pro est tombé) et exports JSON versionnés (branch-protection-{main,develop}-2026-07-25.json). main: checks requis+strict+enforce_admins ; develop: idem sans enforce_admins (D1)
 
 ## Dev Notes
 
@@ -152,6 +152,8 @@ claude-fable-5 (Claude Fable 5) — session dev-story du 2026-07-24
 - _bmad-output/implementation-artifacts/11-1-pipeline-ci-cd-gate-tests.md (ce fichier)
 
 ## Change Log
+
+- 2026-07-25 (AC1 clos) : repo rendu public par Oscard → protection de branches posée et vérifiée (D1 : main dur, develop souple), exports JSON versionnés. Le gate est désormais réellement non contournable sur main.
 
 - 2026-07-25 (clôture) : run CI 30131669761 entièrement vert avec les 14 patchs (le gate agrégé a démontré son utilité dès le run précédent en isolant le seul scan rouge). Statut → done. Reste hors-repo : pose de la protection de branches (boucle automatique armée, politique D1 main dur/develop souple — en attente propagation plan Pro) ; à vérifier sur la première PR réelle.
 

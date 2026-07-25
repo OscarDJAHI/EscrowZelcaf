@@ -178,7 +178,7 @@ development_status:
 
   # Epic 11 — Opérabilité, qualité & déploiement (piste parallèle continue)
   epic-11: in-progress
-  11-1-pipeline-ci-cd-gate-tests: done # code-review 2026-07-25: 14 patchs appliqués, run vert ; protection branches = pose auto armée (D1: main dur/develop souple)
+  11-1-pipeline-ci-cd-gate-tests: done # AC1 100% clos 2026-07-25: repo public, protection posée+exportée (main dur / develop souple)
   11-2-configuration-externalisee-profils: backlog
   11-3-stack-production-durcie-hebergement: backlog # vérifier région commune aux corridors (tenabilité report AR-P5)
   11-4-observabilite-metriques-logs-tracing: backlog # PRÉREQUIS DUR de l'ouverture de l'Epic 4 (AD-16)

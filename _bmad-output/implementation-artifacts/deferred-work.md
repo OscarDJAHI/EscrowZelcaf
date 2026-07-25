@@ -208,4 +208,4 @@ story that found them. Append-only.
 ## Deferred from: code review de 11-1-pipeline-ci-cd-gate-tests (2026-07-25)
 
 - W1 — `apk upgrade` au build des images = non-reproductibilité (2 builds du même commit ≠ mêmes images ; SBOM d'image tracé au run CI, pas au commit) et dépendance réseau aux miroirs Alpine. Trade-off assumé tant que rien n'est déployé ; résolution cible en Story 11.3 : base images épinglées par digest + processus de refresh (Renovate ou équivalent).
-- W2 — La configuration branch protection/required checks vit hors dépôt (API GitHub) : aucune trace versionnée, dérive indétectable depuis le code. À matérialiser après pose effective de la protection (export JSON de la config commité, ou ruleset-as-code) — dépend de la décision D1 de la revue.
+- W2 — RÉSOLU 2026-07-25 : protection posée (repo public) + exports JSON commités (branch-protection-*.json). Ré-exporter à chaque modification de la politique.
