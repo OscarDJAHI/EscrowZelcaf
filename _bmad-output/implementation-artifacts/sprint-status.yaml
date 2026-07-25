@@ -74,7 +74,7 @@
 # Epics 6-7-8 → Epics 9-10 → Epic 11 en continu (11-9 avant production).
 
 generated: 2026-07-24
-last_updated: "2026-07-25 (1-2 en review — 244 tests verts, fail-fast prouvé)"
+last_updated: "2026-07-25 (1-2 DONE post-review ; next: 1-3 anti-bruteforce)"
 project: Escrow_claude (Production)
 project_key: NOKEY
 tracking_system: file-system
@@ -84,7 +84,7 @@ development_status:
   # Epic 1 — Sécurité & protection des données (hérité, en cours)
   epic-1: in-progress
   1-1-role-admin-non-auto-attribuable: done # fichier story: 1-1-retirer-auto-attribution-role-admin.md (commit 204def7)
-  1-2-externalisation-des-secrets: review
+  1-2-externalisation-des-secrets: done # review 2026-07-25: 12 patchs (sentinelles, JWT>=32, alignement identifiants), 247 tests, CI verte
   1-3-anti-bruteforce-authentification: backlog
   1-4-tls-bout-en-bout-entetes-securite: backlog
   1-5-cors-allowlist-swagger-ferme-production: backlog

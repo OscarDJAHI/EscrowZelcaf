@@ -3,7 +3,7 @@ baseline_commit: f71976af1708d8bed004c8f3afa4a62f7b828dd4
 ---
 # Story 1.2: Externalisation des secrets
 
-Status: review
+Status: done
 
 ## Story
 
@@ -81,5 +81,6 @@ claude-fable-5, session du 2026-07-25
 
 ## Change Log
 
+- 2026-07-25 (clôture) : run CI 30142536750 vert avec les patchs → done.
 - 2026-07-25 (post-review) : 12 patchs de revue appliqués (sentinelles, longueur JWT, alignement identifiants, gardes anti-dérive, doc volumes/charset/hors-Docker/bootstrap ADMIN). CI verte pré-review : run 30142168510.
 - 2026-07-25 : Story implémentée en une session — externalisation des 4 secrets critiques backend + 5 secrets compose, fail-fast agrégé prouvé, 244 tests verts, audit AC2 documenté.
