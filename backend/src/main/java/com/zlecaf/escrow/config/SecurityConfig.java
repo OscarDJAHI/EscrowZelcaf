@@ -1,6 +1,7 @@
 package com.zlecaf.escrow.config;
 
 import com.zlecaf.escrow.security.JwtAuthFilter;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
@@ -26,8 +27,18 @@ public class SecurityConfig {
 
     private final JwtAuthFilter jwtAuthFilter;
 
-    public SecurityConfig(JwtAuthFilter jwtAuthFilter) {
+    /** Allowlist CORS (Story 1.5) : vide = mode dev permissif, non vide = comparaison exacte. */
+    private final List<String> corsAllowedOrigins;
+
+    /** Documentation d'API exposée (Story 1.5) : false en profil prod, true partout ailleurs. */
+    private final boolean docsExposed;
+
+    public SecurityConfig(JwtAuthFilter jwtAuthFilter,
+                          @Value("${escrow.api.cors-allowed-origins:}") String corsAllowedOrigins,
+                          @Value("${escrow.api.docs-exposed:true}") boolean docsExposed) {
         this.jwtAuthFilter = jwtAuthFilter;
+        this.corsAllowedOrigins = CorsOriginPolicy.parse(corsAllowedOrigins);
+        this.docsExposed = docsExposed;
     }
 
     @Bean
@@ -52,19 +63,28 @@ public class SecurityConfig {
                 .contentSecurityPolicy(csp -> csp
                     .policyDirectives("default-src 'self'; frame-ancestors 'none'; base-uri 'self'; object-src 'none'")))
             .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
-            .authorizeHttpRequests(auth -> auth
-                .requestMatchers("/api/v1/auth/**").permitAll()
-                // Simulated partner webhook callbacks (HMAC-signed, not JWT-auth'd).
-                .requestMatchers("/api/v1/webhooks/incoming/**").permitAll()
-                // Machine partner deposit (auth carried entirely by the HMAC signature,
-                // not JWT). Pinned to exactly POST /api/v1/partner/escrow/*/evidence so
-                // no other /api/v1/partner/** route is ever opened by default — anything
-                // else falls through to anyRequest().authenticated().
-                .requestMatchers(HttpMethod.POST, "/api/v1/partner/escrow/*/evidence").permitAll()
-                .requestMatchers("/actuator/health").permitAll()
-                // OpenAPI spec + Swagger UI (POC: open for easy API exploration).
-                .requestMatchers("/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
-                .anyRequest().authenticated())
+            .authorizeHttpRequests(auth -> {
+                auth
+                    .requestMatchers("/api/v1/auth/**").permitAll()
+                    // Simulated partner webhook callbacks (HMAC-signed, not JWT-auth'd).
+                    .requestMatchers("/api/v1/webhooks/incoming/**").permitAll()
+                    // Machine partner deposit (auth carried entirely by the HMAC signature,
+                    // not JWT). Pinned to exactly POST /api/v1/partner/escrow/*/evidence so
+                    // no other /api/v1/partner/** route is ever opened by default — anything
+                    // else falls through to anyRequest().authenticated().
+                    .requestMatchers(HttpMethod.POST, "/api/v1/partner/escrow/*/evidence").permitAll()
+                    .requestMatchers("/actuator/health").permitAll();
+                if (docsExposed) {
+                    // OpenAPI spec + Swagger UI, ouverts hors production pour l'exploration
+                    // de l'API (dev, CI). Sous profil prod (Story 1.5, NFR-P4) ces matchers
+                    // ne sont PAS enregistrés : les chemins retombent alors sur
+                    // anyRequest().authenticated() -> 403. C'est la seconde des deux
+                    // fermetures ; application-prod.yml coupe en plus les handlers springdoc
+                    // (-> 404). Aucune combinaison des deux ne rouvre la documentation.
+                    auth.requestMatchers("/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll();
+                }
+                auth.anyRequest().authenticated();
+            })
             .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);
         return http.build();
     }
@@ -72,10 +92,30 @@ public class SecurityConfig {
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration config = new CorsConfiguration();
-        // POC: permissive origins so the PWA (any dev host) can call the API.
-        config.setAllowedOriginPatterns(List.of("*"));
+        if (corsAllowedOrigins.isEmpty()) {
+            // POC: permissive origins so the PWA (any dev host) can call the API.
+            config.setAllowedOriginPatterns(List.of("*"));
+        } else {
+            // Allowlist fournie par l'opérateur (Story 1.5, NFR-P4) : setAllowedOrigins
+            // = comparaison EXACTE, jamais setAllowedOriginPatterns (jokers). Une origine
+            // absente de la liste reçoit un 403 « Invalid CORS request » émis par le
+            // CorsFilter de Spring AVANT tout contrôleur — hors périmètre de
+            // GlobalExceptionHandler, donc sans enveloppe d'erreur : c'est voulu.
+            // Le PWA de production n'a pas besoin d'y figurer : il est same-origin
+            // (VITE_API_BASE="", /api proxifié) et CorsUtils.isCorsRequest écarte
+            // les requêtes dont l'Origin coïncide avec scheme/hôte/port de la requête.
+            config.setAllowedOrigins(corsAllowedOrigins);
+        }
         config.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
         config.setAllowedHeaders(List.of("*"));
+        // Sans exposition explicite, le navigateur masque Retry-After à une origine
+        // allowlistée : le client ne pourrait pas honorer le backoff du 429 émis par
+        // l'anti-bruteforce (Story 1.3). Seuls les en-têtes « simples » sont lisibles
+        // par défaut en CORS.
+        config.setExposedHeaders(List.of("Retry-After"));
+        // allowCredentials volontairement NON positionné (donc false) : l'authentification
+        // passe par l'en-tête Authorization, jamais par cookie. Ne jamais l'activer sans
+        // décision explicite — combiné à une allowlist, il ouvrirait le vol de session.
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/**", config);
         return source;

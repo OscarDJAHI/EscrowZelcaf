@@ -65,6 +65,23 @@ escrow:
       max-entries: ${ESCROW_AUTH_RATELIMIT_MAX_ENTRIES:100000}
       eviction-interval-ms: ${ESCROW_AUTH_RATELIMIT_EVICTION_INTERVAL_MS:300000}
 
+  api:
+    # Surface d'API (Story 1.5, NFR-P4). Valeurs ci-dessous = defauts de
+    # DEVELOPPEMENT, pour que dev et CI restent pleinement utilisables ; le
+    # durcissement est porte par le profil prod (application-prod.yml), jamais
+    # par ces defauts. Les deux cles sont ecrites ici pour rester decouvrables
+    # plutot que cachees dans des defauts d'annotation @Value.
+    #
+    # docs-exposed : true = matchers permitAll sur /v3/api-docs, /swagger-ui.
+    #   Le profil prod le force a false ; ProductionApiSurfaceGuard refuse le
+    #   demarrage si une variable d'environnement tentait de le rouvrir.
+    docs-exposed: ${ESCROW_API_DOCS_EXPOSED:true}
+    # cors-allowed-origins : liste d'origines separees par des virgules
+    #   (scheme://hote[:port], sans chemin ni '/' final). VIDE = CORS permissif
+    #   (setAllowedOriginPatterns "*"), acceptable hors production seulement.
+    #   Non vide = comparaison EXACTE (setAllowedOrigins).
+    cors-allowed-origins: ${ESCROW_CORS_ALLOWED_ORIGINS:}
+
   partner:
     # Anti-replay window for signed partner deposits: an X-Escrow-Timestamp more
     # than this many seconds away from server time is rejected (401).

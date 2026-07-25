@@ -43,6 +43,15 @@ API=$(curl -skI "https://localhost:${HTTPS_PORT}/api/v1/escrow" || true)
 # 401/403 attendu (endpoint protégé) : prouve que /api est bien proxifié, pas 404.
 check "API proxifiée (pas de 404)" "$API" "HTTP/.* 40[13]"
 
+echo "== Story 1.5 : sondes de documentation d'API coupées à l'ingress =="
+# Couche nginx, non couvrable par MockMvc (les tests d'intégration prouvent la
+# fermeture CÔTÉ BACKEND sous profil prod ; ici on prouve l'ingress). Sans les
+# locations dédiées, ces chemins recevraient le shell SPA en 200.
+for probe in /swagger-ui.html /swagger-ui /swagger-ui/index.html /v3/api-docs /v3/api-docs.yaml; do
+  PROBE=$(curl -skI "https://localhost:${HTTPS_PORT}${probe}" || true)
+  check "404 sur ${probe}" "$PROBE" "HTTP/.* 404"
+done
+
 echo
 if [ "$FAIL" -eq 0 ]; then
   echo "TOUT VERT - OK"

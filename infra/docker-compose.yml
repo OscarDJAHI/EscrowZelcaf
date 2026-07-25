@@ -116,6 +116,13 @@ services:
       # Optionnels (Story 1.1) — vides = aucun ADMIN créé au démarrage.
       ESCROW_BOOTSTRAP_ADMIN_EMAIL: ${ESCROW_BOOTSTRAP_ADMIN_EMAIL:-}
       ESCROW_BOOTSTRAP_ADMIN_PASSWORD: ${ESCROW_BOOTSTRAP_ADMIN_PASSWORD:-}
+      # Surface d'API (Story 1.5) — passe-plats, VIDES par défaut : cette stack
+      # reste local/staging en mode dev (Swagger ouvert, CORS permissif). Poser
+      # SPRING_PROFILES_ACTIVE=prod + ESCROW_CORS_ALLOWED_ORIGINS dans le .env
+      # bascule le durcissement sans éditer ce fichier ; le backend refusera alors
+      # de démarrer si l'allowlist est absente ou permissive.
+      SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-}
+      ESCROW_CORS_ALLOWED_ORIGINS: ${ESCROW_CORS_ALLOWED_ORIGINS:-}
     # Pas de publication de port (Story 1.4) : le backend n'est joignable QUE via
     # le reverse-proxy TLS (frontend), sur le réseau interne compose. C'est la
     # frontière de confiance qui rend X-Forwarded-For fiable (résolution DEF2).
