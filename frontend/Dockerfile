@@ -16,12 +16,12 @@ RUN apk upgrade --no-cache && apk add --no-cache openssl
 COPY --from=build /app/dist /usr/share/nginx/html
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 COPY security-headers.conf /etc/nginx/snippets/security-headers.conf
-# Certificat TLS auto-signé embarqué pour l'usage LOCAL/STAGING (Story 1.4).
-# En staging/prod un vrai certificat est monté par volume sur /etc/nginx/certs,
-# écrasant celui-ci (secrets injectés hors-repo, pattern Story 1.2 / spike AR-P4).
-RUN mkdir -p /etc/nginx/certs && \
-    openssl req -x509 -newkey rsa:2048 -nodes -days 365 \
-      -keyout /etc/nginx/certs/tls.key -out /etc/nginx/certs/tls.crt \
-      -subj "/CN=localhost" && \
-    chmod 600 /etc/nginx/certs/tls.key
+# Certificat TLS généré au DÉMARRAGE, jamais baked dans l'image (Story 1.4) :
+# une clé privée en couche d'image est une mauvaise pratique et le scan Trivy la
+# rejette (finding HIGH). Le script /docker-entrypoint.d/*.sh est exécuté par
+# l'entrypoint nginx avant le lancement ; il génère un pair auto-signé seulement
+# si aucun certificat n'est monté sur /etc/nginx/certs (local/staging), et laisse
+# intact un vrai certificat monté par volume (staging/prod).
+COPY docker-entrypoint.d/40-generate-tls-cert.sh /docker-entrypoint.d/40-generate-tls-cert.sh
+RUN chmod +x /docker-entrypoint.d/40-generate-tls-cert.sh
 EXPOSE 80 443
