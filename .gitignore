@@ -17,6 +17,9 @@ _bmad/config.user.toml
 .bmad-loop/runs/
 .bmad-loop/cache/
 .bmad-loop/policy.toml
+# archives de runs concluis (bmad-loop archive) : etat runtime local, jamais du code.
+# Non ignorees, elles salissaient l'arbre et faisaient echouer le preflight du loop.
+.bmad-loop/archive/
 
 # Références lourdes non versionnées (maquettes + PDF ZLECAf)
 Docs/Maquettes/
