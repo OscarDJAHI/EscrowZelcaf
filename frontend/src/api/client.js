@@ -1,4 +1,5 @@
 import axios from 'axios'
+import { extractFailureReason, isBareAuthFailure } from '@/utils/replayFailure'
 
 export const TOKEN_STORAGE_KEY = 'escrow_token'
 
@@ -23,17 +24,44 @@ apiClient.interceptors.request.use((config) => {
   return config
 })
 
-// On a 401, the stored session is no longer valid: clear it and
-// send the user back to the login screen.
+/**
+ * Raised once the session has been announced dead, and lowered only by
+ * `beginSession()` (`stores/session.js`) — never by a timer, which would reopen
+ * the window at an arbitrary moment. A screen loading three resources in
+ * parallel produces three bare 403s: without the latch that is three teardowns
+ * and three concurrent navigations.
+ */
+let sessionExpiryAnnounced = false
+
+/** Lets the next sign-in re-arm the announcement. Called by `beginSession()`. */
+export function resetSessionExpiryLatch() {
+  sessionExpiryAnnounced = false
+}
+
+/**
+ * A bare 401/403 means the stored session is dead (see `isBareAuthFailure` for
+ * why this backend answers 403 and why a *coded* one must be left alone).
+ *
+ * All this file does about it is dispatch an event. It imports neither the
+ * router nor a store on purpose: `router → stores/auth → api/auth → api/client`
+ * closes a cycle, and the winner of the evaluation race would be a half-built
+ * axios client. `escrow:sync` (`stores/offlineQueue.js`) already establishes the
+ * pattern. `stores/session.js` is what listens and owns the teardown.
+ *
+ * The token gate keeps an anonymous endpoint from ending a session that never
+ * existed — nothing to tear down, and no reason to navigate.
+ */
 apiClient.interceptors.response.use(
   (response) => response,
   (error) => {
-    if (error.response?.status === 401) {
-      localStorage.removeItem(TOKEN_STORAGE_KEY)
-      localStorage.removeItem('escrow_user')
-      if (typeof window !== 'undefined' && window.location.pathname !== '/auth') {
-        window.location.href = '/auth'
-      }
+    if (
+      !sessionExpiryAnnounced &&
+      isBareAuthFailure(extractFailureReason(error)) &&
+      localStorage.getItem(TOKEN_STORAGE_KEY) &&
+      typeof window !== 'undefined'
+    ) {
+      sessionExpiryAnnounced = true
+      window.dispatchEvent(new CustomEvent('escrow:session-expired'))
     }
     return Promise.reject(error)
   },

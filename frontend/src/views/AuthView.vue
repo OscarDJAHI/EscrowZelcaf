@@ -1,10 +1,27 @@
 <script setup>
 import { reactive, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 
 const router = useRouter()
+const route = useRoute()
 const auth = useAuthStore()
+
+/**
+ * Where to land once signed in. `redirect` comes off the URL, so it comes off
+ * whoever wrote the link: without this guard `?redirect=//evil.example/x` turns
+ * the sign-in screen into an open redirect, and a protocol-relative URL is
+ * exactly the shape that slips past a naive "starts with /" check.
+ *
+ * Only a relative path is accepted, and anything else — an absolute URL, an
+ * array (a repeated query parameter), a missing value — degrades to the
+ * dashboard rather than being sanitised into something half-trusted.
+ */
+function safeRedirect(target) {
+  return typeof target === 'string' && target.startsWith('/') && !target.startsWith('//')
+    ? target
+    : '/'
+}
 
 const mode = ref('login')
 
@@ -30,7 +47,10 @@ async function handleSubmit() {
       ? await auth.login({ email: form.email, password: form.password })
       : await auth.register({ ...form })
   submitting.value = false
-  if (ok) router.push('/')
+  // `replace`, not `push`: the sign-in screen has no business in the history of
+  // a signed-in user, where Back would land them on it only to be bounced by the
+  // route guard.
+  if (ok) router.replace(safeRedirect(route.query.redirect))
 }
 </script>
 

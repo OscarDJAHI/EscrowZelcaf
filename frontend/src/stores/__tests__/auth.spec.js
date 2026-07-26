@@ -9,7 +9,11 @@ vi.mock('@/api/auth', () => ({
   registerUser: vi.fn(),
   logoutUser: vi.fn(() => Promise.resolve()),
 }))
-vi.mock('@/api/client', () => ({ default: { request: vi.fn() }, TOKEN_STORAGE_KEY: 'escrow_token' }))
+vi.mock('@/api/client', () => ({
+  default: { request: vi.fn() },
+  TOKEN_STORAGE_KEY: 'escrow_token',
+  resetSessionExpiryLatch: vi.fn(),
+}))
 
 describe('auth store logout (Story 1.6)', () => {
   beforeEach(() => {

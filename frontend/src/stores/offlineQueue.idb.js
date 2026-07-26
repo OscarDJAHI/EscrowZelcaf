@@ -1,6 +1,15 @@
 import { openDB } from 'idb'
+import { ownsEntry } from '@/utils/frozenEntry'
 
 const DB_NAME = 'escrow-offline'
+// Still 1 after Story 1.9, deliberately. Scoping the queue by owner could have
+// been an index on `meta.userId` under a DB_VERSION = 2 — the "clean" answer at
+// real volume. But this queue holds a handful of entries, never thousands, so an
+// application-level filter costs nothing measurable, while a schema migration
+// would be the only change in this batch able to lose data on a cold upgrade.
+// The scoping therefore lives in the *signature* (`getAllForUser`,
+// `clearForUser`): a caller can no longer obtain the whole device queue by
+// accident, which is the property that actually mattered.
 const DB_VERSION = 1
 const STORE_NAME = 'queue'
 
@@ -34,7 +43,7 @@ function getDB() {
 }
 
 /**
- * Reads the whole queue back, oldest first (FIFO replay order).
+ * Oldest first — the FIFO replay order.
  *
  * `timestamp` alone is not a total order: it has millisecond resolution, so two
  * entries queued in the same millisecond tie and the sort would fall back to
@@ -42,15 +51,51 @@ function getDB() {
  * the monotonic enqueue counter that breaks such ties. Legacy entries migrated
  * from localStorage carry no `seq`; they are strictly older, so the timestamp
  * comparison settles them before the tiebreak is ever reached.
- * @returns {Promise<object[]>}
  */
-export async function getAll() {
-  const db = await getDB()
-  const items = await db.getAll(STORE_NAME)
+function sortFifo(items) {
   return items.sort((a, b) => {
     if (a.timestamp !== b.timestamp) return a.timestamp < b.timestamp ? -1 : 1
     return (a.seq ?? 0) - (b.seq ?? 0)
   })
+}
+
+/**
+ * Reads back the *whole* device queue, every owner included — a read-back seam
+ * for the tests, and nothing else.
+ *
+ * Production code must go through `getAllForUser`: this database is device-
+ * global, and handing the whole of it to a caller is exactly the mistake Story
+ * 1.9 exists to make impossible to commit by accident.
+ * @returns {Promise<object[]>}
+ */
+export async function getAll() {
+  const db = await getDB()
+  return sortFifo(await db.getAll(STORE_NAME))
+}
+
+/**
+ * The queue as one user may legitimately see it: their own entries, oldest
+ * first. Everyone else's — and every entry with no owner at all — is invisible
+ * here, which is what stops `flush()` replaying a stranger's evidence under the
+ * current JWT (the server answers NOT_A_PARTY and the real owner's entry is
+ * frozen for good).
+ *
+ * Ownership is decided by `ownsEntry`, never by a second coercion written out
+ * here: the same id round-trips through localStorage JSON on one side and
+ * IndexedDB structured clone on the other, so it can legitimately come back a
+ * number against a string. A copy of that rule would drift.
+ *
+ * An entry with no `meta.userId` belongs to nobody (Story 4.5 refused to invent
+ * an owner for it) and so is never returned — not to the next person to sign in,
+ * not to anyone.
+ * @param {string|number|null|undefined} userId
+ * @returns {Promise<object[]>}
+ */
+export async function getAllForUser(userId) {
+  if (userId == null) return []
+  const db = await getDB()
+  const items = await db.getAll(STORE_NAME)
+  return sortFifo(items.filter((item) => ownsEntry(item, { id: userId })))
 }
 
 /**
@@ -73,6 +118,34 @@ export async function put(item) {
 export async function remove(id) {
   const db = await getDB()
   await db.delete(STORE_NAME, id)
+}
+
+/**
+ * Deletes what an explicit sign-out must not leave on a shared device: the
+ * departing user's entries and the ownerless ones — and nothing else.
+ *
+ * `clear()` would have been a new bug: wiping the store erases *another* user's
+ * pending evidence in the name of hygiene, and that user has no other copy. The
+ * ownerless entries go because Story 4.5 decided nobody would ever be shown
+ * them; they are provably unreachable, so only their bytes remain on the device.
+ *
+ * A `userId` of null or undefined removes the ownerless entries alone. That is
+ * the honest outcome and not a fallback: with no id there is nobody to purge
+ * for, and guessing would delete a stranger's evidence.
+ *
+ * One read-write transaction: reading the ids and deleting them in two separate
+ * ones would let an enqueue land in between and be swept away.
+ * @param {string|number|null|undefined} userId
+ */
+export async function clearForUser(userId) {
+  const db = await getDB()
+  const tx = db.transaction(STORE_NAME, 'readwrite')
+  const items = await tx.store.getAll()
+  for (const item of items) {
+    const orphan = item?.meta?.userId == null
+    if (orphan || ownsEntry(item, { id: userId })) tx.store.delete(item.id)
+  }
+  await tx.done
 }
 
 /** Clears every queue item (test/reset helper). */

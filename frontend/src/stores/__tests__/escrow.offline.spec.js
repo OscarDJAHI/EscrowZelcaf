@@ -15,7 +15,12 @@ import * as idb from '@/stores/offlineQueue.idb'
 // `TOKEN_STORAGE_KEY` is re-exported because a whole-module factory drops
 // everything it does not name, and `stores/auth` — reached through
 // `stores/escrow` since it stamps `meta.userId` — imports the real constant.
-vi.mock('@/api/client', () => ({ default: { request: vi.fn() }, TOKEN_STORAGE_KEY: 'escrow_token' }))
+// `resetSessionExpiryLatch` joins it for `stores/session` (Story 1.9).
+vi.mock('@/api/client', () => ({
+  default: { request: vi.fn() },
+  TOKEN_STORAGE_KEY: 'escrow_token',
+  resetSessionExpiryLatch: vi.fn(),
+}))
 vi.mock('@/api/escrow', () => ({
   fetchTransactions: vi.fn(),
   fetchTransactionDetail: vi.fn(),
@@ -197,6 +202,12 @@ describe('escrow store — opening a dispute offline', () => {
   it('replays the queued dispute as one multipart POST with its bytes intact', async () => {
     const escrow = useEscrowStore()
     const queue = useOfflineQueueStore()
+    // A signed-in user, both halves: since Story 1.9 `flush()` only replays the
+    // entries `escrow.js` stamped with the *current* user's id. An anonymous
+    // fixture would queue an ownerless entry, which nothing ever replays.
+    // Awaited, because `applySession` now also adopts the queue for the new
+    // session — left in flight it would read and flush behind this test's back.
+    await useAuthStore().applySession({ token: 'alice-token', user: { id: 42, email: 'alice@corp.example' } })
     queue.isOnline = false
     escrow.currentDetail = detailFor(7)
     const [a, b] = [makeBlob(2048, 'image/png'), makeBlob(4096, 'application/pdf')]
@@ -231,6 +242,10 @@ describe('escrow store — opening a dispute offline', () => {
 
   it('rehydrates a queued dispute after a reload and keeps it replayable', async () => {
     const escrow = useEscrowStore()
+    // Persisted, so the brand-new Pinia below finds the same session back — which
+    // is what a real reload does, and what Story 1.9 requires before an entry can
+    // be hydrated at all. Awaited for the same reason as above.
+    await useAuthStore().applySession({ token: 'alice-token', user: { id: 42, email: 'alice@corp.example' } })
     useOfflineQueueStore().isOnline = false
     escrow.currentDetail = detailFor(7)
     const blob = makeBlob(4096, 'image/jpeg')
@@ -246,7 +261,9 @@ describe('escrow store — opening a dispute offline', () => {
 
     expect(reloaded.pendingCount).toBe(1)
     const [entry] = reloaded.queue
-    expect(entry.meta).toEqual({ type: 'OPEN_DISPUTE', transactionId: 7 })
+    // The owner rides along with the rest of `meta`: it is what lets the reloaded
+    // queue recognise the entry as this session's (Story 1.9).
+    expect(entry.meta).toEqual({ type: 'OPEN_DISPUTE', transactionId: 7, userId: 42 })
     expect(entry.files[0]).toBeInstanceOf(Blob)
     await expectSameBytes(entry.files[0], blob)
 

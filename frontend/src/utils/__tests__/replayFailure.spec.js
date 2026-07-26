@@ -7,6 +7,7 @@ import {
   classifyReplayFailure,
   describeFailure,
   extractFailureReason,
+  isBareAuthFailure,
 } from '@/utils/replayFailure'
 
 /** Shapes an AxiosError the way `client.js` relays it: `err.response.data` is the envelope. */
@@ -15,6 +16,39 @@ function httpError(status, data) {
     response: { status, data },
   })
 }
+
+describe('isBareAuthFailure — the one rule that decides whether a session dies', () => {
+  // Asserted directly, and not only through `classifyReplayFailure`, because
+  // Story 1.9 gave this predicate a second caller with a far heavier
+  // consequence: the interceptor of `api/client.js` ends the session on it. A
+  // false positive signs a user out on a business verdict; a false negative
+  // leaves a revoked token in a zombie authenticated UI.
+  it('recognises a bare 401 and a bare 403 — the shape an expired or revoked token really takes', () => {
+    expect(isBareAuthFailure({ code: null, status: 403 })).toBe(true)
+    expect(isBareAuthFailure({ code: null, status: 401 })).toBe(true)
+    // `undefined` reaches it too: callers hand over raw envelopes, not only
+    // `extractFailureReason`'s normalised nulls.
+    expect(isBareAuthFailure({ status: 403 })).toBe(true)
+  })
+
+  it('refuses a *coded* 403 — an authorization verdict is not an expiry', () => {
+    expect(isBareAuthFailure({ code: 'NOT_A_PARTY', status: 403 })).toBe(false)
+    expect(isBareAuthFailure({ code: 'FORBIDDEN', status: 403 })).toBe(false)
+    expect(isBareAuthFailure({ code: 'UNAUTHORIZED_TRANSITION', status: 403 })).toBe(false)
+  })
+
+  it('refuses a coded 401 AUTH_FAILED — a wrong password must not reset the sign-in form', () => {
+    expect(isBareAuthFailure({ code: 'AUTH_FAILED', status: 401 })).toBe(false)
+  })
+
+  it('refuses every other bare status, however envelope-less', () => {
+    expect(isBareAuthFailure({ code: null, status: 404 })).toBe(false)
+    expect(isBareAuthFailure({ code: null, status: 500 })).toBe(false)
+    // No response at all (network down): nothing here says the session is dead.
+    expect(isBareAuthFailure({ code: null, status: null })).toBe(false)
+    expect(isBareAuthFailure(null)).toBe(false)
+  })
+})
 
 describe('classifyReplayFailure — the status decides before the code', () => {
   it('treats a rejection with no response (network down) as transient', () => {

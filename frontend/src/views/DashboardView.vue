@@ -1,12 +1,15 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { useEscrowStore } from '@/stores/escrow'
+import { endSession } from '@/stores/session'
 import TransactionCard from '@/components/TransactionCard.vue'
 import NewTransactionModal from '@/components/NewTransactionModal.vue'
 
 const auth = useAuthStore()
 const escrowStore = useEscrowStore()
+const router = useRouter()
 
 const showModal = ref(false)
 const creating = ref(false)
@@ -40,13 +43,16 @@ async function handleCreate(payload) {
 }
 
 async function logout() {
-  // On ATTEND la révocation serveur avant de naviguer (revue 1.6) : la navigation
-  // avortait la requête en vol, si bien que le jeton restait accepté par le serveur
-  // jusqu'à expiration — AC #2 tenait en test mais pas dans le seul parcours réel.
-  // L'état local est déjà vidé de façon synchrone par le store, et la promesse ne
-  // rejette jamais : la déconnexion aboutit même hors ligne.
-  await auth.logout()
-  window.location.href = '/auth'
+  // On ATTEND `endSession` avant de naviguer (revue 1.6) : la navigation avortait
+  // la requête de révocation en vol, si bien que le jeton restait accepté par le
+  // serveur jusqu'à expiration. `endSession` ne rejette jamais et fait aboutir la
+  // purge locale même hors ligne.
+  //
+  // Plus de rechargement complet (Story 1.9) : il n'a jamais rien purgé d'IndexedDB
+  // ni du cache de lecture — c'est `endSession` qui le fait, explicitement — et une
+  // navigation de routeur rend le parcours testable.
+  await endSession({ reason: 'logout' })
+  router.replace({ name: 'auth' })
 }
 </script>
 
