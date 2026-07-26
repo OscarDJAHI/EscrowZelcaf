@@ -25,7 +25,7 @@ import com.zlecaf.escrow.service.scan.ScanVerdict;
 import com.zlecaf.escrow.service.storage.EvidenceNotFoundException;
 import com.zlecaf.escrow.service.storage.EvidenceStorage;
 import com.zlecaf.escrow.web.ApiExceptions.BadRequestException;
-import com.zlecaf.escrow.web.ApiExceptions.ForbiddenException;
+import com.zlecaf.escrow.web.ApiExceptions.NotFoundException;
 import com.zlecaf.escrow.web.dto.EscrowDtos.DisputeOpenedDto;
 import com.zlecaf.escrow.web.dto.EscrowDtos.TransactionDetailDto;
 import com.zlecaf.escrow.web.dto.EvidenceDtos.EvidenceDto;
@@ -585,20 +585,24 @@ class EscrowDisputeServiceTest {
                         .isEqualTo(ErrorCode.DISPUTE_ALREADY_RESOLVED));
     }
 
-    // --- 403: non-party (rejected before any transition, no audit) ---
+    // --- 404: non-party (rejected before any transition, no audit) ---
 
     @Test
-    @DisplayName("A non-party is rejected with ForbiddenException before any transition and writes nothing")
-    void openDisputeNonPartyIsForbidden() {
+    @DisplayName("A non-party gets the SAME opaque 404 as an unknown id, before any transition, and writes nothing")
+    void openDisputeNonPartyIsNotFound() {
         User buyer = persistUser("dispbuyer8@example.com", Role.BUYER);
         User seller = persistUser("dispseller8@example.com", Role.SELLER);
         User stranger = persistUser("dispstranger8@example.com", Role.BUYER);
         EscrowTransaction tx = persistTransaction(buyer.getId(), seller.getId(), EscrowState.FUNDS_LOCKED);
         AuthPrincipal actor = new AuthPrincipal(stranger.getId(), stranger.getEmail(), Role.BUYER);
 
+        // Story 1.10 : NotFoundException et non plus ForbiddenException. Le stranger
+        // ne doit pas pouvoir distinguer « ce litige existe mais n'est pas le tien »
+        // de « cet identifiant n'existe pas » — les deux repondent desormais
+        // ApiExceptions.transactionNotFound(), meme type, meme code, meme message.
         assertThatThrownBy(() -> escrowService.openDispute(actor, tx.getId(),
                 List.of(pdf("receipt.pdf")), "the item never arrived", null))
-                .isInstanceOf(ForbiddenException.class);
+                .isInstanceOf(NotFoundException.class);
 
         assertThat(stateOf(tx.getId())).isEqualTo(EscrowState.FUNDS_LOCKED);
         assertThat(evidenceFor(tx.getId())).isEmpty();
@@ -637,7 +641,7 @@ class EscrowDisputeServiceTest {
 
         assertThatThrownBy(() -> escrowService.openDispute(actor, 999_999L,
                 List.of(pdf("receipt.pdf")), "the item never arrived", null))
-                .isInstanceOf(com.zlecaf.escrow.web.ApiExceptions.NotFoundException.class);
+                .isInstanceOf(NotFoundException.class);
     }
 
     // --- buyer opening from SHIPPED is allowed (matrix: SHIPPED + OPEN_DISPUTE -> BUYER) ---

@@ -14,6 +14,7 @@ import com.zlecaf.escrow.service.scan.MalwareScanGateway;
 import com.zlecaf.escrow.service.scan.ScanVerdict;
 import com.zlecaf.escrow.service.storage.EvidenceNotFoundException;
 import com.zlecaf.escrow.service.storage.EvidenceStorage;
+import com.zlecaf.escrow.web.ApiExceptions;
 import com.zlecaf.escrow.web.ApiExceptions.BadRequestException;
 import com.zlecaf.escrow.web.ApiExceptions.ConflictException;
 import com.zlecaf.escrow.web.ApiExceptions.ForbiddenException;
@@ -108,8 +109,8 @@ public class EvidenceService {
      * Deposits one or more files against a transaction the actor is party to.
      *
      * @return the persisted {@link EvidenceFile} rows (status {@code ACTIVE}).
-     * @throws NotFoundException   transaction unknown (404)
-     * @throws com.zlecaf.escrow.web.ApiExceptions.ForbiddenException non-party (403)
+     * @throws NotFoundException   transaction unknown <em>or</em> the actor is not a
+     *                             party (404, one indistinguishable answer — Story 1.10)
      * @throws ConflictException   deposit window closed for the current state (409)
      * @throws BadRequestException empty batch, bad file type/size, or bad
      *                             {@code clientCapturedAt} (400)
@@ -124,10 +125,9 @@ public class EvidenceService {
         // transitions, so the window check below cannot be invalidated by a
         // RELEASE/REFUND committing between the read and this transaction's commit.
         EscrowTransaction tx = transactions.findByIdForUpdate(txId)
-                .orElseThrow(() -> new NotFoundException(ErrorCode.TRANSACTION_NOT_FOUND,
-                        "Transaction " + txId + " not found"));
+                .orElseThrow(ApiExceptions::transactionNotFound);
 
-        ParticipantRole role = access.resolveRole(actor, tx);   // 403 if not a party
+        ParticipantRole role = access.resolveRole(actor, tx);   // 404 (opaque) if not a party
         requireUploadWindow(tx.getState());                     // 409 if outside window
 
         // Human attribution: the acting user owns the row and the audit entry.
@@ -146,8 +146,8 @@ public class EvidenceService {
      * duplicated: validation, storage, rollback cleanup and the MANDATORY audit are
      * exactly those of the user path.
      *
-     * @throws NotFoundException   transaction unknown (404)
-     * @throws com.zlecaf.escrow.web.ApiExceptions.ForbiddenException company not a party (403)
+     * @throws NotFoundException   transaction unknown <em>or</em> the partner company
+     *                             is not a party (404, one indistinguishable answer)
      * @throws ConflictException   deposit window closed for the current state (409)
      * @throws BadRequestException empty batch, bad file type/size, or bad
      *                             {@code clientCapturedAt} (400)
@@ -157,10 +157,9 @@ public class EvidenceService {
                                                String comment, String clientCapturedAt) {
         requireDepositableBatch(files); // gate before the lock (PartnerEvidenceService also gates before hashing)
         EscrowTransaction tx = transactions.findByIdForUpdate(txId)
-                .orElseThrow(() -> new NotFoundException(ErrorCode.TRANSACTION_NOT_FOUND,
-                        "Transaction " + txId + " not found"));
+                .orElseThrow(ApiExceptions::transactionNotFound);
 
-        access.requireCompanyParticipant(tx, companyId);       // 403 if company not a party
+        access.requireCompanyParticipant(tx, companyId);       // 404 (opaque) if company not a party
         requireUploadWindow(tx.getState());                     // 409 if outside window
 
         Attribution attribution =
@@ -370,18 +369,16 @@ public class EvidenceService {
      * Lists every evidence row of a transaction the actor is party to, sorted by
      * server-time {@code created_at} ascending. A pure, non-locking read: same
      * membership check as {@link #deposit} and {@code EscrowService.getDetail}
-     * (403 for non-parties, resolved role intentionally ignored), no storage
-     * access, WITHDRAWN rows included (AD-4).
+     * (an opaque 404 for non-parties, resolved role intentionally ignored), no
+     * storage access, WITHDRAWN rows included (AD-4).
      *
-     * @throws NotFoundException transaction unknown (404)
-     * @throws com.zlecaf.escrow.web.ApiExceptions.ForbiddenException non-party (403)
+     * @throws NotFoundException transaction unknown or the actor is not a party (404)
      */
     @Transactional(readOnly = true)
     public List<EvidenceDto> list(AuthPrincipal actor, Long txId) {
         EscrowTransaction tx = transactions.findById(txId)
-                .orElseThrow(() -> new NotFoundException(ErrorCode.TRANSACTION_NOT_FOUND,
-                        "Transaction " + txId + " not found"));
-        access.resolveRole(actor, tx);   // 403 if not a party; role ignored for a read
+                .orElseThrow(ApiExceptions::transactionNotFound);
+        access.resolveRole(actor, tx);   // 404 (opaque) if not a party; role ignored for a read
         // Hard cap the read (unsorted Pageable → LIMIT only; ordering stays from
         // the method name). Query DESC so the LIMIT keeps the MOST RECENT rows —
         // an ASC limit would keep the oldest and silently drop the recent tail —
@@ -397,10 +394,10 @@ public class EvidenceService {
     /**
      * Opens the original binary of one evidence piece for a party to download.
      * Server-authoritative, in strict order: load the transaction (404), resolve
-     * membership (403, before any piece lookup), then the <em>sealed</em>
-     * {@code findByIdAndTransactionId} query (404) so a foreign or unknown piece
-     * is indistinguishable — the anti-IDOR guard, never a manual comparison over
-     * an unsealed {@code findById}. No status filter: a WITHDRAWN piece is still
+     * membership (the same opaque 404, before any piece lookup), then the
+     * <em>sealed</em> {@code findByIdAndTransactionId} query (404) so a foreign or
+     * unknown piece is indistinguishable — the anti-IDOR guard, never a manual
+     * comparison over an unsealed {@code findById}. No status filter: a WITHDRAWN piece is still
      * downloadable (restitution is not masking). The stream comes only from the
      * {@link EvidenceStorage} port; a missing object translates to a 404. The
      * returned {@link InputStream} outlives this transaction and is consumed by
@@ -420,18 +417,18 @@ public class EvidenceService {
      * successful {@code storage.load}, so a storage failure (502) rolls the whole
      * thing back and no phantom download-audit remains.
      *
-     * @throws NotFoundException transaction or piece unknown, or binary absent (404)
-     * @throws com.zlecaf.escrow.web.ApiExceptions.ForbiddenException non-party (403)
+     * @throws NotFoundException transaction unknown, actor not a party, piece unknown
+     *                           or foreign, or binary absent — all 404, and all
+     *                           indistinguishable from one another (Story 1.10)
      * @throws com.zlecaf.escrow.service.storage.EvidenceStorageException storage failure (502)
      */
     @Transactional
     public EvidenceDownload download(AuthPrincipal actor, Long txId, Long evidenceId) {
         EscrowTransaction tx = transactions.findById(txId)
-                .orElseThrow(() -> new NotFoundException(ErrorCode.TRANSACTION_NOT_FOUND,
-                        "Transaction " + txId + " not found"));
-        ParticipantRole role = access.resolveRole(actor, tx);   // 403 if not a party
+                .orElseThrow(ApiExceptions::transactionNotFound);
+        ParticipantRole role = access.resolveRole(actor, tx);   // 404 (opaque) if not a party
         EvidenceFile evidence = evidenceFiles.findByIdAndTransactionId(evidenceId, txId)
-                .orElseThrow(() -> new NotFoundException("Evidence " + evidenceId + " not found"));
+                .orElseThrow(ApiExceptions::evidenceNotFound);
         // Read every metadata field BEFORE opening the stream. size_bytes/mime_type
         // are nullable at the schema level, so size_bytes is kept boxed (Long) and
         // never unboxed here — a null size is a valid piece, carried through to the
@@ -443,7 +440,20 @@ public class EvidenceService {
         try {
             content = storage.load(evidence.getStorageKey());
         } catch (EvidenceNotFoundException e) {
-            throw new NotFoundException("Evidence binary not found for " + evidenceId);
+            // Story 1.10 : MÊME réponse que « pièce inconnue » et « pièce d'une autre
+            // transaction ». Le message d'origine, qui nommait le binaire absent,
+            // était distinct des deux autres, et cette distinction PROUVAIT au
+            // client que la ligne existe et appartient bien à cette transaction —
+            // un oracle au niveau pièce, sur le seul endpoint qui parle au stockage.
+            //
+            // L'incident (métadonnée orpheline : ligne présente, objet absent) reste
+            // parfaitement diagnosticable côté serveur, il cesse seulement d'être
+            // publié. La clé de stockage est journalisée ici, jamais renvoyée : c'est
+            // elle, et non l'id de pièce, qui permet de retrouver l'objet manquant.
+            log.warn("Evidence binary missing from storage for evidence {} of transaction {} "
+                            + "(storage key '{}') — served as an opaque 404",
+                    evidenceId, txId, evidence.getStorageKey());
+            throw ApiExceptions.evidenceNotFound();
         }
         // Audited only after a successful load: an EvidenceStorageException (502)
         // thrown above never reaches here, so no download audit is written and the
@@ -477,8 +487,8 @@ public class EvidenceService {
      * does not depend on object-store availability.
      *
      * <p>Server-authoritative, in strict order: take the transaction under a
-     * {@code PESSIMISTIC_WRITE} lock (404 if unknown), resolve membership (403 for
-     * a non-party, before any piece lookup), then the <em>sealed</em>
+     * {@code PESSIMISTIC_WRITE} lock (404 if unknown), resolve membership (the same
+     * opaque 404 for a non-party, before any piece lookup), then the <em>sealed</em>
      * {@code findByIdAndTransactionId} query (404) so a foreign or unknown piece is
      * indistinguishable — the anti-IDOR guard, never a manual comparison over an
      * unsealed {@code findById}. Only one's own piece may be withdrawn (403), the
@@ -493,8 +503,11 @@ public class EvidenceService {
      * invalidated by a TOCTOU window. The audit entry commits atomically with the
      * status flip.
      *
-     * @throws NotFoundException  transaction or piece unknown/foreign (404)
-     * @throws ForbiddenException non-party, or not the piece's owner (403)
+     * @throws NotFoundException  transaction unknown, actor not a party, or piece
+     *                            unknown/foreign (404, one opaque answer)
+     * @throws ForbiddenException the caller IS a party but is not the piece's owner
+     *                            (403 — the documented, tested exception of Story 1.10:
+     *                            they already see that piece through {@link #list})
      * @throws ConflictException  withdrawal window closed, piece already withdrawn,
      *                            or the dispute floor would be breached (409)
      */
@@ -504,16 +517,27 @@ public class EvidenceService {
         // state transitions) on the same transaction, so the floor count below is
         // read on committed state and cannot be undercut by a lost update.
         EscrowTransaction tx = transactions.findByIdForUpdate(txId)
-                .orElseThrow(() -> new NotFoundException(ErrorCode.TRANSACTION_NOT_FOUND,
-                        "Transaction " + txId + " not found"));
+                .orElseThrow(ApiExceptions::transactionNotFound);
 
-        ParticipantRole role = access.resolveRole(actor, tx);   // 403 if not a party
+        ParticipantRole role = access.resolveRole(actor, tx);   // 404 (opaque) if not a party
 
         // Sealed anti-IDOR lookup: a foreign or unknown piece is a 404, never a findById.
         EvidenceFile evidence = evidenceFiles.findByIdAndTransactionId(evidenceId, txId)
-                .orElseThrow(() -> new NotFoundException("Evidence " + evidenceId + " not found"));
+                .orElseThrow(ApiExceptions::evidenceNotFound);
 
         // Own-piece guard: a null uploader (partner upload) is never the actor's.
+        //
+        // Le SEUL 403 restant de la surface escrow, et c'est délibéré (Story 1.10).
+        // L'invariant anti-énumération n'est pas « tout refus devient 404 », c'est
+        // « ne jamais révéler ce que l'appelant n'a pas le droit de savoir ». Or ici
+        // l'appelant EST partie à la transaction : il voit déjà cette pièce, celles de
+        // la contrepartie comprises, dans GET /{id}/evidence. Lui répondre 404 sur une
+        // pièce qu'il vient de lire ne cacherait rien et dégraderait un message
+        // d'erreur légitime en énigme. La visibilité par list() est asservie par test
+        // (EvidenceServiceTest), sans quoi cette frontière serait déclarative.
+        //
+        // Noter que la garde d'appartenance (resolveRole, plus haut) a DÉJÀ répondu
+        // 404 au non-partie : on ne peut atteindre cette garde qu'en étant partie.
         if (evidence.getUploadedByUserId() == null
                 || !evidence.getUploadedByUserId().equals(actor.userId())) {
             throw new ForbiddenException("You can only withdraw your own evidence");

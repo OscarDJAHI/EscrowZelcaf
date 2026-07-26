@@ -121,6 +121,23 @@ describe('classifyReplayFailure — the verdict comes from the code, not the HTT
   it('classifies EVIDENCE_INVALID (400) as permanent — same status, opposite verdict', () => {
     expect(classifyReplayFailure(httpError(400, { code: 'EVIDENCE_INVALID' }))).toBe('permanent')
   })
+
+  it("gèle les rejets natifs de Spring (Story 1.10) — c'est la reclassification voulue, pas un effet de bord", () => {
+    // La Story 1.10 a sorti les rejets natifs du filet 500 pour leur donner un 4xx codé.
+    // Ce faisant elle les fait passer, ICI, de transitoire à PERMANENT. Ce test asservit
+    // cette moitié-là du changement, qu'aucune assertion ne couvrait : le backend prouve
+    // qu'il renvoie bien 404/400/405 codés, rien ne prouvait ce que le client en fait.
+    expect(classifyReplayFailure(httpError(404, { code: 'RESOURCE_NOT_FOUND' }))).toBe('permanent')
+    expect(classifyReplayFailure(httpError(400, { code: 'INVALID_REQUEST' }))).toBe('permanent')
+    expect(classifyReplayFailure(httpError(405, { code: 'INVALID_REQUEST' }))).toBe('permanent')
+
+    // La direction opposée, pour que le compromis soit lisible : sous l'ancien 500 la
+    // MÊME requête était rejouée indéfiniment. Geler n'est pas perdre — l'entrée et son
+    // binaire sont conservés et la Story 4.5 fournit la reprise — mais une PWA au shell
+    // précaché qui rejoue contre des routes déplacées ne guérit plus toute seule. C'est
+    // le choix d'AD-10, et il est ici écrit noir sur blanc.
+    expect(classifyReplayFailure(httpError(500, { code: 'INTERNAL_ERROR' }))).toBe('transient')
+  })
 })
 
 describe('classifyReplayFailure — no code, no assumption', () => {
@@ -179,7 +196,29 @@ describe('FAILURE_LABELS', () => {
     // backend code must fall back on its message, not redden the front).
     expect(Object.keys(FAILURE_LABELS).length).toBeGreaterThan(0)
     const unknown = Object.keys(FAILURE_LABELS).filter((code) => !permanent.includes(code))
-    expect(unknown).toEqual([])
+    // Story 1.10 — la liste des codes HÉRITÉS, et rien d'autre.
+    //
+    // L'anti-énumération a retiré `NOT_A_PARTY` de `ErrorCode.java` : le backend ne
+    // l'émet plus. Son libellé reste pourtant ici volontairement, parce qu'un `code`
+    // est gravé dans l'entrée gelée persistée en IndexedDB au moment du refus — une
+    // file remplie avant le déploiement le porte encore. Le miroir est donc, pour ce
+    // code précis, un SUR-ensemble assumé de l'autorité backend.
+    //
+    // Égalité EXACTE et non « ignore les codes hérités » : les deux directions de
+    // dérive doivent rester rouges. Ajouter un libellé pour un code que le backend ne
+    // déclare pas reste une erreur ; retirer le libellé hérité (le nettoyage évident,
+    // « ce code n'existe plus côté serveur ») casse la seule prise en charge des
+    // entrées d'avant la bascule — les deux méritent d'être un geste délibéré. Idem si
+    // le backend rouvrait un jour ce code : la liste devrait alors être vidée ici.
+    //
+    // Trié des deux côtés : `unknown` dérive de l'ordre d'insertion de FAILURE_LABELS,
+    // qui n'est le contrat de personne. Avec un seul élément la comparaison brute était
+    // verte par chance ; au deuxième code hérité elle serait devenue un test qui casse
+    // parce qu'on a déplacé une ligne. Le tri retire cette sensibilité SANS rien
+    // affaiblir — c'est toujours une égalité exacte, donc les deux directions de dérive
+    // restent rouges (un libellé en trop comme un libellé hérité supprimé).
+    const LEGACY_CODES = ['NOT_A_PARTY']
+    expect([...unknown].sort()).toEqual([...LEGACY_CODES].sort())
   })
 
 })

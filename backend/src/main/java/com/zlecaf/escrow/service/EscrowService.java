@@ -6,6 +6,7 @@ import com.zlecaf.escrow.repository.EscrowTransactionRepository;
 import com.zlecaf.escrow.repository.UserRepository;
 import com.zlecaf.escrow.security.AuthPrincipal;
 import com.zlecaf.escrow.service.scan.MalwareScanUnavailableException;
+import com.zlecaf.escrow.web.ApiExceptions;
 import com.zlecaf.escrow.web.ApiExceptions.BadRequestException;
 import com.zlecaf.escrow.web.ApiExceptions.NotFoundException;
 import com.zlecaf.escrow.web.dto.EscrowDtos.*;
@@ -106,8 +107,7 @@ public class EscrowService {
         }
 
         EscrowTransaction tx = transactions.findByIdForUpdate(txId)
-                .orElseThrow(() -> new NotFoundException(ErrorCode.TRANSACTION_NOT_FOUND,
-                        "Transaction " + txId + " not found"));
+                .orElseThrow(ApiExceptions::transactionNotFound);
 
         ParticipantRole role = transactionAccess.resolveRole(actor, tx);
         EscrowState previous = tx.getState();
@@ -162,8 +162,7 @@ public class EscrowService {
         }
 
         EscrowTransaction tx = transactions.findByIdForUpdate(txId)
-                .orElseThrow(() -> new NotFoundException(ErrorCode.TRANSACTION_NOT_FOUND,
-                        "Transaction " + txId + " not found"));
+                .orElseThrow(ApiExceptions::transactionNotFound);
 
         ParticipantRole role = transactionAccess.resolveRole(actor, tx);
         EscrowState previous = tx.getState();
@@ -223,10 +222,10 @@ public class EscrowService {
     @Transactional(readOnly = true)
     public TransactionDetailDto getDetail(AuthPrincipal actor, Long txId) {
         EscrowTransaction tx = transactions.findById(txId)
-                .orElseThrow(() -> new NotFoundException(ErrorCode.TRANSACTION_NOT_FOUND,
-                        "Transaction " + txId + " not found"));
-        // Membership check: throws ForbiddenException for non-parties. The
-        // resolved role is irrelevant for a read, so it is intentionally ignored.
+                .orElseThrow(ApiExceptions::transactionNotFound);
+        // Membership check: a non-party gets the very same 404 the findById above
+        // would have produced (Story 1.10), so the two cases are indistinguishable.
+        // The resolved role is irrelevant for a read, so it is intentionally ignored.
         transactionAccess.resolveRole(actor, tx);
         // Hard cap the audit trail read (unsorted Pageable → LIMIT only; ordering
         // stays from the method name). Query DESC so the LIMIT keeps the MOST

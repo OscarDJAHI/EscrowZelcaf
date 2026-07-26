@@ -72,10 +72,24 @@ public enum ErrorCode {
 
     // --- Access / identity ---------------------------------------------------
 
-    /** The actor (or the partner's company) is not a party to the transaction. */
-    NOT_A_PARTY(Retryability.PERMANENT),
-
-    /** The referenced transaction does not exist. */
+    /**
+     * The referenced transaction cannot be served to this caller. Deliberately
+     * opaque (Story 1.10, NFR-P9), on the model of {@link #AUTH_FAILED}: "no such
+     * transaction" and "exists but is not yours" share this one code and the one
+     * message {@code ApiExceptions.transactionNotFound()} builds. Splitting them
+     * would let any holder of a valid JWT — or of a partner HMAC key — walk the id
+     * space; the {@code code} is an oracle at the same rank as the status, so a
+     * uniform 404 carrying two codes would have changed nothing.
+     *
+     * <p>The dedicated membership-refusal code that used to sit here was
+     * <em>deleted</em>, not left unused: a constant nothing emits is what the next
+     * developer reaches for on their own protected resource. Deletion turns that
+     * mistake into a compile error, and
+     * {@code web.AntiEnumerationConventionTest} keeps both halves honest — the
+     * deleted name appears nowhere under {@code src/main}, and refusals are built
+     * only by the whitelisted factories, so the oracle cannot come back through an
+     * interpolated message either.
+     */
     TRANSACTION_NOT_FOUND(Retryability.PERMANENT),
 
     /**
@@ -140,7 +154,14 @@ public enum ErrorCode {
     /** Default for a {@code BadRequestException} raised without an explicit code. */
     INVALID_REQUEST(Retryability.PERMANENT),
 
-    /** Default for a {@code NotFoundException} raised without an explicit code. */
+    /**
+     * Default for a {@code NotFoundException} raised without an explicit code —
+     * and, since Story 1.10, the opaque answer at sub-resource level: an unknown
+     * evidence piece, a piece belonging to another transaction and a piece whose
+     * binary is missing from the object store are all
+     * {@code ApiExceptions.evidenceNotFound()}. Same reasoning as
+     * {@link #TRANSACTION_NOT_FOUND}, one level down.
+     */
     RESOURCE_NOT_FOUND(Retryability.PERMANENT),
 
     /** Default for a {@code ConflictException} raised without an explicit code. */

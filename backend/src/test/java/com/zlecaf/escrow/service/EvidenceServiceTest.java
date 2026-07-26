@@ -3,6 +3,7 @@ package com.zlecaf.escrow.service;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.zlecaf.escrow.domain.AuditLog;
+import com.zlecaf.escrow.domain.ErrorCode;
 import com.zlecaf.escrow.domain.EscrowState;
 import com.zlecaf.escrow.domain.EscrowTransaction;
 import com.zlecaf.escrow.domain.EvidenceFile;
@@ -279,17 +280,20 @@ class EvidenceServiceTest {
     }
 
     @Test
-    @DisplayName("A non-party is rejected with ForbiddenException and writes nothing")
-    void nonPartyIsForbidden() {
+    @DisplayName("A non-party gets the SAME opaque 404 as an unknown id and writes nothing")
+    void nonPartyIsNotFound() {
         User buyer = persistUser("buyer2@example.com", Role.BUYER);
         User seller = persistUser("seller2@example.com", Role.SELLER);
         User stranger = persistUser("stranger@example.com", Role.BUYER);
         EscrowTransaction tx = persistTransaction(buyer.getId(), seller.getId(), EscrowState.FUNDS_LOCKED);
         AuthPrincipal actor = new AuthPrincipal(stranger.getId(), stranger.getEmail(), Role.BUYER);
 
+        // Story 1.10 : 404 et non 403. Le stranger ne doit pas pouvoir distinguer
+        // « cette transaction existe mais n'est pas la tienne » de « cet identifiant
+        // n'existe pas » — les deux passent par ApiExceptions.transactionNotFound().
         assertThatThrownBy(() -> evidenceService.deposit(actor, tx.getId(),
                 List.of(pdf("proof.pdf")), null, null))
-                .isInstanceOf(ForbiddenException.class);
+                .isInstanceOf(NotFoundException.class);
 
         assertThat(evidenceFiles.count()).isZero();
         assertThat(auditLogs.findByTransactionIdOrderByTimestampAsc(tx.getId())).isEmpty();
@@ -554,8 +558,8 @@ class EvidenceServiceTest {
     }
 
     @Test
-    @DisplayName("list rejects a non-party with ForbiddenException")
-    void listNonPartyIsForbidden() {
+    @DisplayName("list rejects a non-party with the SAME opaque 404 as an unknown id")
+    void listNonPartyIsNotFound() {
         User buyer = persistUser("buyerL5@example.com", Role.BUYER);
         User seller = persistUser("sellerL5@example.com", Role.SELLER);
         User stranger = persistUser("strangerL5@example.com", Role.BUYER);
@@ -563,7 +567,7 @@ class EvidenceServiceTest {
         AuthPrincipal actor = new AuthPrincipal(stranger.getId(), stranger.getEmail(), Role.BUYER);
 
         assertThatThrownBy(() -> evidenceService.list(actor, tx.getId()))
-                .isInstanceOf(ForbiddenException.class);
+                .isInstanceOf(NotFoundException.class);
     }
 
     @Test
@@ -655,8 +659,8 @@ class EvidenceServiceTest {
     }
 
     @Test
-    @DisplayName("download by a non-party is a 403, before any piece lookup")
-    void downloadNonPartyIsForbidden() {
+    @DisplayName("download by a non-party is the opaque 404, before any piece lookup")
+    void downloadNonPartyIsNotFound() {
         User buyer = persistUser("buyerD5@example.com", Role.BUYER);
         User seller = persistUser("sellerD5@example.com", Role.SELLER);
         User stranger = persistUser("strangerD5@example.com", Role.BUYER);
@@ -667,7 +671,7 @@ class EvidenceServiceTest {
                 Instant.parse("2026-07-15T10:00:00Z"));
 
         assertThatThrownBy(() -> evidenceService.download(actor, tx.getId(), piece.getId()))
-                .isInstanceOf(ForbiddenException.class);
+                .isInstanceOf(NotFoundException.class);
     }
 
     @Test
@@ -764,6 +768,42 @@ class EvidenceServiceTest {
         assertThat(evidenceFiles.findById(foreign.getId()).orElseThrow().getStatus())
                 .isEqualTo(EvidenceStatus.ACTIVE);
         assertThat(auditLogs.findByTransactionIdOrderByTimestampAsc(tx.getId())).isEmpty();
+    }
+
+    @Test
+    @DisplayName("Story 1.10 : le 403 « piece a soi » ne revele rien — l'appelant VOIT deja cette piece par list()")
+    void withdrawForeignPieceStays403BecauseTheCallerAlreadySeesIt() {
+        // L'exception assumee de la Story 1.10, rendue PROUVEE plutot que declaree.
+        //
+        // L'invariant n'est pas « tout refus devient 404 », c'est « ne jamais reveler
+        // ce que l'appelant n'a pas le droit de savoir ». Le test jumeau ci-dessus
+        // prouve la premiere moitie (le refus reste un 403 honnete) ; celui-ci prouve
+        // la seconde, la seule qui rend le 403 defendable : la piece refusee est deja
+        // listee a cet appelant par GET /{id}/evidence. Repondre 404 sur une piece
+        // qu'il vient de lire ne cacherait rien et degraderait un message legitime.
+        //
+        // Sans cette seconde assertion, l'exception ne se distinguerait pas d'un oubli
+        // — et le jour ou la visibilite de list() se restreindrait aux pieces propres,
+        // le 403 deviendrait un veritable oracle sans qu'aucun test ne bronche.
+        User buyer = persistUser("buyerW3b@example.com", Role.BUYER);
+        User seller = persistUser("sellerW3b@example.com", Role.SELLER);
+        EscrowTransaction tx = persistTransaction(buyer.getId(), seller.getId(), EscrowState.FUNDS_LOCKED);
+        AuthPrincipal actor = new AuthPrincipal(buyer.getId(), buyer.getEmail(), Role.BUYER);
+
+        EvidenceFile foreign = persistActiveEvidence(tx.getId(), seller.getId(), UploaderType.SELLER,
+                Instant.parse("2026-07-15T10:00:00Z"));
+
+        // (1) Le refus reste un 403 code FORBIDDEN, et non le 404 opaque.
+        assertThatThrownBy(() -> evidenceService.withdraw(actor, tx.getId(), foreign.getId()))
+                .isInstanceOf(ForbiddenException.class)
+                .extracting(e -> ((ForbiddenException) e).getCode())
+                .isEqualTo(ErrorCode.FORBIDDEN);
+
+        // (2) ... parce que la MEME piece lui est deja visible. C'est ce qui fait que
+        // le refus honnete n'apprend rien a personne.
+        assertThat(evidenceService.list(actor, tx.getId()))
+                .extracting(EvidenceDto::id)
+                .contains(foreign.getId());
     }
 
     @Test
@@ -869,21 +909,22 @@ class EvidenceServiceTest {
     }
 
     @Test
-    @DisplayName("withdraw by a non-party (neither buyer nor seller) is a 403 and mutates nothing")
-    void withdrawByNonPartyIsForbidden() {
+    @DisplayName("withdraw by a non-party (neither buyer nor seller) is the opaque 404 and mutates nothing")
+    void withdrawByNonPartyIsNotFound() {
         User buyer = persistUser("buyerW9@example.com", Role.BUYER);
         User seller = persistUser("sellerW9@example.com", Role.SELLER);
         User stranger = persistUser("strangerW9@example.com", Role.BUYER);
         EscrowTransaction tx = persistTransaction(buyer.getId(), seller.getId(), EscrowState.FUNDS_LOCKED);
-        // A user who is party to no side of this transaction: resolveRole must 403
-        // before the own-piece guard is ever reached.
+        // A user who is party to no side of this transaction: resolveRole must answer
+        // the opaque 404 before the own-piece guard is ever reached (Story 1.10) —
+        // which is exactly what keeps that guard's honest 403 from leaking anything.
         AuthPrincipal actor = new AuthPrincipal(stranger.getId(), stranger.getEmail(), Role.BUYER);
 
         EvidenceFile piece = persistActiveEvidence(tx.getId(), buyer.getId(), UploaderType.BUYER,
                 Instant.parse("2026-07-15T10:00:00Z"));
 
         assertThatThrownBy(() -> evidenceService.withdraw(actor, tx.getId(), piece.getId()))
-                .isInstanceOf(ForbiddenException.class);
+                .isInstanceOf(NotFoundException.class);
 
         assertThat(evidenceFiles.findById(piece.getId()).orElseThrow().getStatus())
                 .isEqualTo(EvidenceStatus.ACTIVE);

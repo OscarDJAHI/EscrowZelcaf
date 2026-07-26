@@ -94,6 +94,21 @@ export const FAILURE_LABELS = Object.freeze({
   EVIDENCE_FLOOR_VIOLATION: 'A disputed transaction must keep at least one piece of evidence.',
   TOO_MANY_FILES: 'Too many files were attached for a single deposit.',
   COMMENT_TOO_SHORT: 'The comment was missing or too short.',
+  // Story 1.10 — code HÉRITÉ : le backend ne l'émet plus depuis l'anti-énumération
+  // (`ErrorCode.java` ne le déclare plus du tout ; un non-partie reçoit désormais
+  // `TRANSACTION_NOT_FOUND`, ci-dessous, exactement comme une transaction inexistante).
+  //
+  // Conservé délibérément, et ce n'est pas de la dette : un `code` est GRAVÉ dans
+  // l'entrée gelée persistée en IndexedDB au moment du refus. Une file remplie avant
+  // le déploiement porte donc encore `NOT_A_PARTY`, et le supprimer ici ferait
+  // retomber ces entrées-là sur le `message` serveur — lequel interpolait l'email de
+  // la contrepartie. C'est la SEULE prise en charge des entrées d'avant la bascule ;
+  // un nettoyage « ce code n'existe plus côté serveur » la retirerait sans le voir.
+  //
+  // Aucun changement fonctionnel n'a été nécessaire pour la bascule : le nouveau code
+  // est déjà PERMANENT (donc l'entrée reste gelée, jamais rejouée) et figure déjà dans
+  // `NO_LINK_CODES` de `frozenEntry.js` (donc aucun lien vers la transaction n'est
+  // offert). Seule la phrase affichée change — ce qui EST l'opacité recherchée.
   NOT_A_PARTY: 'You are not a party to this transaction.',
   TRANSACTION_NOT_FOUND: 'This transaction no longer exists.',
   VALIDATION_ERROR: 'The server rejected the details of this request.',

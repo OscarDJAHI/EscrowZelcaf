@@ -24,13 +24,26 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 class ErrorCodeContractTest {
 
-    /** The eleven permanent codes AD-10 names: the queue must never retry these. */
+    /**
+     * The permanent partition the client mirrors: every code on which the offline
+     * queue must freeze rather than retry (AD-10's rule). Ten today.
+     *
+     * <p>Deliberately <em>not</em> described as "the list AD-10 spells out": the AD
+     * states the rule, and this set is the living roster the rule applies to. Stories
+     * add to it (1.6 WEAK_PASSWORD, 1.8 EVIDENCE_MALWARE_DETECTED) and remove from it
+     * (1.10), so a claim to quote a document would go stale the next sprint and this
+     * test would then describe something that no longer exists — which is the very
+     * failure it was written to prevent.
+     */
     private static final Set<ErrorCode> AD10_PERMANENT = EnumSet.of(
             ErrorCode.DISPUTE_ALREADY_RESOLVED,
             ErrorCode.TRANSACTION_TERMINAL,
             ErrorCode.WINDOW_CLOSED,
             ErrorCode.EVIDENCE_INVALID,
-            ErrorCode.NOT_A_PARTY,
+            // Story 1.10 : NOT_A_PARTY RETIRE de l'ensemble ET de l'enum. Le refus
+            // d'appartenance repond desormais TRANSACTION_NOT_FOUND, ci-dessous —
+            // c'est le point entier de la story, l'oracle vivait dans le `code`
+            // autant que dans le statut. Le cardinal passe de 11 a 10.
             ErrorCode.TRANSACTION_NOT_FOUND,
             ErrorCode.EVIDENCE_FLOOR_VIOLATION,
             ErrorCode.COMMENT_TOO_SHORT,
@@ -71,9 +84,9 @@ class ErrorCodeContractTest {
     }
 
     @Test
-    @DisplayName("The eleven codes AD-10 calls permanent are PERMANENT")
+    @DisplayName("The ten codes of the client-mirrored permanent partition are PERMANENT")
     void ad10PermanentCodesArePermanent() {
-        assertThat(AD10_PERMANENT).hasSize(11);
+        assertThat(AD10_PERMANENT).hasSize(10);
         assertThat(AD10_PERMANENT).allSatisfy(code ->
                 assertThat(code.retryability()).isEqualTo(Retryability.PERMANENT));
     }
@@ -119,5 +132,38 @@ class ErrorCodeContractTest {
                         || n.contains("NONCE") || n.contains("TIMESTAMP")))
                 .isEmpty();
         assertThat(ErrorCode.AUTH_FAILED.retryability()).isEqualTo(Retryability.PERMANENT);
+    }
+
+    @Test
+    @DisplayName("A membership refusal has NO dedicated code: unknown and not-yours share TRANSACTION_NOT_FOUND")
+    void membershipRefusalHasNoDedicatedCode() {
+        // Calque de partnerAuthHasExactlyOneCode ci-dessus, applique au canal JWT
+        // (Story 1.10, NFR-P9). Le canal partenaire avait deja fondu ses cinq echecs
+        // d'authentification dans AUTH_FAILED ; le canal humain, lui, gardait
+        // NOT_A_PARTY a cote de TRANSACTION_NOT_FOUND — soit un oracle d'existence
+        // parfait pour tout porteur d'un jeton valide, meme sous un 404 uniforme.
+        //
+        // CE QUE CE FILTRE GARDE, EXACTEMENT : qu'aucun nom de code ne contienne PARTY,
+        // MEMBER, OWNER ou FOREIGN. Il attrape donc la reintroduction sous les noms les
+        // plus probables (NOT_A_PARTY lui-meme, MEMBERSHIP_DENIED, NOT_OWNER,
+        // FOREIGN_TRANSACTION) — c'est-a-dire le copier-coller et le renommage paresseux.
+        //
+        // CE QU'IL NE GARDE PAS : un nom qui evite ce vocabulaire. ACCESS_DENIED,
+        // NOT_YOURS et NON_PARTICIPANT passeraient tous les quatre mots-cles. Un filtre
+        // de noms ne peut pas faire mieux — il ignore ce que le code SIGNIFIE et ou il
+        // est emis. La fermeture reelle du trou est ailleurs, et elle est structurelle :
+        // AntiEnumerationConventionTest (paquet `web`) asservit que les refus ne se
+        // construisent QUE dans une liste blanche de fichiers, avec des messages
+        // constants. Un code de refus d'appartenance sous un nom neuf devrait bien etre
+        // emis quelque part, et c'est la qu'il devient rouge.
+        assertThat(Arrays.stream(ErrorCode.values())
+                .map(ErrorCode::name)
+                .filter(n -> n.contains("PARTY") || n.contains("MEMBER")
+                        || n.contains("OWNER") || n.contains("FOREIGN")))
+                .isEmpty();
+        // Le code survivant est bien celui de « inexistante », donc celui qui ne
+        // confirme rien — un code d'existence uniforme (« EXISTS_BUT_DENIED ») aurait
+        // uniformise le vocabulaire tout en gardant l'oracle intact.
+        assertThat(ErrorCode.TRANSACTION_NOT_FOUND.retryability()).isEqualTo(Retryability.PERMANENT);
     }
 }
