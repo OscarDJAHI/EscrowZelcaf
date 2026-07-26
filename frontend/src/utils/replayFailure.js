@@ -27,6 +27,9 @@ export const TRANSIENT_CODES = new Set([
   'RATE_LIMITED',
   'FILE_READ_ERROR',
   'STORAGE_UNAVAILABLE',
+  // Revue 1.6 — filet de sécurité du GlobalExceptionHandler : un défaut interne
+  // (panne de base, indisponibilité passagère) est circonstanciel, donc rejouable.
+  'INTERNAL_ERROR',
 ])
 
 /**
@@ -83,6 +86,11 @@ export const FAILURE_LABELS = Object.freeze({
   NOT_A_PARTY: 'You are not a party to this transaction.',
   TRANSACTION_NOT_FOUND: 'This transaction no longer exists.',
   VALIDATION_ERROR: 'The server rejected the details of this request.',
+  // Revue 1.6 : le backend énumère les règles effectives (longueur en octets et
+  // nombre de catégories, tous trois configurables) dans le `message`. Ce libellé
+  // est le repli quand aucun message ne parvient — `describeFailure` préfère
+  // désormais le message serveur pour ce code, afin que l'AC #1 (« les règles
+  // explicitées ») tienne aussi côté UI.
   WEAK_PASSWORD: 'The password does not meet the security policy (length and character variety).',
   MISSING_REQUEST_PART: 'Part of this request never reached the server.',
   INVALID_REQUEST: 'The server rejected this request.',
@@ -108,12 +116,20 @@ const GENERIC_FAILURE_LABEL = 'The server refused this action.'
  */
 export function describeFailure(failure) {
   const code = failure?.code
+  const message = failure?.message
+  const hasMessage = typeof message === 'string' && message.trim() !== ''
+
+  // Exception à l'ordre ci-dessus (revue 1.6) : pour WEAK_PASSWORD le `message`
+  // est PLUS informatif que le libellé, et l'AC #1 exige que les règles effectives
+  // soient explicitées. Les seuils sont configurables (`escrow.auth.password.*`),
+  // donc un libellé figé côté client mentirait dès qu'un exploitant les change.
+  if (code === 'WEAK_PASSWORD' && hasMessage) return message
+
   // `hasOwn`, not `FAILURE_LABELS[code]`: `code` comes off a server response, so
   // a lookup that walks the prototype would let 'constructor' return a function.
   if (typeof code === 'string' && Object.hasOwn(FAILURE_LABELS, code)) return FAILURE_LABELS[code]
 
-  const message = failure?.message
-  if (typeof message === 'string' && message.trim() !== '') return message
+  if (hasMessage) return message
 
   return GENERIC_FAILURE_LABEL
 }

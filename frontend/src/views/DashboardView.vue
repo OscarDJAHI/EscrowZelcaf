@@ -39,8 +39,13 @@ async function handleCreate(payload) {
   }
 }
 
-function logout() {
-  auth.logout()
+async function logout() {
+  // On ATTEND la révocation serveur avant de naviguer (revue 1.6) : la navigation
+  // avortait la requête en vol, si bien que le jeton restait accepté par le serveur
+  // jusqu'à expiration — AC #2 tenait en test mais pas dans le seul parcours réel.
+  // L'état local est déjà vidé de façon synchrone par le store, et la promesse ne
+  // rejette jamais : la déconnexion aboutit même hors ligne.
+  await auth.logout()
   window.location.href = '/auth'
 }
 </script>

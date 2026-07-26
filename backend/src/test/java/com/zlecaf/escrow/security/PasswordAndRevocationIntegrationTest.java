@@ -61,7 +61,57 @@ class PasswordAndRevocationIntegrationTest {
                         .content("{\"email\":\"weak@escrow.test\",\"password\":\"password\"}"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("WEAK_PASSWORD"))
-                .andExpect(jsonPath("$.message").value(org.hamcrest.Matchers.containsString("caractères")));
+                .andExpect(jsonPath("$.message").value(org.hamcrest.Matchers.containsString("bytes")))
+                .andExpect(jsonPath("$.message").value(org.hamcrest.Matchers.containsString("categories")));
+    }
+
+    @Test
+    @DisplayName("revue 1.6 : un mot de passe > 72 OCTETS (mais < 72 caractères) est rejeté en WEAK_PASSWORD")
+    void multiByteOverlongPasswordRejectedWithContractualCode() throws Exception {
+        // Double garde. (1) La borne était comptée en caractères : ce mot de passe
+        // passait, bcrypt n'en hachait que les 72 premiers octets et tout suffixe
+        // authentifiait ensuite. (2) Le @Size(max=72) du DTO rejetait au-delà AVANT
+        // la politique, en VALIDATION_ERROR au lieu du WEAK_PASSWORD contractuel de
+        // l'AC #1 ; le garde-fou DoS a été desserré pour que la politique tranche.
+        String accented = "Ééàèù1!".repeat(8); // 56 caractères, 96 octets
+        mvc.perform(post("/api/v1/auth/register")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(
+                                java.util.Map.of("email", "longbytes@escrow.test", "password", accented))))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("WEAK_PASSWORD"));
+    }
+
+    // --- Revue 1.6 : les deux nouvelles routes exigent bien un JWT ----------------
+
+    @Test
+    @DisplayName("revue 1.6 : /auth/logout sans jeton -> 403, jamais un 500 hors enveloppe")
+    void logoutRequiresAuthentication() throws Exception {
+        // Le joker `/api/v1/auth/**` en permitAll laissait ces deux routes ouvertes :
+        // le principal arrivait null au contrôleur -> NPE -> 500 nu, sans le champ
+        // `code` obligatoire, atteignable sans authentification. Aucun test ne les
+        // appelait sans jeton, d'où 343 tests verts au-dessus du trou.
+        mvc.perform(post("/api/v1/auth/logout"))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    @DisplayName("revue 1.6 : /auth/change-password sans jeton -> 403")
+    void changePasswordRequiresAuthentication() throws Exception {
+        mvc.perform(post("/api/v1/auth/change-password")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"oldPassword\":\"" + STRONG + "\",\"newPassword\":\"" + STRONG2 + "\"}"))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    @DisplayName("revue 1.6 : /auth/logout avec un jeton déjà révoqué -> 403 (double logout, second onglet)")
+    void logoutWithAlreadyRevokedTokenIsRefused() throws Exception {
+        String token = registerAndGetToken("doublelogout@escrow.test");
+        mvc.perform(post("/api/v1/auth/logout").header("Authorization", "Bearer " + token))
+                .andExpect(status().isNoContent());
+        mvc.perform(post("/api/v1/auth/logout").header("Authorization", "Bearer " + token))
+                .andExpect(status().isForbidden());
     }
 
     // --- AC #2 : logout serveur révoque le jeton ---------------------------------
@@ -121,9 +171,33 @@ class PasswordAndRevocationIntegrationTest {
                         .header("Authorization", "Bearer " + token)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"oldPassword\":\"not-the-old-one\",\"newPassword\":\"" + STRONG2 + "\"}"))
-                .andExpect(status().isBadRequest());
+                .andExpect(status().isBadRequest())
+                // Assertion sur le CODE et pas seulement le statut (revue 1.6) : sans
+                // elle, le test passait à l'identique si le rejet venait de la
+                // validation de bean, et ne prouvait donc pas que la vérification de
+                // l'ancien mot de passe s'était exécutée.
+                .andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
 
         // Rejet -> aucune révocation : le jeton fonctionne toujours.
+        mvc.perform(get("/api/v1/escrow").header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    @DisplayName("revue 1.6 : réutiliser le mot de passe courant est refusé (rotation illusoire)")
+    void changePasswordRejectsSamePassword() throws Exception {
+        String token = registerAndGetToken("samepwd@escrow.test");
+
+        // Avant : 204 + révocation de toutes les sessions sans rien changer.
+        // L'utilisateur se croyait protégé alors que le secret compromis vivait encore.
+        mvc.perform(post("/api/v1/auth/change-password")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"oldPassword\":\"" + STRONG + "\",\"newPassword\":\"" + STRONG + "\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
+
+        // Aucune révocation collatérale : la session reste utilisable.
         mvc.perform(get("/api/v1/escrow").header("Authorization", "Bearer " + token))
                 .andExpect(status().isOk());
     }

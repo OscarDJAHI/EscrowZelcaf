@@ -129,6 +129,30 @@ public class AuditService {
         save(null, null, null, null, payload);
     }
 
+    /**
+     * Journalise un changement de mot de passe et/ou une révocation de sessions
+     * (Story 1.6, revue). Hors de toute transaction métier : transaction_id et
+     * états sont null, {@code action_by} porte le compte concerné et le payload
+     * JSONB le contexte. MANDATORY : l'appelant est {@code AuthService}, déjà
+     * transactionnel — l'audit DOIT retomber avec l'opération qu'il décrit (AD-5),
+     * jamais survivre à son rollback.
+     *
+     * <p>Sur un produit à rétention 5 ans, « le mot de passe de ce compte a changé »
+     * et « toutes ses sessions ont été tuées » sont exactement les événements à
+     * reconstituer après incident ; ils ne laissaient aucune trace.
+     *
+     * @param event {@code PASSWORD_CHANGED} ou {@code SESSIONS_REVOKED}
+     * @param reason origine de la révocation (logout, changement de mot de passe…)
+     */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void recordAccountSecurityEvent(String event, Long userId, String reason) {
+        ObjectNode payload = objectMapper.createObjectNode();
+        payload.put("event", event);
+        payload.put("userId", userId);
+        payload.put("reason", reason);
+        save(null, userId, null, null, payload);
+    }
+
     private void save(Long transactionId, Long actorId, EscrowState previous, EscrowState next, ObjectNode payload) {
         AuditLog logEntry = new AuditLog();
         logEntry.setTransactionId(transactionId);

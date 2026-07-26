@@ -3,7 +3,7 @@ baseline_commit: c6e86d384fdf74edd621536121ea233f5ecd6f50
 ---
 # Story 1.6: Politique de mots de passe et révocation JWT
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -130,3 +130,58 @@ claude-opus-4-8, 2026-07-25
 ## Change Log
 
 - 2026-07-25 : Story créée (context engine). Décision d'architecture tranchée (révocation = Approche A `token_version`, résout l'assumption refresh-token du spine vers le minimal). Frontières 2.6 (reset/TOTP consomme `revokeSessions`), 1.9 (hygiène client), 1.10 (anti-énumération) explicitées.
+
+## Review Findings
+
+Revue de code 2026-07-26 (3 couches parallèles : Blind Hunter, Edge Case Hunter, Acceptance Auditor). Diff `c6e86d3..55d56c2`. Les trouvailles marquées **[prouvé]** ont été confirmées expérimentalement par sonde Testcontainers, pas seulement par lecture.
+
+### Décisions requises
+
+- [x] [Review][Decision] Anti-bruteforce sur `/auth/change-password` — l'endpoint vérifie `oldPassword` sans aucune limitation **[prouvé : 30 tentatives fausses → 30×400, jamais de 429]**. `AuthRateLimitFilter.java:76` ne filtre que `/auth/login` et `/auth/register`, et `isAuthFailure` (`:131`) ne compte que 401/409 alors que `changePassword` rejette en 400. Un jeton volé se convertit en prise de contrôle permanente. Le correctif n'est pas univoque : passer le rejet en 401 le rend comptabilisable mais déclenche l'intercepteur axios (`client.js:31`) qui purge la session et redirige — une simple faute de frappe déconnecterait l'utilisateur. Options : (a) filtrer le chemin + compter le 400 sur ce seul chemin, (b) passer en 401 et exclure `change-password` de l'intercepteur, (c) reporter à la Story 1.9.
+- [x] [Review][Decision] Messages métier en français émis par le backend vs AD-23 — `PasswordPolicy.java:71` et `AuthService.java:88` renvoient de la prose française destinée à l'utilisateur, alors que project-context impose « le backend ne renvoie jamais de texte utilisateur, seulement des codes » et que tous les messages voisins sont en anglais (`"Email already registered"`, `"User not found"`). Conflit réel : l'AC #1 exige les règles **dans le message**, l'AD-23 exige des codes seuls. La règle projet dit qu'une contradiction story/spine se remonte, elle a été tranchée localement. Trois assertions de test verrouillent le français (`"caractères"`, `"catégories"`). Options : (a) codes seuls + rendu des règles côté frontend, (b) message anglais + libellé i18n front, (c) acter la dérogation à l'AD-23 pour ce cas.
+- [x] [Review][Decision] Audit AD-5 absent sur `changePassword` et `revokeSessions` — `AuthService.java:83-111` n'écrit que dans `users`. La Story 1.3 avait créé le précédent en auditant les verrouillages (`AuthRateLimitFilter.java:58`). « Le mot de passe a changé » et « toutes les sessions ont été tuées » sont exactement les événements à reconstituer après incident sur un produit à rétention 5 ans. Le spec ne l'a jamais demandé : l'ajouter élargit le périmètre de 1.6.
+
+### Correctifs
+
+- [x] [Review][Patch] `/api/v1/auth/**` en `permitAll` : logout et change-password ne sont PAS authentifiés → NPE 500 **[prouvé]** [backend/src/main/java/com/zlecaf/escrow/config/SecurityConfig.java:75]
+- [x] [Review][Patch] Borne bcrypt comptée en caractères UTF-16 et non en octets UTF-8 : troncature silencieuse, n'importe quel suffixe authentifie **[prouvé : mot de passe 56 car./96 octets, login avec préfixe 72 octets + queue fausse → 200]** [backend/src/main/java/com/zlecaf/escrow/security/PasswordPolicy.java:45, web/dto/AuthDtos.java:19,33]
+- [x] [Review][Patch] Perte de mise à jour : `revokeSessions` réécrit la ligne `users` complète depuis un snapshot périmé et écrase le `password_hash` d'un `change-password` concurrent ; `User` n'a pas de `@Version`. Correctif = UPDATE atomique `token_version = token_version + 1` [backend/src/main/java/com/zlecaf/escrow/service/AuthService.java:94,109]
+- [x] [Review][Patch] Le logout front court contre la navigation de page : POST différé en microtâche, jamais attendu, sans `keepalive` — le navigateur avorte la requête [frontend/src/views/DashboardView.vue:42-45, frontend/src/stores/auth.js:88]
+- [x] [Review][Patch] `changePassword` duplique l'incrément au lieu d'appeler `revokeSessions` — contredit Task 4 et Task 5, et annule l'intérêt de la primitive unique [backend/src/main/java/com/zlecaf/escrow/service/AuthService.java:94]
+- [x] [Review][Patch] Jeton sans claim `tv` accepté comme version 0 — Task 3 exige « si absent/différent → non authentifié » [backend/src/main/java/com/zlecaf/escrow/security/JwtAuthFilter.java:59-62]
+- [x] [Review][Patch] `changePassword` accepte un nouveau mot de passe identique à l'ancien **[prouvé : 204]** : sessions révoquées, secret compromis toujours vivant [backend/src/main/java/com/zlecaf/escrow/service/AuthService.java:87-95]
+- [x] [Review][Patch] `PasswordPolicy` ne valide pas sa propre configuration : `MIN_CATEGORIES=5` rejette tout mot de passe avec le message absurde « au moins 5 des 4 catégories », `MIN_LENGTH=1` désactive silencieusement la story [backend/src/main/java/com/zlecaf/escrow/security/PasswordPolicy.java:30-37]
+- [x] [Review][Patch] Aucun `@ExceptionHandler` fourre-tout : toute exception inattendue sort en 500 brut sans le champ `code` obligatoire de l'enveloppe AD-10 [backend/src/main/java/com/zlecaf/escrow/web/GlobalExceptionHandler.java]
+- [x] [Review][Patch] `Role.valueOf(null)` lève une NPE non rattrapée si le claim `role` manque — le `catch` ne couvre que `JwtException | IllegalArgumentException` [backend/src/main/java/com/zlecaf/escrow/security/JwtAuthFilter.java:63,74]
+- [x] [Review][Patch] `ErrorCodeContractTest.weakPasswordIsPermanent` est tautologique : `WEAK_PASSWORD` n'a rejoint ni `AD10_PERMANENT` ni son `hasSize(9)`, donc rien ne force le classement délibéré du prochain code [backend/src/test/java/com/zlecaf/escrow/domain/ErrorCodeContractTest.java:28,57,90]
+- [x] [Review][Patch] `JwtAuthFilter` — le fichier que la story réécrit — n'a aucun test unitaire : les branches `tv` absent et utilisateur supprimé, deux nouveaux points de décision de sécurité, ne sont jamais exécutées [backend/src/test/java/com/zlecaf/escrow/security/]
+- [x] [Review][Patch] `README.md` cassé par la story : l'exemple de bout en bout utilise `"password":"secret123"` (9 car., 2 catégories) désormais rejeté, et le tableau d'API n'expose pas les deux nouvelles routes [README.md:139-144,152-155]
+- [x] [Review][Patch] L'espace et les caractères de contrôle comptent comme « symbole » (le `else` est un fourre-tout) : ajouter une espace à un mot minuscule satisfait le seuil « 3 des 4 catégories » [backend/src/main/java/com/zlecaf/escrow/security/PasswordPolicy.java:61-63]
+- [x] [Review][Patch] `LoginRequest.password` reste sans plafond alors que `RegisterRequest` est plafonné à 72 — les deux alimentent le même encodeur bcrypt, le garde-fou DoS invoqué par la story n'est posé que d'un côté [backend/src/main/java/com/zlecaf/escrow/web/dto/AuthDtos.java:31]
+- [x] [Review][Patch] `changePasswordWithWrongOldRejected` n'assère que le statut, pas `$.code` : le test passerait à l'identique si le rejet venait de la validation de bean, il ne prouve donc pas que la vérification de l'ancien mot de passe s'exécute [backend/src/test/java/com/zlecaf/escrow/security/PasswordAndRevocationIntegrationTest.java]
+- [x] [Review][Patch] Les notes de complétion affirment « Consigné » pour le cache de lookup, mais `deferred-work.md` n'a reçu aucune entrée de la Story 1.6 [_bmad-output/implementation-artifacts/deferred-work.md]
+
+### Reportés
+
+- [x] [Review][Defer] Un jeton révoqué renvoie 403, que l'intercepteur axios n'intercepte pas (il ne traite que 401) → session zombie sur le second appareil [frontend/src/api/client.js:31] — reporté, préexistant (déjà au ledger, ligne 168) ; la 1.6 en élargit fortement l'atteignabilité
+- [x] [Review][Defer] Lookup DB par requête authentifiée dans `JwtAuthFilter` : coût et couplage de la disponibilité de l'auth à celle de la base [backend/src/main/java/com/zlecaf/escrow/security/JwtAuthFilter.java:58] — reporté, cache court → Story 11.8
+- [x] [Review][Defer] Politique purement combinatoire : `Password123!` passe (12 car., 4 catégories). Aucun dictionnaire de mots de passe courants ni vérification de fuite [backend/src/main/java/com/zlecaf/escrow/security/PasswordPolicy.java] — reporté, hors périmètre du spec
+
+### Résolution des décisions (2026-07-26, Oscard)
+
+- **D1 → correctif (a)** : `/auth/change-password` ajouté au périmètre d'`AuthRateLimitFilter`, et le 400 compte comme échec d'authentification **sur ce seul chemin**. Le rejet reste en 400 pour que l'intercepteur axios ne purge pas la session sur une faute de frappe. Prouvé par `ChangePasswordRateLimitIntegrationTest` (classe séparée : le limiteur compte par origine via un bean singleton, abaisser le seuil dans la suite voisine faisait fuir le compteur entre tests).
+- **D2 → correctif (b)** : messages backend repassés en anglais comme leurs voisins ; le frontend porte le libellé. `describeFailure` privilégie désormais le `message` serveur pour `WEAK_PASSWORD`, car les seuils sont configurables et un libellé figé côté client mentirait dès qu'un exploitant les change — l'AC #1 (« règles explicitées ») tient donc aussi côté UI.
+- **D3 → correctif** : `AuditService.recordAccountSecurityEvent` (propagation `MANDATORY`, AD-5) appelé pour `PASSWORD_CHANGED` et `SESSIONS_REVOKED`, dans la transaction de l'opération décrite.
+
+### Reliquat consigné
+
+- Une exception levée par un **filtre servlet** (ex. panne DB pendant le lookup de `JwtAuthFilter`) s'échappe avant `@ControllerAdvice` : le filet `@ExceptionHandler(Exception.class)` ne la couvre pas, le `/error` du conteneur répond sans le champ `code`. Consigné au ledger.
+
+### Effet de déploiement à connaître
+
+Le refus des jetons sans claim `tv` (Task 3, appliqué à la revue) **déconnecte tous les utilisateurs une fois** au déploiement : les jetons émis avant la migration V6 n'ont pas ce claim. C'est le comportement voulu par le spec — l'alternative laissait vivre jusqu'à 24 h des sessions non révocables.
+
+### Vérification post-correctifs
+
+- Backend `./mvnw test` : **361 tests**, 0 échec (343 avant revue ; +18 : `JwtAuthFilterTest` 6, `PasswordPolicyTest` +6, intégration +5, `ChangePasswordRateLimitIntegrationTest` 1).
+- Frontend `npm run test` : **174 tests**, 0 échec (172 avant revue).

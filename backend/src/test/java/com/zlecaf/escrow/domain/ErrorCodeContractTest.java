@@ -24,7 +24,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 class ErrorCodeContractTest {
 
-    /** The nine permanent codes AD-10 names: the queue must never retry these. */
+    /** The ten permanent codes AD-10 names: the queue must never retry these. */
     private static final Set<ErrorCode> AD10_PERMANENT = EnumSet.of(
             ErrorCode.DISPUTE_ALREADY_RESOLVED,
             ErrorCode.TRANSACTION_TERMINAL,
@@ -34,7 +34,14 @@ class ErrorCodeContractTest {
             ErrorCode.TRANSACTION_NOT_FOUND,
             ErrorCode.EVIDENCE_FLOOR_VIOLATION,
             ErrorCode.COMMENT_TOO_SHORT,
-            ErrorCode.TOO_MANY_FILES);
+            ErrorCode.TOO_MANY_FILES,
+            // Story 1.6 : rejouer le meme mot de passe faible echoue a l'identique.
+            // Ajoute A L'ENSEMBLE (revue 1.6) et pas seulement teste isolement : une
+            // assertion qui recite le litteral de l'enum ne peut jamais detecter de
+            // derive, puisqu'on editerait les deux lignes ensemble. Seule
+            // l'appartenance a cet ensemble + son cardinal force le classement
+            // delibere du prochain code.
+            ErrorCode.WEAK_PASSWORD);
 
     /** Every code the queue is allowed to replay. Exhaustive by construction below. */
     private static final Set<ErrorCode> TRANSIENT = EnumSet.of(
@@ -42,7 +49,10 @@ class ErrorCodeContractTest {
             ErrorCode.FILE_READ_ERROR,
             ErrorCode.STORAGE_UNAVAILABLE,
             // Story 1.3 : ajout coordonne (miroir frontend replayFailure.js mis a jour).
-            ErrorCode.RATE_LIMITED);
+            ErrorCode.RATE_LIMITED,
+            // Revue 1.6 : filet de securite du GlobalExceptionHandler. Un defaut interne
+            // est circonstanciel — la file a raison de reessayer (miroir frontend mis a jour).
+            ErrorCode.INTERNAL_ERROR);
 
     @ParameterizedTest
     @EnumSource(ErrorCode.class)
@@ -52,15 +62,15 @@ class ErrorCodeContractTest {
     }
 
     @Test
-    @DisplayName("The nine codes AD-10 calls permanent are PERMANENT")
+    @DisplayName("The ten codes AD-10 calls permanent are PERMANENT")
     void ad10PermanentCodesArePermanent() {
-        assertThat(AD10_PERMANENT).hasSize(9);
+        assertThat(AD10_PERMANENT).hasSize(10);
         assertThat(AD10_PERMANENT).allSatisfy(code ->
                 assertThat(code.retryability()).isEqualTo(Retryability.PERMANENT));
     }
 
     @Test
-    @DisplayName("Exactly CONCURRENT_MODIFICATION, FILE_READ_ERROR, STORAGE_UNAVAILABLE and RATE_LIMITED are TRANSIENT")
+    @DisplayName("Exactly CONCURRENT_MODIFICATION, FILE_READ_ERROR, STORAGE_UNAVAILABLE, RATE_LIMITED and INTERNAL_ERROR are TRANSIENT")
     void transientPartitionIsExact() {
         Set<ErrorCode> actual = Arrays.stream(ErrorCode.values())
                 .filter(c -> c.retryability() == Retryability.TRANSIENT)
@@ -85,15 +95,6 @@ class ErrorCodeContractTest {
     @DisplayName("Every code name is SCREAMING_SNAKE_CASE and leaks no internal detail")
     void namesAreStableTokens(ErrorCode code) {
         assertThat(code.name()).matches("[A-Z][A-Z0-9]*(_[A-Z0-9]+)*");
-    }
-
-    @Test
-    @DisplayName("WEAK_PASSWORD is PERMANENT (Story 1.6): replaying the same weak password fails identically")
-    void weakPasswordIsPermanent() {
-        // Ajout coordonné Story 1.6. PERMANENT : ne rejoint pas la partition transient
-        // (le client ne doit jamais rejouer un mot de passe faible), donc n'affecte pas
-        // transientPartitionIsExact — mais on verrouille explicitement le classement.
-        assertThat(ErrorCode.WEAK_PASSWORD.retryability()).isEqualTo(Retryability.PERMANENT);
     }
 
     @Test

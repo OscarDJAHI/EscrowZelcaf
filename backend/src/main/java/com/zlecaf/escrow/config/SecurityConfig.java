@@ -72,7 +72,15 @@ public class SecurityConfig {
             .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .authorizeHttpRequests(auth -> {
                 auth
-                    .requestMatchers("/api/v1/auth/**").permitAll()
+                    // Épinglé aux DEUX seules routes anonymes de l'authentification
+                    // (revue 1.6). Un joker `/api/v1/auth/**` avalait silencieusement
+                    // /auth/logout et /auth/change-password, qui exigent un JWT : le
+                    // principal arrivait null au controller -> NPE -> 500 nu, hors
+                    // enveloppe d'erreur, atteignable sans authentification. Toute
+                    // nouvelle route d'auth retombe désormais sur
+                    // anyRequest().authenticated() par défaut — l'ouvrir est un geste
+                    // explicite, jamais un effet de bord du préfixe.
+                    .requestMatchers(HttpMethod.POST, "/api/v1/auth/login", "/api/v1/auth/register").permitAll()
                     // Simulated partner webhook callbacks (HMAC-signed, not JWT-auth'd).
                     .requestMatchers("/api/v1/webhooks/incoming/**").permitAll()
                     // Machine partner deposit (auth carried entirely by the HMAC signature,

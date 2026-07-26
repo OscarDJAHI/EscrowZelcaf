@@ -138,6 +138,8 @@ npm install && npm run dev   # http://localhost:5173
 |---|---|---|
 | `POST /api/v1/auth/register` | Create account, returns JWT | public |
 | `POST /api/v1/auth/login` | Authenticate, returns JWT | public |
+| `POST /api/v1/auth/logout` | Revoke every session of the caller's account | JWT |
+| `POST /api/v1/auth/change-password` | Rotate the password, then revoke every session | JWT |
 | `POST /api/v1/escrow` | Buyer initiates a contract | JWT |
 | `GET  /api/v1/escrow` | List the caller's transactions | JWT |
 | `GET  /api/v1/escrow/{id}` | Transaction + audit trail | JWT (party/admin) |
@@ -147,12 +149,16 @@ npm install && npm run dev   # http://localhost:5173
 
 ### End-to-end example
 
+Passwords must satisfy the policy (12–72 UTF-8 bytes, at least 3 of lowercase /
+uppercase / digit / symbol — see `escrow.auth.password.*`); a weaker one is
+rejected with `WEAK_PASSWORD`.
+
 ```bash
 API=http://localhost:8080
 BUY=$(curl -s -X POST $API/api/v1/auth/register -H 'Content-Type: application/json' \
-  -d '{"email":"buyer@ke.co","password":"secret123","role":"BUYER"}' | jq -r .token)
+  -d '{"email":"buyer@ke.co","password":"Str0ng!Passw0rd","role":"BUYER"}' | jq -r .token)
 curl -s -X POST $API/api/v1/auth/register -H 'Content-Type: application/json' \
-  -d '{"email":"seller@za.co","password":"secret123","role":"SELLER"}' > /dev/null
+  -d '{"email":"seller@za.co","password":"Str0ng!Passw0rd","role":"SELLER"}' > /dev/null
 
 # Buyer creates the escrow, then pays; seller ships; buyer confirms → RELEASED.
 ID=$(curl -s -X POST $API/api/v1/escrow -H "Authorization: Bearer $BUY" -H 'Content-Type: application/json' \

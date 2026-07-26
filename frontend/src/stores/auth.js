@@ -71,22 +71,31 @@ export const useAuthStore = defineStore('auth', {
       }
     },
 
+    /**
+     * Déconnexion (Story 1.6). Le vidage local reste SYNCHRONE et immédiat — la
+     * déconnexion client est garantie même si le réseau est mort — mais la méthode
+     * retourne désormais une promesse que l'appelant DOIT attendre avant de
+     * naviguer (revue 1.6).
+     *
+     * <p>La révocation serveur était auparavant lâchée en microtâche sans être
+     * attendue : le bouton de déconnexion enchaînant sur `window.location`, le
+     * navigateur avortait la requête et le jeton restait valide côté serveur
+     * jusqu'à son expiration. `logoutUser` utilise `keepalive` en défense de
+     * second rang, mais l'attente est ce qui rend le comportement déterministe.
+     *
+     * <p>L'échec (hors ligne, jeton déjà invalide) reste ignoré : la déconnexion
+     * locale prime. L'hygiène approfondie (file offline, appareil partagé) relève
+     * de la Story 1.9.
+     *
+     * @returns {Promise<void>} toujours résolue, jamais rejetée
+     */
     logout() {
-      // Vidage local SYNCHRONE et immédiat (déconnexion client garantie), puis
-      // révocation serveur best-effort en fire-and-forget avec le jeton capturé
-      // (Story 1.6) : le serveur cesse d'accepter ce jeton, pas seulement le client.
-      // Hors ligne ou jeton déjà invalide, l'échec est ignoré. L'hygiène approfondie
-      // (file offline, appareil partagé) relève de la Story 1.9.
       const revokedToken = this.token
       this.token = null
       this.user = null
       this.persist()
-      if (revokedToken) {
-        // Différé en microtâche : logout() ne lève JAMAIS de façon synchrone, quel
-        // que soit l'état du client HTTP ; tout échec (réseau, jeton déjà invalide)
-        // est avalé — la déconnexion locale ci-dessus reste effective.
-        Promise.resolve(revokedToken).then(logoutUser).catch(() => {})
-      }
+      if (!revokedToken) return Promise.resolve()
+      return logoutUser(revokedToken).catch(() => {})
     },
   },
 })

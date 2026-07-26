@@ -36,7 +36,7 @@ public class AuthController {
      */
     @PostMapping("/logout")
     public ResponseEntity<Void> logout(@AuthenticationPrincipal AuthPrincipal actor) {
-        authService.revokeSessions(actor.userId());
+        authService.revokeSessions(actor.userId(), "logout");
         return ResponseEntity.noContent().build();
     }
 

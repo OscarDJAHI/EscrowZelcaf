@@ -53,9 +53,14 @@ escrow:
 
   auth:
     password:
-      # Politique de robustesse (Story 1.6, NFR-P5). max-length borne la troncature
-      # bcrypt (72 octets). min-categories : nombre minimal parmi {minuscule,
-      # majuscule, chiffre, symbole}.
+      # Politique de robustesse (Story 1.6, NFR-P5). Longueurs en OCTETS UTF-8 et
+      # non en caracteres (revue 1.6) : c'est en octets que bcrypt tronque, un mot
+      # de passe accentue de 56 caracteres pesant 96 octets etait auparavant
+      # accepte puis tronque en silence. max-length ne peut pas depasser 72 ; toute
+      # valeur incoherente (min > max, min-categories hors [1,4]) fait desormais
+      # ECHOUER LE DEMARRAGE plutot que de tuer l'inscription en silence.
+      # min-categories : nombre minimal parmi {minuscule, majuscule, chiffre,
+      # symbole} — espaces et caracteres de controle ne comptent pour aucune.
       min-length: ${ESCROW_AUTH_PASSWORD_MIN_LENGTH:12}
       max-length: ${ESCROW_AUTH_PASSWORD_MAX_LENGTH:72}
       min-categories: ${ESCROW_AUTH_PASSWORD_MIN_CATEGORIES:3}

@@ -127,7 +127,15 @@ public enum ErrorCode {
     CONFLICT(Retryability.PERMANENT),
 
     /** Default for a {@code ForbiddenException} raised without an explicit code. */
-    FORBIDDEN(Retryability.PERMANENT);
+    FORBIDDEN(Retryability.PERMANENT),
+
+    /**
+     * Défaut du filet de sécurité : une exception non prévue a atteint
+     * {@code GlobalExceptionHandler} (revue 1.6). TRANSIENT — un défaut interne est
+     * par nature circonstanciel (panne de base, indisponibilité passagère), et le
+     * client a raison de réessayer plus tard plutôt que d'abandonner la requête.
+     */
+    INTERNAL_ERROR(Retryability.TRANSIENT);
 
     /** Whether replaying the identical request could plausibly succeed later. */
     public enum Retryability {

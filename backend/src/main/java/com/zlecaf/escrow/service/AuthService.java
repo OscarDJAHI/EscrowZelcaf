@@ -22,13 +22,15 @@ public class AuthService {
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
     private final PasswordPolicy passwordPolicy;
+    private final AuditService audit;
 
     public AuthService(UserRepository users, PasswordEncoder passwordEncoder, JwtService jwtService,
-                       PasswordPolicy passwordPolicy) {
+                       PasswordPolicy passwordPolicy, AuditService audit) {
         this.users = users;
         this.passwordEncoder = passwordEncoder;
         this.jwtService = jwtService;
         this.passwordPolicy = passwordPolicy;
+        this.audit = audit;
     }
 
     @Transactional
@@ -87,26 +89,43 @@ public class AuthService {
         if (!passwordEncoder.matches(request.oldPassword(), user.getPasswordHash())) {
             // L'utilisateur est déjà authentifié (on sait qui il est) : pas de risque
             // d'énumération, un message clair est légitime. Distinct de WEAK_PASSWORD.
-            throw new BadRequestException(ErrorCode.INVALID_REQUEST, "L'ancien mot de passe est incorrect");
+            // Message en anglais comme ses voisins : le backend n'émet pas de texte
+            // localisé, le libellé utilisateur est porté par le frontend (AD-23).
+            throw new BadRequestException(ErrorCode.INVALID_REQUEST, "Current password is incorrect");
         }
         passwordPolicy.validate(request.newPassword());
+        // Refuser la rotation vers le MÊME secret (revue 1.6). Sans cette garde, le
+        // changement répondait 204 et révoquait toutes les sessions sans rien changer :
+        // l'utilisateur qui se croit compromis est déconnecté partout, croit avoir
+        // tourné son mot de passe, et le secret fuité reste vivant.
+        if (passwordEncoder.matches(request.newPassword(), user.getPasswordHash())) {
+            throw new BadRequestException(ErrorCode.INVALID_REQUEST,
+                    "New password must differ from the current one");
+        }
         user.setPasswordHash(passwordEncoder.encode(request.newPassword()));
-        user.setTokenVersion(user.getTokenVersion() + 1);
         users.save(user);
+        audit.recordAccountSecurityEvent("PASSWORD_CHANGED", userId, "change-password");
+        // Passe par la primitive unique (Task 4/5) au lieu de dupliquer l'incrément :
+        // c'est ce qui garantit que 2.6 (reset) et 7.2 (changement de rôle) révoqueront
+        // exactement de la même façon.
+        revokeSessions(userId, "password-changed");
     }
 
     /**
      * Révoque toutes les sessions d'un compte en incrémentant sa version de jeton
      * (Story 1.6). Primitive unique réutilisée par le logout, le changement de mot
      * de passe (ci-dessus), et plus tard le changement de rôle (7.2, AD-21) / la
-     * désactivation. Idempotente au sens où chaque appel invalide les jetons émis
-     * jusque-là.
+     * désactivation.
+     *
+     * <p>L'incrément est fait par un UPDATE atomique et non par un
+     * lire-modifier-écrire : voir {@link UserRepository#incrementTokenVersion} pour
+     * la perte de mise à jour que cela ferme. Un compte absent est un no-op — un
+     * logout doit rester idempotent et ne jamais échouer en 404.
      */
     @Transactional
-    public void revokeSessions(Long userId) {
-        User user = users.findById(userId)
-                .orElseThrow(() -> new NotFoundException("User not found"));
-        user.setTokenVersion(user.getTokenVersion() + 1);
-        users.save(user);
+    public void revokeSessions(Long userId, String reason) {
+        if (users.incrementTokenVersion(userId) > 0) {
+            audit.recordAccountSecurityEvent("SESSIONS_REVOKED", userId, reason);
+        }
     }
 }

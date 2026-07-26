@@ -4,6 +4,8 @@ import com.zlecaf.escrow.domain.ErrorCode;
 import com.zlecaf.escrow.service.TransitionException;
 import com.zlecaf.escrow.service.storage.EvidenceStorageException;
 import com.zlecaf.escrow.web.ApiExceptions.*;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.orm.ObjectOptimisticLockingFailureException;
@@ -21,6 +23,8 @@ import java.util.Objects;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
+
+    private static final Logger LOG = LoggerFactory.getLogger(GlobalExceptionHandler.class);
 
     /**
      * The single envelope builder for every branch below. {@code code} is the
@@ -122,5 +126,26 @@ public class GlobalExceptionHandler {
                 .map(fe -> fe.getField() + " " + fe.getDefaultMessage())
                 .findFirst().orElse("Validation failed");
         return body(HttpStatus.BAD_REQUEST, ErrorCode.VALIDATION_ERROR, message);
+    }
+
+    /**
+     * Filet de sécurité (revue 1.6) : toute exception non prévue sort quand même
+     * dans l'enveloppe standard, avec un {@code code}.
+     *
+     * <p>Sans lui, un défaut inattendu produisait le corps d'erreur par défaut de
+     * Spring Boot — <b>sans le champ {@code code}</b>, pourtant obligatoire — et le
+     * client AD-10, qui classe transitoire vs permanent sur ce seul champ, n'avait
+     * rien à lire. Le message est fixe : aucun détail interne (message d'exception,
+     * pile, SQL) ne franchit la frontière HTTP.
+     *
+     * <p><b>Portée</b> : le chemin MVC. Une exception levée par un filtre servlet
+     * (ex. panne DB pendant le lookup de {@code JwtAuthFilter}) s'échappe avant
+     * {@code @ControllerAdvice} et reste servie par le {@code /error} du conteneur.
+     * Ce reliquat est consigné au ledger.
+     */
+    @ExceptionHandler(Exception.class)
+    public ResponseEntity<Map<String, Object>> onUnexpected(Exception ex) {
+        LOG.error("Unhandled exception escaping to the error envelope", ex);
+        return body(HttpStatus.INTERNAL_SERVER_ERROR, ErrorCode.INTERNAL_ERROR, "Internal server error");
     }
 }

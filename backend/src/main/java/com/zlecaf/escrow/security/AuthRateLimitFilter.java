@@ -52,6 +52,13 @@ public class AuthRateLimitFilter extends OncePerRequestFilter {
 
     private static final String LOGIN_PATH = "/api/v1/auth/login";
     private static final String REGISTER_PATH = "/api/v1/auth/register";
+    /**
+     * Troisieme surface qui verifie un mot de passe (revue 1.6) : change-password
+     * confronte `oldPassword` au hash stocke. Sans ce chemin dans le filtre, un
+     * jeton vole se convertissait en prise de controle definitive par devinette
+     * illimitee de l'ancien mot de passe — verifie : 30 tentatives, aucun 429.
+     */
+    private static final String CHANGE_PASSWORD_PATH = "/api/v1/auth/change-password";
     private static final int MAX_BODY_BYTES = 8192;
 
     private final AuthRateLimiter rateLimiter;
@@ -73,7 +80,7 @@ public class AuthRateLimitFilter extends OncePerRequestFilter {
             return true;
         }
         String path = pathHelper.getPathWithinApplication(request);
-        return !LOGIN_PATH.equals(path) && !REGISTER_PATH.equals(path);
+        return !LOGIN_PATH.equals(path) && !REGISTER_PATH.equals(path) && !CHANGE_PASSWORD_PATH.equals(path);
     }
 
     @Override
@@ -113,7 +120,7 @@ public class AuthRateLimitFilter extends OncePerRequestFilter {
             if (accountKey != null) {
                 rateLimiter.recordAccountSuccess(accountKey);
             }
-        } else if (isAuthFailure(status)) {
+        } else if (isAuthFailure(status, path)) {
             boolean originLocked = rateLimiter.recordFailure(originKey);
             boolean accountLocked = accountKey != null && rateLimiter.recordFailure(accountKey);
             if (originLocked || accountLocked) {
@@ -127,8 +134,20 @@ public class AuthRateLimitFilter extends OncePerRequestFilter {
      * et les conflits/énumération au register (409). Volontairement PAS les 400
      * (validation d'entrée : ne verrouille pas un onboarding honnête sur une
      * typo) ni les 5xx (incident serveur : ne punit pas des clients innocents).
+     *
+     * <p><b>Exception ciblée : change-password</b> (revue 1.6). Cet endpoint rejette
+     * un mauvais `oldPassword` en 400 et non en 401 — délibérément, car
+     * l'intercepteur du frontend purge la session et redirige sur tout 401, si bien
+     * qu'une simple faute de frappe déconnecterait l'utilisateur. Le 400 doit donc
+     * compter <b>sur ce seul chemin</b>, sinon la vérification du mot de passe reste
+     * un oracle de devinette illimité. Ailleurs, un 400 reste de la validation
+     * d'entrée et ne verrouille toujours personne.
      */
-    private boolean isAuthFailure(int status) {
+    private boolean isAuthFailure(int status, String path) {
+        if (CHANGE_PASSWORD_PATH.equals(path)) {
+            return status == HttpStatus.BAD_REQUEST.value()
+                    || status == HttpStatus.UNAUTHORIZED.value();
+        }
         return status == HttpStatus.UNAUTHORIZED.value()
                 || status == HttpStatus.CONFLICT.value();
     }

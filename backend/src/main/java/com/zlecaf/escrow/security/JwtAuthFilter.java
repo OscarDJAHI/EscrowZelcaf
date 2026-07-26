@@ -52,15 +52,26 @@ public class JwtAuthFilter extends OncePerRequestFilter {
                 // suffisent plus. On confronte le claim `tv` à la version courante en
                 // base ; un token dont la version est périmée (logout, changement de mot
                 // de passe/rôle, désactivation) est refusé, même non expiré. Un compte
-                // absent est refusé aussi. Un token sans `tv` vaut version 0. On
-                // n'authentifie QUE si l'utilisateur existe ET la version correspond ;
-                // sinon on laisse le contexte non authentifié (rejet 403 en aval).
+                // absent est refusé aussi. On n'authentifie QUE si l'utilisateur existe
+                // ET la version correspond ; sinon on laisse le contexte non authentifié
+                // (rejet 403 en aval).
+                //
+                // Un token SANS claim `tv` est refusé (revue 1.6, Task 3 « si absent ou
+                // différent »). Le traiter comme version 0 laissait vivre jusqu'à 24 h
+                // tout jeton émis avant le déploiement, contre des comptes encore en
+                // version 0 : la révocation n'aurait pris effet qu'à l'expiration de la
+                // dernière session pré-déploiement. Conséquence assumée : le déploiement
+                // déconnecte tout le monde une fois.
                 User user = users.findById(userId).orElse(null);
-                Integer tokenVersionClaim = claims.get("tv", Integer.class);
-                int presentedVersion = tokenVersionClaim == null ? 0 : tokenVersionClaim;
+                Integer presentedVersion = claims.get("tv", Integer.class);
+                String roleClaim = claims.get("role", String.class);
 
-                if (user != null && presentedVersion == user.getTokenVersion()) {
-                    Role role = Role.valueOf(claims.get("role", String.class));
+                if (user != null && presentedVersion != null && roleClaim != null
+                        && presentedVersion == user.getTokenVersion()) {
+                    // valueOf lève IllegalArgumentException sur un rôle inconnu (rattrapé
+                    // plus bas) ; le claim absent est écarté ci-dessus, car valueOf(null)
+                    // lèverait une NPE que le catch ne couvre pas -> 500 au lieu du rejet.
+                    Role role = Role.valueOf(roleClaim);
                     String email = claims.get("email", String.class);
                     AuthPrincipal principal = new AuthPrincipal(userId, email, role);
 
