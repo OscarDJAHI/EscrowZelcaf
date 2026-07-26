@@ -92,7 +92,7 @@ development_status:
   1-7-chiffrement-au-repos: done # revue 2026-07-26 : 10 correctifs (dont 1 haut, contrainte de plancher reformulée au lieu d'être supprimée), 4 reports, 403 tests backend
   1-8-scan-anti-malware-ingestion: done # revue 2026-07-26 : 21 correctifs (dont prémisse image ClamAV inversée, route de litige non couverte, timeout d'écriture absent), 4 décisions, 5 reports, 452 tests
   1-9-hygiene-session-appareil-partage: done # 3 passes de revue 2026-07-26 : 29 correctifs cumulés (5 hauts : drapeau hydrated menteur, purge locale après le réseau ×2, suite rouge, AuthView.vue devenu binaire), 10 reports, 11 rejets, 240 tests frontend
-  1-10-anti-enumeration-ressources: backlog
+  1-10-anti-enumeration-ressources: done # revue 2026-07-26 : 15 correctifs (1 haut : 7 rejets natifs Spring en 500/TRANSIENT sur une surface rejouée hors ligne), 7 reports, 4 rejets, 476 tests backend + 241 frontend ; clause « et wallets » de l'AC non livrable (aucune ressource wallet, AD-13/Epic 4) → dette portée au ledger
   epic-1-retrospective: optional
 
   # Epic 2 — Onboarding & comptes d'entreprise (2-1..2-3 = fondation UI, dérogation "As a développeur" assumée)
