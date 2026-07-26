@@ -27,6 +27,32 @@ qui est authentifié — fait échouer le déchiffrement.
 > ni la base, ni le stockage objet, ni le dépôt ne contiennent de copie. Sauvegarder
 > les clés au même titre qu'une sauvegarde de base — et **séparément** d'elle.
 
+> ⚠️ **Où vivent les clés aujourd'hui, et ce que cela ne protège pas.** Le trousseau
+> est injecté par variable d'environnement, depuis `infra/.env` sur l'hôte. Il est
+> donc lisible par quiconque a cet hôte : `docker inspect`, `/proc/<pid>/environ`,
+> un vidage de tas — **le même hôte** d'où l'on prend le `pg_dump` et la copie du
+> volume. Le chiffrement au repos protège pleinement une sauvegarde **exfiltrée**
+> (support volé, seau mal configuré, copie transmise à un tiers) ; il ne protège
+> pas contre la compromission de l'hôte de production lui-même. Fermer cet écart
+> demande un magasin de secrets externe (Vault / SOPS / KMS), tranché par la
+> **Story 11.2** — le trousseau lit des variables d'environnement quel que soit ce
+> qui les remplira. En attendant : `infra/.env` en `chmod 600`, hors sauvegarde de
+> l'hôte, et jamais dans la même archive que les données.
+
+### Quand rotater
+
+La procédure ci-dessous répond au « comment » ; le déclencheur est une décision
+d'exploitation, à retenir explicitement :
+
+- **Systématiquement** : à toute suspicion d'exposition d'une clé (départ d'un
+  administrateur, fuite de `.env`, restauration d'un hôte douteux) — c'est le seul
+  cas urgent ;
+- **Périodiquement** : une rotation annuelle suffit largement. Le plafond
+  cryptographique d'AES-GCM (~2³² écritures par clé avant que la collision d'IV
+  aléatoire ne devienne significative) n'est **pas** la contrainte à ces volumes
+  (quelques milliers de secrets et de preuves) : c'est l'exposition dans le temps
+  qui justifie la cadence, pas l'usure de la clé.
+
 ## Format des variables
 
 ```
@@ -127,10 +153,16 @@ vraies :
    et un second redémarrage l'a confirmé (`0 pivotée(s)`). Vérification directe :
 
    ```sql
-   SELECT count(*) FROM partner_hmac_keys      WHERE secret_key LIKE 'esc:1:v1:%';
-   SELECT count(*) FROM webhook_subscriptions  WHERE secret_key LIKE 'esc:1:v1:%';
+   SELECT count(*) FROM partner_hmac_keys      WHERE secret_key LIKE 'esc:%:v1:%';
+   SELECT count(*) FROM webhook_subscriptions  WHERE secret_key LIKE 'esc:%:v1:%';
    -- les deux doivent rendre 0
    ```
+
+   > Le motif ne fige **pas** le numéro de version de format (`esc:%:v1:%`, et non
+   > `esc:1:v1:%`). Un contrôle qui l'aurait figé rendrait `0` — c'est-à-dire « il
+   > est sûr de retirer `v1` » — le jour où un format 2 existerait, alors même que
+   > des lignes `esc:2:v1:…` seraient encore chiffrées sous `v1`. Un contrôle de
+   > sûreté qui échoue en autorisant l'opération est pire que pas de contrôle.
 
 2. plus aucun **objet** chiffré sous `v1` n'existe dans le stockage.
 
@@ -181,7 +213,7 @@ Les lignes écrites avant la Story 1.7 sont en clair, sans enveloppe. Elles rest
 premier démarrage :
 
 ```
-Chiffrement au repos [partner_hmac_keys] : 3 scellée(s), 0 pivotée(s), 0 inchangée(s)
+Chiffrement au repos [partner_hmac_keys] : 3 scellée(s), 0 pivotée(s), 0 inchangée(s), 0 vide(s) ignorée(s)
 ```
 
 Idem côté objets : une preuve déposée avant la story se relit telle quelle, avec un
@@ -197,8 +229,8 @@ WARN nommant sa clé de stockage. Aucun déploiement ne rend une preuve illisibl
 > serve du trafic), et non en déploiement tournant. En mono-instance — la
 > topologie livrée aujourd'hui — la question ne se pose pas.
 
-Deux lignes vides (`0 vide(s) ignorée(s)`) et aucun `Scellement refusé` : la mise en
-service est complète. Si le démarrage échoue en nommant une ligne sous le plancher
+Un compteur `vide(s) ignorée(s)` à zéro sur les deux tables, et aucun
+`Scellement refusé` : la mise en service est complète. Si le démarrage échoue en nommant une ligne sous le plancher
 de 32 octets, c'est un secret partenaire trop faible provisionné en SQL direct
 avant la story : le remplacer, puis redémarrer. Le chiffrer aurait rendu sa
 faiblesse invisible à toutes les couches — c'est pourquoi le balayage préfère

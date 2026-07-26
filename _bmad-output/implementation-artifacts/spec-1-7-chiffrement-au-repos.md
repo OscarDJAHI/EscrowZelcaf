@@ -6,7 +6,7 @@ status: 'done'
 baseline_revision: '8f614e6d0fb213311730842acbf21232e7435b8d'
 final_revision: 'a58fd1be7d978ea17e619b56591c803709efcd98'
 review_loop_iteration: 0
-followup_review_recommended: true
+followup_review_recommended: false
 context:
   - '{project-root}/_bmad-output/project-context.md'
   - '{project-root}/_bmad-output/implementation-artifacts/epic-1-context.md'
@@ -169,71 +169,47 @@ Binaire (objets) : `ESCX` ‖ version(1) ‖ longueur id(1) ‖ id ‖ iv(12) �
 - Le runbook de rotation décrit une procédure exécutable sans lire le code, et indique explicitement le moment où retirer l'ancienne clé du trousseau devient sûr.
 
 
+
 ## Auto Run Result
 
 Status: done
 
-### Changement livré
+### Historique des passes
 
-Passe de **revue de suivi** sur la Story 1.7 (chiffrement au repos AES-256-GCM),
-déclenchée par le `followup_review_recommended: true` de la passe précédente. Aucun
-écart d'intention ni de spec : le contrat tient, et le code n'a pas été re-dérivé.
-**14 correctifs** ont été appliqués sur le livrable existant, dont cinq qui changent
-un comportement : une contrainte de base resserrée (migration **V8**), le plancher de
-robustesse étendu à la branche de rotation, un plafond de matérialisation sur le
-téléchargement, et la validation fine du trousseau ramenée dans le message unique de
-démarrage. Un test d'atomicité qui ne prouvait rien a été réécrit pour prouver ce
-qu'il annonçait.
+| Passe | Résultat | Commit |
+| --- | --- | --- |
+| dev | Chiffrement au repos AES-256-GCM + rotation testée | `173cf66` |
+| revue 1 | 10 correctifs (1 haut : contrainte de plancher reformulée au lieu d'être supprimée), 4 reports, 403 tests | `173cf66`..`743d24f` |
+| revue 2 (suivi) | 14 correctifs (5 moyens), migration V8, 412 tests | `a58fd1b`..`0cedb8b` |
+| revue 3 (suivi) | **Interrompue** — voir ci-dessous | ce commit |
 
-### Fichiers
+### Passe 3 : interrompue, travail conservé
+
+La troisième passe a été **tuée par une cause externe** (mort du processus qui portait
+le moteur bmad-loop, pas une décision de la passe elle-même). Elle avait déjà appliqué
+ses correctifs au code et aux tests, mais n'a jamais écrit son journal de triage.
+
+Conséquence à connaître : **on sait que ce qui a été appliqué tient, on ne sait pas si
+la passe avait fini d'appliquer ce qu'elle prévoyait.** L'arbre a été vérifié avant
+d'être conservé — 419 tests backend, 0 échec, BUILD SUCCESS (+7 par rapport à
+`a58fd1b`) — et le travail a été gardé plutôt que jeté sur décision d'Oscard
+(2026-07-26), parce qu'il ferme un écart réel et vérifié.
+
+Le crédit `max_followup_reviews` étant de toute façon épuisé après cette passe, le
+loop aurait convergé sans relancer de cycle : la story est close ici.
+
+### Ce que la passe 3 a livré
 
 | Fichier | Rôle |
 | --- | --- |
-| `backend/src/main/resources/db/migration/V8__tighten_partner_secret_envelope_check.sql` | **Nouveau** : CHECK aligné sur la forme réelle de l'enveloppe (un clair court préfixé `esc:` ne passe plus) |
-| `backend/src/main/java/com/zlecaf/escrow/config/SecretsEncryptionBootstrap.java` | Plancher revérifié à la rotation, secrets vides comptés et signalés à part |
-| `backend/src/main/java/com/zlecaf/escrow/service/storage/MinioEvidenceStorage.java` | Plafond de matérialisation avant chargement (502), commentaire rendu exact |
-| `backend/src/main/java/com/zlecaf/escrow/config/RequiredSecretsEnvironmentPostProcessor.java` | Causes fines du trousseau agrégées au message unique de la Story 1.2 |
-| `backend/src/main/java/com/zlecaf/escrow/security/crypto/SecretCipher.java` | `keyringProblems` (validation sans lever, sans duplication), javadoc de version corrigée |
-| `backend/src/main/java/com/zlecaf/escrow/security/crypto/EncryptedStringConverter.java` | WARN legacy : promesse de scellement rendue conditionnelle et exacte |
-| `backend/src/main/java/com/zlecaf/escrow/domain/PartnerHmacKey.java` | `MIN_SECRET_BYTES` devient la source unique du plancher, javadoc rectifiée |
-| `Docs/runbook-rotation-cles-chiffrement.md` | Fenêtre d'arrêt non instantanée, caveat de la requête de contrôle, bascule complète à la mise en service, compteur `vide(s)` |
-| 4 classes de test | `SecretsEncryptionBootstrapTest` (+4), `RequiredSecretsEnvironmentPostProcessorTest` (+3), `EncryptedSecretsIntegrationTest` (+1), `MinioEvidenceStorageTest` (+1) |
-
-### Revue
-
-- **14 correctifs appliqués** (0 haut, 5 moyens, 9 bas) — détail dans le journal de triage.
-- **3 reports** consignés au ledger comme entrées nouvelles : mise en service non
-  déployable en rolling update ; balayage de démarrage non paginé sur une table dont
-  la taille est pilotée par les appelants ; sûreté de la détection d'enveloppe binaire
-  contingente à la liste blanche de types de la Story 1.1.
-- **5 rejets** : `@Size(max = 255)` prétendu incohérent en unités (faux — `varchar(n)`
-  de Postgres compte lui aussi des caractères) ; objet tronqué à moins de 4 octets
-  servi tel quel (déjà couvert par le report « aucun contrôle d'intégrité au
-  téléchargement ») ; absence de plafond de longueur sur `PartnerHmacKey.secretKey` et
-  sur l'entité `WebhookSubscription` (aucun écrivain applicatif n'existe, ce serait un
-  durcissement non demandé) ; `findByActiveTrue()` qui tombe en bloc (doublon d'une
-  entrée déjà au ledger).
+| `db/migration/V9__envelope_check_minimum_body.sql` | **Nouveau** : plancher sur le CORPS de l'enveloppe (38 caractères base64 = IV 12 o + tag GCM 16 o). V8 acceptait un corps de longueur quelconque : `esc:1:v1:AAAA` franchissait le CHECK, le balayage de démarrage le comptait « inchangé », et chaque lecture du secret partait ensuite en 500 sans qu'aucune couche ne signale la ligne. Le clair court déguisé en enveloppe est désormais refusé qu'il soit mal formé **ou bien formé mais vide**. Non destructive. |
+| `security/crypto/SecretCipher.java` | `MIN_BODY_BASE64_CHARS` source unique du plancher, aligné sur le motif SQL de V9 |
+| `security/crypto/EncryptedStringConverter.java` | Précision du WARN legacy |
+| `config/SecretsEncryptionBootstrap.java` | Durcissement du balayage de démarrage |
+| `service/storage/MinioEvidenceStorage.java`, `service/EvidenceService.java` | Ajustements du chemin objets |
+| `Docs/runbook-rotation-cles-chiffrement.md`, `README.md` | Documentation alignée |
+| 3 classes de test | `SecretCipherTest` (+79 lignes), `SecretsEncryptionBootstrapTest` (+91), `MinioEvidenceStorageTest` (+14) |
 
 ### Vérification
 
-- `cd backend && ./mvnw test` → **412 tests, 0 échec, BUILD SUCCESS** (403 avant cette
-  passe : +9 tests). Docker requis — Testcontainers Postgres 16 et MinIO réels.
-  Message de fin `Surefire is going to kill self fork JVM` observé après
-  `System.exit(0)` : artefact d'arrêt de Testcontainers, sans effet sur le résultat.
-- `cd frontend && npm run test` → **174 tests, 0 échec** (compteur inchangé, aucune
-  modification frontend).
-- Flyway applique bien 8 migrations, `v8` incluse, sur base neuve.
-- `grep -rn "esc:1:\|ESCX" backend/src/main/resources infra/ Docs/` → uniquement de la
-  documentation ; aucune clé ni enveloppe réelle versionnée.
-
-### Risques résiduels
-
-- **Le CHECK V8 et `SecretCipher.FORMAT_VERSION` doivent évoluer ensemble.** Le motif
-  SQL épouse désormais la forme exacte de l'enveloppe : introduire un format 2 sans
-  toucher la contrainte ferait rejeter les nouvelles écritures. C'est écrit en tête de
-  la migration, mais rien ne le contraint mécaniquement.
-- **Le plafond de matérialisation est une constante locale** (10 Mo + marge) et non la
-  limite métier elle-même, qui vit dans un autre paquet. Un relèvement de la taille
-  maximale d'une pièce doit relever les deux.
-- Les trois reports ci-dessus restent ouverts, ainsi que les quatre de la passe
-  précédente — aucun n'est bloquant à la topologie mono-instance livrée.
+Backend `./mvnw test` : **419 tests**, 0 échec, BUILD SUCCESS.

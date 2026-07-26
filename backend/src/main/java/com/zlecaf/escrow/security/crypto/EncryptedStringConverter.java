@@ -49,6 +49,14 @@ public class EncryptedStringConverter implements AttributeConverter<String, Stri
         if (attribute == null) {
             return null; // un secret absent reste absent : ne jamais chiffrer un NULL en enveloppe
         }
+        if (attribute.isEmpty()) {
+            // Symétrique du « vide(s) ignorée(s) » de SecretsEncryptionBootstrap. Sceller
+            // une chaîne vide produirait une enveloppe parfaitement valide : la ligne
+            // basculerait à jamais dans « inchangée » et le compteur de vides — le seul
+            // contrôle de mise en service cité par le runbook — s'éteindrait pour elle,
+            // alors qu'elle ne pourra jamais signer. Rien à protéger, donc rien à chiffrer.
+            return attribute;
+        }
         return cipher.encryptToText(attribute, AAD);
     }
 

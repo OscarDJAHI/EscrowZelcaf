@@ -77,9 +77,23 @@ public class SecretCipher {
      * Forme COMPLÈTE de l'enveloppe texte, pas un simple {@code startsWith("esc:")} :
      * un secret legacy en clair qui commencerait par « esc: » serait sinon pris pour
      * une enveloppe et rendrait la ligne illisible.
+     *
+     * <p>Le corps est borné par le BAS ({@value #MIN_BODY_BASE64_CHARS} caractères
+     * significatifs) : une enveloppe ne peut pas être plus courte que son IV et son
+     * tag. Sans ce plancher, {@code esc:1:v1:AAAA} serait reconnu comme enveloppe de
+     * la clé active — le balayage de scellement le compterait « inchangé » et chaque
+     * lecture échouerait ensuite sur une enveloppe tronquée, sans qu'aucune couche
+     * n'ait jamais signalé la ligne. Le CHECK de {@code V9} porte le même plancher :
+     * les deux formes doivent évoluer ensemble.
      */
     private static final Pattern TEXT_ENVELOPE_PATTERN =
-            Pattern.compile("^esc:\\d{1,3}:[A-Za-z0-9_-]{1,64}:[A-Za-z0-9+/]+={0,2}$");
+            Pattern.compile("^esc:\\d{1,3}:[A-Za-z0-9_-]{1,64}:[A-Za-z0-9+/]{38,}={0,2}$");
+
+    /**
+     * Plancher du corps base64 : {@code IV(12) ‖ tag(16)} = 28 octets, soit 38
+     * caractères base64 significatifs (plus le remplissage) pour un clair VIDE.
+     */
+    static final int MIN_BODY_BASE64_CHARS = 38;
 
     private static final String KEYS_ENV = "ESCROW_CRYPTO_KEYS (escrow.crypto.keys)";
     private static final String ACTIVE_KEY_ENV = "ESCROW_CRYPTO_ACTIVE_KEY_ID (escrow.crypto.active-key-id)";
@@ -172,12 +186,17 @@ public class SecretCipher {
     /**
      * Problèmes de configuration du trousseau, SANS lever ni construire de bean.
      *
-     * <p>Existe pour que le fail-fast de la Story 1.2 agrège ces causes au message
-     * unique qui nomme toutes les variables fautives : sans cela, l'opérateur qui
-     * met en service découvre l'absence du trousseau au premier redémarrage, sa
-     * clé de 31 octets au deuxième et son identifiant actif hors trousseau au
-     * troisième. La logique n'est PAS dupliquée — c'est le constructeur réel qui
-     * est exécuté, seul le prefixe de refus est retiré pour l'agrégation.
+     * <p>Existe pour que le fail-fast de la Story 1.2 nomme ces causes dans le
+     * message unique du démarrage, aux côtés des autres variables fautives : sans
+     * cela, une clé de 31 octets ou un identifiant actif hors trousseau ne
+     * surgiraient qu'au redémarrage SUIVANT, à l'initialisation du bean. La logique
+     * n'est PAS dupliquée — c'est le constructeur réel qui est exécuté, seul le
+     * préfixe de refus est retiré pour l'agrégation.
+     *
+     * <p>La liste ne porte qu'UNE cause à la fois : le constructeur s'arrête à la
+     * première entrée fautive du trousseau. Deux clés mal dimensionnées demandent
+     * donc deux corrections successives. Le type reste une liste parce que c'est ce
+     * qu'attend l'agrégateur, pas parce que plusieurs causes y arrivent.
      *
      * @return liste vide quand la configuration est exploitable
      */
@@ -255,6 +274,14 @@ public class SecretCipher {
             throw new IllegalStateException("Déchiffrement impossible : enveloppe binaire tronquée.");
         }
         String keyId = new String(envelope, BINARY_MAGIC.length + 2, keyIdLength, StandardCharsets.US_ASCII);
+        // L'octet de longueur autorise 255 octets ARBITRAIRES venus du stockage, et cet
+        // identifiant finit interpolé dans des messages journalisés : sans ce contrôle,
+        // un objet forgé injecte des retours à la ligne (et 255 octets de bruit) dans
+        // les logs. Le charset est le même qu'à l'écriture — rien de légitime n'en sort.
+        if (!KEY_ID_PATTERN.matcher(keyId).matches()) {
+            throw new IllegalStateException("Déchiffrement impossible : identifiant de clé binaire invalide "
+                    + "(attendu [A-Za-z0-9_-], 1 à 64 caractères) — objet illisible ou altéré.");
+        }
         // Même raison que côté texte : l'en-tête est écrit hors du chiffré, seule son
         // entrée dans l'AAD empêche qu'on le réécrive sans que rien ne s'en aperçoive.
         return open(Arrays.copyOfRange(envelope, bodyOffset, envelope.length),

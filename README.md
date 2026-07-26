@@ -92,8 +92,10 @@ Without `infra/.env`, compose fails fast naming the **first** missing variable
 to boot unless its critical secrets (`ESCROW_JWT_SECRET`,
 `SPRING_DATASOURCE_PASSWORD`, `SPRING_RABBITMQ_PASSWORD`,
 `ESCROW_STORAGE_SECRET_KEY`, `ESCROW_CRYPTO_KEYS`) are present, **not left at the
-`remplacez-moi` sentinel values**, and ≥ 32 bytes for the JWT — every problem
-listed in one error.
+`remplacez-moi` sentinel values**, and ≥ 32 bytes for the JWT. The keyring is
+validated in that same pass (each key exactly 32 decoded bytes, ids unique and
+well-formed, `ESCROW_CRYPTO_ACTIVE_KEY_ID` inside the keyring) rather than at bean
+initialisation — every problem listed in one error.
 
 > **Chiffrement au repos** (Story 1.7) : `ESCROW_CRYPTO_KEYS` porte le trousseau
 > (`id:cléBase64,…`, 32 octets par clé) qui chiffre les secrets HMAC en base et les

@@ -296,4 +296,83 @@ class SecretCipherTest {
                     .doesNotThrowAnyException();
         }
     }
+
+    @Nested
+    @DisplayName("Entrées dégénérées : ce qui vient du stockage n'est jamais présumé bien formé")
+    class DegenerateInputs {
+
+        @Test
+        @DisplayName("Une pseudo-enveloppe TEXTE trop courte n'est pas reconnue : elle reste du legacy, pas une ligne 'déjà scellée'")
+        void tooShortTextEnvelopeIsNotDetectedAsEnvelope() {
+            SecretCipher cipher = cipherV1();
+
+            // 'esc:1:v1:AAAA' a la forme d'une enveloppe de la clé ACTIVE mais ne peut
+            // pas en être une : le corps ne porte même pas l'IV et le tag. La reconnaître
+            // la ferait compter « inchangée » par le balayage de démarrage, et chaque
+            // lecture échouerait ensuite sur une enveloppe tronquée — sans que rien
+            // n'ait jamais signalé la ligne. Elle doit donc retomber en legacy.
+            assertThat(cipher.isEnvelope("esc:1:v1:AAAA")).isFalse();
+            assertThat(cipher.isEnvelope("esc:1:v1:")).isFalse();
+
+            // Le plancher est celui d'un clair VIDE : la plus petite enveloppe réelle
+            // reste, elle, parfaitement reconnue.
+            assertThat(cipher.isEnvelope(cipher.encryptToText("", AAD))).isTrue();
+        }
+
+        @Test
+        @DisplayName("Une enveloppe binaire tronquée est rejetée explicitement, jamais lue au-delà de sa fin")
+        void truncatedBinaryEnvelopeIsRejected() {
+            SecretCipher cipher = cipherV1();
+            byte[] sealed = cipher.encryptBytes("preuve".getBytes(StandardCharsets.UTF_8), "42/objet");
+
+            byte[] truncated = Arrays.copyOf(sealed, sealed.length - 20);
+
+            assertThatThrownBy(() -> cipher.decryptBytes(truncated, "42/objet"))
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("tronquée");
+        }
+
+        @Test
+        @DisplayName("Un identifiant de clé binaire hors charset est refusé AVANT d'atteindre un message journalisé")
+        void binaryKeyIdOutsideCharsetIsRejected() {
+            SecretCipher cipher = cipherV1();
+            byte[] sealed = cipher.encryptBytes("preuve".getBytes(StandardCharsets.UTF_8), "42/objet");
+
+            // L'octet de longueur autorise 255 octets ARBITRAIRES venus du stockage, et
+            // cet identifiant finit interpolé dans un message d'erreur journalisé : un
+            // objet forgé y injecterait des retours à la ligne. 'v' + LF au lieu de 'v1'.
+            byte[] forged = sealed.clone();
+            forged[6] = 'v';
+            forged[7] = '\n';
+
+            assertThatThrownBy(() -> cipher.decryptBytes(forged, "42/objet"))
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("identifiant de clé binaire invalide")
+                    .hasMessageNotContaining("\n");
+        }
+
+        @Test
+        @DisplayName("Un objet de quelques octets n'est pas pris pour une enveloppe (pas de lecture hors bornes)")
+        void tinyObjectIsNotDetectedAsEnvelope() {
+            SecretCipher cipher = cipherV1();
+
+            assertThat(cipher.isEnvelope(new byte[0])).isFalse();
+            assertThat(cipher.isEnvelope("ESCX".getBytes(StandardCharsets.US_ASCII))).isFalse();
+            assertThat(cipher.isEnvelope("ESC".getBytes(StandardCharsets.US_ASCII))).isFalse();
+        }
+
+        @Test
+        @DisplayName("Le convertisseur laisse NULL et la chaîne vide intacts : rien à protéger, rien à chiffrer")
+        void converterLeavesNullAndEmptyUntouched() {
+            EncryptedStringConverter converter = new EncryptedStringConverter(cipherV1());
+
+            assertThat(converter.convertToDatabaseColumn(null)).isNull();
+            assertThat(converter.convertToEntityAttribute(null)).isNull();
+            // Sceller une chaîne vide produirait une enveloppe VALIDE : la ligne
+            // basculerait à jamais dans « inchangée » et le compteur de vides du
+            // balayage — seul contrôle de mise en service — s'éteindrait pour elle.
+            assertThat(converter.convertToDatabaseColumn("")).isEmpty();
+            assertThat(converter.convertToEntityAttribute("")).isEmpty();
+        }
+    }
 }

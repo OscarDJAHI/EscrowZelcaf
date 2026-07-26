@@ -49,8 +49,16 @@ public class EvidenceService {
 
     private static final Logger log = LoggerFactory.getLogger(EvidenceService.class);
 
-    /** Per-file business limit (bytes), arbitrated here, not by the container. */
-    static final long MAX_FILE_SIZE = 10_485_760L;
+    /**
+     * Per-file business limit (bytes), arbitrated here, not by the container.
+     *
+     * <p>{@code public} depuis la Story 1.7 : l'adaptateur de stockage en dérive son
+     * plafond de matérialisation (limite métier + marge d'enveloppe). Recopier la
+     * valeur là-bas ferait diverger les deux au premier relèvement — les dépôts
+     * passeraient et les téléchargements des pièces devenues trop grosses
+     * échoueraient en 502, longtemps après la modification qui l'aurait causé.
+     */
+    public static final long MAX_FILE_SIZE = 10_485_760L;
 
     /**
      * Dispute evidence floor (FR-6): a DISPUTED transaction must keep at least this

@@ -1,6 +1,7 @@
 package com.zlecaf.escrow.service.storage;
 
 import com.zlecaf.escrow.security.crypto.SecretCipher;
+import com.zlecaf.escrow.service.EvidenceService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -40,13 +41,17 @@ public class MinioEvidenceStorage implements EvidenceStorage {
 
     /**
      * Plafond de ce que {@link #load(String)} accepte de charger en mémoire :
-     * la limite métier de 10 Mo par pièce ({@code EvidenceService.MAX_FILE_SIZE},
-     * d'un autre paquet), plus la marge d'enveloppe (magic, version, id de clé,
-     * IV et tag ~ quelques dizaines d'octets). Un objet plus gros que cela n'a pas
-     * pu être déposé par l'application : c'est une anomalie de stockage, traitée
-     * comme une indisponibilité (502) plutôt qu'en épuisant le tas.
+     * la limite métier par pièce ({@link EvidenceService#MAX_FILE_SIZE}), plus la
+     * marge d'enveloppe (magic, version, id de clé, IV et tag ~ quelques dizaines
+     * d'octets). Un objet plus gros que cela n'a pas pu être déposé par
+     * l'application : c'est une anomalie de stockage, traitée comme une
+     * indisponibilité (502) plutôt qu'en épuisant le tas.
+     *
+     * <p>Le plafond est DÉRIVÉ, jamais recopié : relever la limite métier sans
+     * relever celle-ci rendrait indéfiniment intéléchargeables les pièces déposées
+     * entre les deux valeurs — un échec asymétrique et tardif.
      */
-    private static final long MAX_OBJECT_BYTES = 10_485_760L + 4_096L;
+    private static final long MAX_OBJECT_BYTES = EvidenceService.MAX_FILE_SIZE + 4_096L;
 
     private final S3Client s3Client;
     private final String bucket;
@@ -124,7 +129,17 @@ public class MinioEvidenceStorage implements EvidenceStorage {
                         "Objet de " + declaredLength + " octets au-delà du plafond de matérialisation ("
                                 + MAX_OBJECT_BYTES + ") : refus de le charger en mémoire."));
             }
-            stored = object.readAllBytes();
+            // La taille DÉCLARÉE n'est qu'un raccourci : un serveur qui n'annonce pas
+            // Content-Length (proxy, transfert chunked, implémentation S3 tierce) la
+            // rendrait muette, et le plafond redeviendrait le tas de la JVM. C'est donc
+            // la taille EFFECTIVEMENT lue qui tranche — on ne lit jamais plus d'un octet
+            // au-delà du plafond, sans dépendre de ce que le serveur veut bien déclarer.
+            stored = object.readNBytes(Math.toIntExact(MAX_OBJECT_BYTES) + 1);
+            if (stored.length > MAX_OBJECT_BYTES) {
+                throw new EvidenceStorageException(storageKey, new IllegalStateException(
+                        "Objet au-delà du plafond de matérialisation (" + MAX_OBJECT_BYTES
+                                + ") : refus de le charger en mémoire."));
+            }
         } catch (NoSuchKeyException e) {
             // Translated here so callers never need an S3 type to handle a miss.
             throw new EvidenceNotFoundException(storageKey, e);

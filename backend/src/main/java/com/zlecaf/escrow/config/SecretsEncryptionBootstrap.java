@@ -63,6 +63,17 @@ public class SecretsEncryptionBootstrap {
             new SealedTable("partner_hmac_keys", PartnerHmacKey.MIN_SECRET_BYTES),
             new SealedTable("webhook_subscriptions", 0));
 
+    /**
+     * Tables effectivement balayées — exposé pour que le test de couverture puisse
+     * confronter cette liste écrite à la main aux colonnes réellement annotées
+     * {@code @Convert(EncryptedStringConverter.class)}. Sans cette confrontation,
+     * une future colonne chiffrée (TOTP 2.6, AML 3.5, coordonnées bancaires 4.9)
+     * ne serait jamais pivotée, et le silence durerait jusqu'au retrait de la clé.
+     */
+    static List<String> sweptTableNames() {
+        return SEALED_TABLES.stream().map(SealedTable::name).toList();
+    }
+
     @Bean
     CommandLineRunner sealSecretsAtRest(JdbcTemplate jdbc, PlatformTransactionManager transactionManager,
             SecretCipher cipher) {
@@ -74,15 +85,20 @@ public class SecretsEncryptionBootstrap {
                 Sweep sweep;
                 try {
                     sweep = transaction.execute(status -> sweepTable(jdbc, cipher, table));
+                } catch (WeakSecretException alreadyActionable) {
+                    // Ce message nomme DÉJÀ la table, la ligne et le remède. L'habiller
+                    // d'un « cause probable : une clé a été retirée du trousseau »
+                    // enverrait l'opérateur chercher une clé qui n'a jamais manqué.
+                    throw alreadyActionable;
                 } catch (RuntimeException e) {
                     // Sans ce ré-habillage, l'opérateur ne reçoit qu'une pile sans
                     // savoir QUELLE table a échoué ni quoi faire — le décompte de
                     // synthèse, lui, n'est jamais émis pour la table fautive.
                     throw new IllegalStateException("Chiffrement au repos [" + table.name()
                             + "] : balayage interrompu, table laissée INTACTE (transaction annulée). "
-                            + "Cause probable : une clé référencée par une enveloppe a été retirée de "
-                            + "ESCROW_CRYPTO_KEYS — la remettre au trousseau et redémarrer "
-                            + "(Docs/runbook-rotation-cles-chiffrement.md).", e);
+                            + "Cause la plus fréquente : une clé référencée par une enveloppe a été retirée de "
+                            + "ESCROW_CRYPTO_KEYS — la remettre au trousseau et redémarrer. Sinon, la cause "
+                            + "ci-dessous est le diagnostic réel (Docs/runbook-rotation-cles-chiffrement.md).", e);
                 }
                 log.info("Chiffrement au repos [{}] : {} scellée(s), {} pivotée(s), {} inchangée(s), {} vide(s) ignorée(s)",
                         table.name(), sweep.sealed(), sweep.rotated(), sweep.untouched(), sweep.skipped());
@@ -145,10 +161,21 @@ public class SecretsEncryptionBootstrap {
         if (bytes < table.minPlaintextBytes()) {
             // Ni le secret ni sa valeur ne sont journalisés : seulement de quoi
             // retrouver la ligne et la corriger.
-            throw new IllegalStateException("Scellement refusé : " + table.name() + " id=" + id
+            throw new WeakSecretException("Scellement refusé : " + table.name() + " id=" + id
                     + " porte un secret EN CLAIR de " + bytes + " octets, sous le plancher de "
                     + table.minPlaintextBytes() + ". Le chiffrer le rendrait faible ET invisible : "
-                    + "remplacer ce secret avant de redémarrer.");
+                    + "remplacer ce secret avant de redémarrer. La table est laissée INTACTE.");
+        }
+    }
+
+    /**
+     * Refus de plancher : un type distinct pour que le balayage le laisse remonter
+     * TEL QUEL, au lieu de le noyer sous le diagnostic « clé retirée du trousseau »
+     * qui couvre l'autre famille d'échecs.
+     */
+    static class WeakSecretException extends IllegalStateException {
+        WeakSecretException(String message) {
+            super(message);
         }
     }
 

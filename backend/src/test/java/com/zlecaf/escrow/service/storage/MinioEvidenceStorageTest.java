@@ -13,6 +13,7 @@ import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.CreateBucketRequest;
+import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
 import software.amazon.awssdk.services.s3.model.HeadObjectRequest;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
@@ -199,10 +200,15 @@ class MinioEvidenceStorageTest {
         byte[] oversized = new byte[10 * 1024 * 1024 + 8192];
         s3Client.putObject(PutObjectRequest.builder().bucket(BUCKET).key("42/oversized").build(),
                 RequestBody.fromBytes(oversized));
-
-        assertThatThrownBy(() -> storage.load("42/oversized"))
-                .isInstanceOf(EvidenceStorageException.class)
-                .hasStackTraceContaining("plafond de matérialisation");
+        try {
+            assertThatThrownBy(() -> storage.load("42/oversized"))
+                    .isInstanceOf(EvidenceStorageException.class)
+                    .hasStackTraceContaining("plafond de matérialisation");
+        } finally {
+            // 10 Mo laissés dans un seau partagé par toute la classe : les tests
+            // suivants n'ont pas à travailler sur l'état de celui-ci.
+            s3Client.deleteObject(DeleteObjectRequest.builder().bucket(BUCKET).key("42/oversized").build());
+        }
     }
 
     @Test

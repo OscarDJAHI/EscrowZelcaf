@@ -2,6 +2,10 @@ package com.zlecaf.escrow.config;
 
 import com.zlecaf.escrow.security.crypto.EncryptedStringConverter;
 import com.zlecaf.escrow.security.crypto.SecretCipher;
+import jakarta.persistence.Convert;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.Table;
+import jakarta.persistence.metamodel.EntityType;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -18,8 +22,11 @@ import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
+import java.lang.reflect.Field;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Base64;
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -61,6 +68,8 @@ class SecretsEncryptionBootstrapTest {
     private JdbcTemplate jdbc;
     @Autowired
     private PlatformTransactionManager transactionManager;
+    @Autowired
+    private EntityManager entityManager;
 
     private static String keyMaterial(byte filler) {
         byte[] raw = new byte[32];
@@ -256,19 +265,79 @@ class SecretsEncryptionBootstrapTest {
     void weakLegacyPlaintextIsNeverSealed() {
         Long companyId = jdbc.queryForObject(
                 "INSERT INTO companies (name) VALUES ('Transitaire faible') RETURNING id", Long.class);
-        // Le CHECK V7 tolère l'enveloppe, donc on force la ligne faible en la faisant
-        // passer pour une enveloppe : c'est le seul moyen d'atteindre le garde-fou du
-        // runner, et cela prouve qu'il tient même si une garde amont a sauté.
+        // Le CHECK interdit ce clair court : on le retire le temps du test, pour
+        // atteindre le garde-fou du runner et prouver qu'il tient même si une garde
+        // amont a sauté. Restauré en finally : le rollback de @DataJpaTest le ferait
+        // aussi, mais s'y fier coupleraient tous les tests suivants de la classe à la
+        // sémantique transactionnelle du DDL — un jour où l'un d'eux passerait en
+        // NOT_SUPPORTED, la contrainte disparaîtrait durablement, en silence.
         jdbc.update("ALTER TABLE partner_hmac_keys DROP CONSTRAINT ck_partner_hmac_keys_secret_len");
-        jdbc.update("INSERT INTO partner_hmac_keys (key_id, company_id, secret_key, active, created_at)"
-                + " VALUES ('key-weak-legacy', ?, 'court', true, now())", companyId);
+        try {
+            jdbc.update("INSERT INTO partner_hmac_keys (key_id, company_id, secret_key, active, created_at)"
+                    + " VALUES ('key-weak-legacy', ?, 'court', true, now())", companyId);
 
-        assertThatThrownBy(() -> runBootstrap(new SecretCipher(V1, "v1")))
-                .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("partner_hmac_keys");
-        assertThat(rawColumn("partner_hmac_keys",
-                jdbc.queryForObject("SELECT id FROM partner_hmac_keys WHERE key_id = 'key-weak-legacy'", Long.class)))
-                .isEqualTo("court");
+            // Le refus de plancher remonte TEL QUEL : l'habiller du diagnostic
+            // « une clé a été retirée du trousseau » enverrait l'opérateur chercher
+            // une clé qui n'a jamais manqué.
+            assertThatThrownBy(() -> runBootstrap(new SecretCipher(V1, "v1")))
+                    .isInstanceOf(SecretsEncryptionBootstrap.WeakSecretException.class)
+                    .hasMessageContaining("partner_hmac_keys")
+                    .hasMessageContaining("remplacer ce secret")
+                    .hasMessageNotContaining("retirée de ESCROW_CRYPTO_KEYS");
+            assertThat(rawColumn("partner_hmac_keys",
+                    jdbc.queryForObject("SELECT id FROM partner_hmac_keys WHERE key_id = 'key-weak-legacy'",
+                            Long.class)))
+                    .isEqualTo("court");
+        } finally {
+            jdbc.update("DELETE FROM partner_hmac_keys WHERE key_id = 'key-weak-legacy'");
+            jdbc.update("ALTER TABLE partner_hmac_keys ADD CONSTRAINT ck_partner_hmac_keys_secret_len"
+                    + " CHECK (secret_key ~ '^esc:[0-9]{1,3}:[A-Za-z0-9_-]{1,64}:[A-Za-z0-9+/]{38,}={0,2}$'"
+                    + " OR octet_length(secret_key) >= 32)");
+        }
+    }
+
+    @Test
+    @DisplayName("Une pseudo-enveloppe bien formée mais trop courte est refusée par la base (V9)")
+    void wellFormedButTooShortEnvelopeIsRejectedByTheCheck() {
+        Long companyId = jdbc.queryForObject(
+                "INSERT INTO companies (name) VALUES ('Transitaire déguisé') RETURNING id", Long.class);
+
+        // 'esc:1:v1:AAAA' a la FORME d'une enveloppe de la clé active : sans plancher
+        // sur le corps, l'application y verrait une enveloppe déjà scellée (comptée
+        // « inchangée », jamais signalée) et chaque lecture du secret échouerait
+        // ensuite sur « enveloppe tronquée ». Le CHECK doit donc le refuser à l'entrée.
+        assertThatThrownBy(() -> jdbc.update(
+                "INSERT INTO partner_hmac_keys (key_id, company_id, secret_key, active, created_at)"
+                        + " VALUES ('key-fake-envelope', ?, 'esc:1:v1:AAAA', true, now())", companyId))
+                .hasMessageContaining("ck_partner_hmac_keys_secret_len");
+    }
+
+    @Test
+    @DisplayName("La liste des tables balayées couvre TOUTES les colonnes chiffrées : une omission ne rotaterait jamais")
+    void everyEncryptedColumnIsSweptAtStartup() {
+        // Le runner porte une liste de tables écrite à la main. Rien dans le
+        // compilateur ne casse si une future entité (TOTP 2.6, AML 3.5, coordonnées
+        // bancaires 4.9 — toutes annoncées par la spec) ajoute un @Convert sans
+        // l'inscrire ici : sa colonne ne serait jamais pivotée, et on ne s'en
+        // apercevrait qu'en retirant l'ancienne clé, quand elle devient illisible.
+        // Les entités sont DÉCOUVERTES via le métamodèle JPA, jamais listées ici :
+        // une liste écrite à la main serait le défaut qu'on cherche à empêcher.
+        List<String> converted = new ArrayList<>();
+        for (EntityType<?> entity : entityManager.getMetamodel().getEntities()) {
+            Class<?> type = entity.getJavaType();
+            for (Field field : type.getDeclaredFields()) {
+                Convert convert = field.getAnnotation(Convert.class);
+                if (convert != null && convert.converter() == EncryptedStringConverter.class) {
+                    Table table = type.getAnnotation(Table.class);
+                    converted.add(table != null ? table.name() : type.getSimpleName());
+                }
+            }
+        }
+        assertThat(converted).as("garde-fou inopérant si plus aucune colonne n'est chiffrée").isNotEmpty();
+
+        assertThat(converted)
+                .as("toute entité portant @Convert(EncryptedStringConverter) doit figurer dans SEALED_TABLES")
+                .containsExactlyInAnyOrderElementsOf(SecretsEncryptionBootstrap.sweptTableNames());
     }
 
     @Test
