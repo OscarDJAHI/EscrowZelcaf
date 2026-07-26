@@ -74,7 +74,7 @@
 # Epics 6-7-8 → Epics 9-10 → Epic 11 en continu (11-9 avant production).
 
 generated: 2026-07-24
-last_updated: "2026-07-26 (1-7 done — chiffrement au repos AES-256-GCM + rotation testée : 403 tests backend + 174 frontend)"
+last_updated: "2026-07-26 (1-8 review — scan anti-malware implémenté, passe dev interrompue par timeout, 449 tests backend + 176 frontend)"
 project: Escrow_claude (Production)
 project_key: NOKEY
 tracking_system: file-system
@@ -90,7 +90,7 @@ development_status:
   1-5-cors-allowlist-swagger-ferme-production: done
   1-6-politique-mots-de-passe-revocation-jwt: done # revue 2026-07-26 : 20 correctifs (4 hauts, dont endpoints ouverts + troncature bcrypt en octets), 3 décisions tranchées, 362 tests
   1-7-chiffrement-au-repos: done # revue 2026-07-26 : 10 correctifs (dont 1 haut, contrainte de plancher reformulée au lieu d'être supprimée), 4 reports, 403 tests backend
-  1-8-scan-anti-malware-ingestion: backlog
+  1-8-scan-anti-malware-ingestion: review # passe dev coupée à 90 min (session_timeout_min) en phase verify ; travail vérifié (449 backend + 176 frontend) et conservé, revue restant à faire
   1-9-hygiene-session-appareil-partage: backlog
   1-10-anti-enumeration-ressources: backlog
   epic-1-retrospective: optional

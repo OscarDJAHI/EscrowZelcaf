@@ -97,6 +97,36 @@ services:
       mc mb --ignore-existing local/escrow-evidence
       "
 
+  # Analyse anti-malware à l'ingestion (Story 1.8, NFR-P7). Sans ce service,
+  # TOUT dépôt de fichier échoue en 502 SCAN_UNAVAILABLE : c'est voulu (fail-closed,
+  # aucun interrupteur de désactivation), et c'est pourquoi le backend l'attend
+  # explicitement via depends_on ci-dessous. Exploitation : Docs/runbook-antivirus-ingestion.md
+  clamav:
+    # Variante « _base » : les bases virales sont EMBARQUÉES dans l'image, donc pas
+    # de téléchargement freshclam bloquant au premier démarrage (l'image « _base »
+    # est le seul moyen d'avoir un clamd utilisable hors ligne, et en CI).
+    image: clamav/clamav:1.4.3_base
+    environment:
+      # Pas de mise à jour automatique des bases en local : elle allonge le démarrage
+      # et n'a pas de sens sur un poste de dev. En staging/prod, retirer cette ligne
+      # (freshclam tourne alors en tâche de fond) — cf. runbook.
+      CLAMAV_NO_FRESHCLAM: "true"
+    expose:
+      - "3310"
+    # clamd charge ~30 s ses signatures avant d'écouter : sans start_period généreux,
+    # le healthcheck le déclarerait mort et le backend ne démarrerait jamais.
+    healthcheck:
+      test: ["CMD", "clamdcheck.sh"]
+      interval: 10s
+      timeout: 10s
+      retries: 12
+      start_period: 120s
+    # clamd charge l'intégralité des signatures en mémoire (~1,3 Go aujourd'hui).
+    # La borne est documentée haut : sous ~1,5 Go le processus est tué par l'OOM
+    # killer pendant le chargement, et le symptôme (conteneur qui redémarre en
+    # boucle, jamais healthy) ne dit pas qu'il s'agit de mémoire.
+    mem_limit: 2g
+
   backend:
     build:
       context: ../backend
@@ -119,6 +149,13 @@ services:
       # renseigne que pendant une rotation (cf. runbook).
       ESCROW_CRYPTO_KEYS: ${ESCROW_CRYPTO_KEYS:?ESCROW_CRYPTO_KEYS manquant (format id:cle_base64, 32 octets)}
       ESCROW_CRYPTO_ACTIVE_KEY_ID: ${ESCROW_CRYPTO_ACTIVE_KEY_ID:-}
+      # Analyse anti-malware (Story 1.8) : ni l'hôte ni le port ne sont des secrets,
+      # d'où des valeurs en clair ici et non des variables du .env. Les timeouts sont
+      # paramétrables pour un clamd lent (poste chargé) sans reconstruire l'image.
+      ESCROW_ANTIVIRUS_HOST: clamav
+      ESCROW_ANTIVIRUS_PORT: "3310"
+      ESCROW_ANTIVIRUS_CONNECT_TIMEOUT_MS: ${ESCROW_ANTIVIRUS_CONNECT_TIMEOUT_MS:-2000}
+      ESCROW_ANTIVIRUS_READ_TIMEOUT_MS: ${ESCROW_ANTIVIRUS_READ_TIMEOUT_MS:-30000}
       # Optionnels (Story 1.1) — vides = aucun ADMIN créé au démarrage.
       ESCROW_BOOTSTRAP_ADMIN_EMAIL: ${ESCROW_BOOTSTRAP_ADMIN_EMAIL:-}
       ESCROW_BOOTSTRAP_ADMIN_PASSWORD: ${ESCROW_BOOTSTRAP_ADMIN_PASSWORD:-}
@@ -144,6 +181,12 @@ services:
       # first upload with NoSuchBucket.
       minio-init:
         condition: service_completed_successfully
+      # Attente explicite (Story 1.8) : le scan est fail-closed, donc un backend
+      # démarré avant clamd refuserait tout dépôt en 502. Le healthcheck de clamav
+      # a un start_period de 120 s — le premier `up` est donc plus long qu'avant,
+      # et c'est le prix de l'absence d'interrupteur.
+      clamav:
+        condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:8080/actuator/health | grep -q UP"]
       interval: 10s

@@ -10,6 +10,8 @@ import com.zlecaf.escrow.domain.UploaderType;
 import com.zlecaf.escrow.repository.EscrowTransactionRepository;
 import com.zlecaf.escrow.repository.EvidenceFileRepository;
 import com.zlecaf.escrow.security.AuthPrincipal;
+import com.zlecaf.escrow.service.scan.MalwareScanner;
+import com.zlecaf.escrow.service.scan.ScanVerdict;
 import com.zlecaf.escrow.service.storage.EvidenceNotFoundException;
 import com.zlecaf.escrow.service.storage.EvidenceStorage;
 import com.zlecaf.escrow.web.ApiExceptions.BadRequestException;
@@ -43,6 +45,13 @@ import java.util.List;
  * all-or-nothing: every file is validated before any is written, so a single
  * rejection leaves the store and the database untouched. Designed as a reusable
  * service (not a controller method) so Epic 2's composite opening can reuse it.
+ *
+ * <p><strong>Analyse antivirus depuis la Story 1.8.</strong> Aucun octet
+ * non analysé n'atteint {@link EvidenceStorage#store} : le scan est dans la passe
+ * de validation d'{@link #ingest}, le tronc commun des trois routes d'upload, donc
+ * toute brique d'upload future en hérite sans rétrofit. La politique est
+ * fail-closed : détection -> rejet 400 audité, scanner injoignable -> 502
+ * transitoire, jamais un dépôt non analysé.
  */
 @Service
 public class EvidenceService {
@@ -73,6 +82,7 @@ public class EvidenceService {
     private final TransactionAccess access;
     private final EvidenceContentValidator validator;
     private final EvidenceStorage storage;
+    private final MalwareScanner scanner;
     private final AuditService auditService;
 
     public EvidenceService(EscrowTransactionRepository transactions,
@@ -80,12 +90,17 @@ public class EvidenceService {
                            TransactionAccess access,
                            EvidenceContentValidator validator,
                            EvidenceStorage storage,
+                           MalwareScanner scanner,
                            AuditService auditService) {
         this.transactions = transactions;
         this.evidenceFiles = evidenceFiles;
         this.access = access;
         this.validator = validator;
         this.storage = storage;
+        // Dépendance OBLIGATOIRE (Story 1.8, NFR-P7) : ni Optional, ni @Nullable, ni
+        // défaut « pas de scan ». Un dépôt sans scanner câblé ne doit même pas
+        // pouvoir démarrer, c'est la garantie que porte le type.
+        this.scanner = scanner;
         this.auditService = auditService;
     }
 
@@ -169,8 +184,9 @@ public class EvidenceService {
 
         String capturedAt = normalizeCapturedAt(clientCapturedAt); // 400 if not ISO-8601
 
-        // --- Pass 1: validate every file (type + size). No writes happen here,
-        // so any rejection aborts the whole batch before it can touch storage. ---
+        // --- Pass 1: validate every file (type + size + malware scan). No writes
+        // happen here, so any rejection aborts the whole batch before it can touch
+        // storage. ---
         List<byte[]> contents = new ArrayList<>(files.size());
         List<String> mimeTypes = new ArrayList<>(files.size());
         for (MultipartFile file : files) {
@@ -183,6 +199,7 @@ public class EvidenceService {
                         "File exceeds the maximum allowed size of " + MAX_FILE_SIZE + " bytes");
             }
             String mime = validator.validate(bytes, file.getOriginalFilename(), file.getContentType());
+            requireCleanContent(tx, file, bytes, attribution);
             contents.add(bytes);
             mimeTypes.add(mime);
         }
@@ -233,6 +250,75 @@ public class EvidenceService {
      */
     private record Attribution(UploaderType uploaderType, Long uploadedByUserId,
                                Long partnerCompanyId, Long auditActorId, ParticipantRole auditRole) {}
+
+    /**
+     * Analyse un fichier déjà validé (non vide, sous la limite de taille, type réel
+     * sur la whitelist) et rejette le lot entier si le moteur déclenche
+     * (Story 1.8, NFR-P7).
+     *
+     * <p><b>Pourquoi ici, et nulle part ailleurs.</b> Les gardes qui précèdent
+     * coûtent quelques microsecondes et éliminent déjà le vide, l'oversize et les
+     * types hors whitelist : le scanner ne reçoit donc que des JPEG/PNG/PDF bien
+     * formés. La passe 1 est de plus le dernier endroit où RIEN n'est encore écrit,
+     * ce qui donne le tout-ou-rien du lot gratuitement. Et surtout on est en amont
+     * de {@link EvidenceStorage#store}, donc en amont de l'enveloppe AES-GCM de la
+     * Story 1.7 : après chiffrement, les octets ne sont plus analysables.
+     *
+     * <p>Le scan vit dans le tronc commun d'{@link #ingest} et non dans un
+     * controller : les trois routes d'upload existantes (preuve utilisateur, litige
+     * composite, dépôt partenaire signé) en héritent d'office — et toute brique
+     * d'upload créée plus tard aussi, sans rétrofit.
+     *
+     * @throws BadRequestException contenu malveillant détecté (400,
+     *                             {@code EVIDENCE_MALWARE_DETECTED})
+     * @throws com.zlecaf.escrow.service.scan.MalwareScanUnavailableException aucun
+     *                             verdict n'a pu être obtenu (502,
+     *                             {@code SCAN_UNAVAILABLE}) — jamais un repli
+     *                             « on stocke sans analyser »
+     */
+    private void requireCleanContent(EscrowTransaction tx, MultipartFile file, byte[] bytes,
+                                     Attribution attribution) {
+        ScanVerdict verdict = scanner.scan(bytes);
+        if (!verdict.infected()) {
+            return;
+        }
+        String safeName = sanitizeFilename(file.getOriginalFilename());
+        // Audité AVANT de lever : recordEvidenceRejectedByScan est en REQUIRES_NEW,
+        // donc l'entrée commite dans sa propre transaction et survit au rollback que
+        // l'exception ci-dessous déclenche. Une panne de scanner, elle, n'est PAS
+        // auditée (WARN seulement) : l'auditer inonderait une table append-only à
+        // rétention >= 5 ans (AD-25) au premier incident d'infrastructure.
+        auditService.recordEvidenceRejectedByScan(tx.getId(), attribution.auditActorId(),
+                attribution.auditRole(), tx.getState(), safeName, sha256Hex(bytes), verdict.signature());
+        log.warn("Malware detected on evidence ingestion for transaction {} (file '{}', signature '{}'): "
+                        + "deposit rejected, nothing stored",
+                tx.getId(), forLog(safeName), verdict.signature());
+        // Le message nomme le fichier — sans quoi le déposant d'un lot de vingt
+        // pièces ne saurait pas laquelle retirer — mais TAIT le nom de signature :
+        // le rendre transformerait l'endpoint en banc d'essai d'évasion.
+        throw new BadRequestException(ErrorCode.EVIDENCE_MALWARE_DETECTED,
+                (safeName == null ? "Un fichier du dépôt" : "Le fichier « " + safeName + " »")
+                        + " a été refusé : contenu malveillant détecté.");
+    }
+
+    /**
+     * Neutralise les caractères de contrôle d'un nom de fichier avant de le faire
+     * entrer dans une ligne de journal. {@link #sanitizeFilename} garantit un
+     * basename borné, pas l'absence de retour chariot : sans ce filtre, un nom
+     * hostile fabriquerait de fausses lignes de log autour d'un rejet de sécurité,
+     * c'est-à-dire à l'endroit précis où l'on relira les traces après incident.
+     */
+    private static String forLog(String name) {
+        if (name == null) {
+            return null;
+        }
+        StringBuilder safe = new StringBuilder(name.length());
+        for (int i = 0; i < name.length(); i++) {
+            char c = name.charAt(i);
+            safe.append(c >= 0x20 && c != 0x7F ? c : '?');
+        }
+        return safe.toString();
+    }
 
     /**
      * Rejects an empty batch or one over {@link PlatformLimits#MAX_FILES_PER_DEPOSIT}

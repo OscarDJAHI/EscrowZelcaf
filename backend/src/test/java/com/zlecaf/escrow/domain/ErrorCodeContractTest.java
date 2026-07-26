@@ -24,7 +24,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 class ErrorCodeContractTest {
 
-    /** The ten permanent codes AD-10 names: the queue must never retry these. */
+    /** The eleven permanent codes AD-10 names: the queue must never retry these. */
     private static final Set<ErrorCode> AD10_PERMANENT = EnumSet.of(
             ErrorCode.DISPUTE_ALREADY_RESOLVED,
             ErrorCode.TRANSACTION_TERMINAL,
@@ -41,7 +41,12 @@ class ErrorCodeContractTest {
             // derive, puisqu'on editerait les deux lignes ensemble. Seule
             // l'appartenance a cet ensemble + son cardinal force le classement
             // delibere du prochain code.
-            ErrorCode.WEAK_PASSWORD);
+            ErrorCode.WEAK_PASSWORD,
+            // Story 1.8 : rejouer le MEME fichier redeclenchera a l'identique, donc la
+            // file doit geler l'entree et afficher le motif. Range dans l'ensemble pour
+            // la meme raison que WEAK_PASSWORD ci-dessus : c'est l'appartenance et le
+            // cardinal qui forcent le classement delibere du prochain code.
+            ErrorCode.EVIDENCE_MALWARE_DETECTED);
 
     /** Every code the queue is allowed to replay. Exhaustive by construction below. */
     private static final Set<ErrorCode> TRANSIENT = EnumSet.of(
@@ -52,7 +57,11 @@ class ErrorCodeContractTest {
             ErrorCode.RATE_LIMITED,
             // Revue 1.6 : filet de securite du GlobalExceptionHandler. Un defaut interne
             // est circonstanciel — la file a raison de reessayer (miroir frontend mis a jour).
-            ErrorCode.INTERNAL_ERROR);
+            ErrorCode.INTERNAL_ERROR,
+            // Story 1.8 : ajout coordonne (miroir frontend replayFailure.js mis a jour
+            // dans le meme commit). Sans lui, une panne d'antivirus gelerait
+            // DEFINITIVEMENT une preuve parfaitement legitime.
+            ErrorCode.SCAN_UNAVAILABLE);
 
     @ParameterizedTest
     @EnumSource(ErrorCode.class)
@@ -62,15 +71,15 @@ class ErrorCodeContractTest {
     }
 
     @Test
-    @DisplayName("The ten codes AD-10 calls permanent are PERMANENT")
+    @DisplayName("The eleven codes AD-10 calls permanent are PERMANENT")
     void ad10PermanentCodesArePermanent() {
-        assertThat(AD10_PERMANENT).hasSize(10);
+        assertThat(AD10_PERMANENT).hasSize(11);
         assertThat(AD10_PERMANENT).allSatisfy(code ->
                 assertThat(code.retryability()).isEqualTo(Retryability.PERMANENT));
     }
 
     @Test
-    @DisplayName("Exactly CONCURRENT_MODIFICATION, FILE_READ_ERROR, STORAGE_UNAVAILABLE, RATE_LIMITED and INTERNAL_ERROR are TRANSIENT")
+    @DisplayName("Exactly CONCURRENT_MODIFICATION, FILE_READ_ERROR, STORAGE_UNAVAILABLE, RATE_LIMITED, INTERNAL_ERROR and SCAN_UNAVAILABLE are TRANSIENT")
     void transientPartitionIsExact() {
         Set<ErrorCode> actual = Arrays.stream(ErrorCode.values())
                 .filter(c -> c.retryability() == Retryability.TRANSIENT)

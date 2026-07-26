@@ -97,6 +97,48 @@ public class AuditService {
     }
 
     /**
+     * Journalise le rejet d'une pièce par l'analyse antivirus à l'ingestion
+     * (Story 1.8, NFR-P7), dans SA PROPRE transaction.
+     *
+     * <p><b>Pourquoi {@code REQUIRES_NEW} alors qu'AD-5 impose {@code MANDATORY}.</b>
+     * AD-5 lie l'audit à l'action qu'il consigne pour qu'ils commitent ensemble. Ici
+     * l'action <em>échoue</em> : la transaction de dépôt rollback, et un audit
+     * {@code MANDATORY} s'en irait avec elle — l'exigence « l'événement est audité »
+     * ne serait pas tenue. C'est exactement le motif de
+     * {@link #recordFailure} : la story suit un précédent maison, elle n'invente pas
+     * une exception à AD-5.
+     *
+     * <p>Aucun changement de schéma : l'action vit dans le {@code payload} JSONB
+     * (AD-5, pas de colonne {@code action_type}). Le payload porte de quoi
+     * reconnaître la pièce sans la conserver — nom <b>assaini</b> (basename, jamais
+     * le chemin brut), empreinte SHA-256 des octets refusés, nom de signature — mais
+     * <b>aucun octet du fichier</b> : rien n'est persisté d'un binaire infecté, ni
+     * dans le stockage objet ni dans cette table à rétention ≥ 5 ans (AD-25).
+     *
+     * <p>Les accesseurs d'acteur sont ceux de {@code recordEvidenceAdded}, donc le
+     * chemin partenaire l'utilise tel quel (acteur et rôle nuls, contexte porté par
+     * la transaction).
+     *
+     * @param sanitizedFilename basename déjà assaini, {@code null} si le multipart
+     *                          n'en portait aucun
+     * @param signature         nom de la signature déclenchée : c'est ici qu'il sert
+     *                          l'opérateur, la réponse HTTP le taisant délibérément
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void recordEvidenceRejectedByScan(Long transactionId, Long actorId, ParticipantRole actorRole,
+                                             EscrowState currentState, String sanitizedFilename,
+                                             String sha256, String signature) {
+        ObjectNode payload = objectMapper.createObjectNode();
+        payload.put("action", "EVIDENCE_REJECTED_MALWARE");
+        payload.put("actorRole", actorRole == null ? null : actorRole.name());
+        payload.put("filename", sanitizedFilename);
+        payload.put("sha256", sha256);
+        payload.put("signature", signature);
+        // Un rejet n'est pas un changement d'état : previous == next == currentState.
+        save(transactionId, actorId, currentState, currentState, payload);
+    }
+
+    /**
      * Log an evidence download within the caller's transaction (atomic with the
      * access authorization, MANDATORY so it never runs on its own). A download is
      * not a state change, so {@code previous == next == currentState}. The payload

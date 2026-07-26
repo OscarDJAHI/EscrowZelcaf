@@ -15,6 +15,9 @@ import com.zlecaf.escrow.repository.EvidenceFileRepository;
 import com.zlecaf.escrow.security.AuthPrincipal;
 import com.zlecaf.escrow.security.crypto.EncryptedStringConverter;
 import com.zlecaf.escrow.security.crypto.SecretCipher;
+import com.zlecaf.escrow.service.scan.MalwareScanUnavailableException;
+import com.zlecaf.escrow.service.scan.MalwareScanner;
+import com.zlecaf.escrow.service.scan.ScanVerdict;
 import com.zlecaf.escrow.service.storage.EvidenceNotFoundException;
 import com.zlecaf.escrow.service.storage.EvidenceStorage;
 import com.zlecaf.escrow.web.ApiExceptions.ConflictException;
@@ -96,8 +99,45 @@ class EvidenceServiceTest {
         }
 
         @Bean
+        MalwareScanner malwareScanner() {
+            return new ProgrammableMalwareScanner();
+        }
+
+        @Bean
         ObjectMapper objectMapper() {
             return new ObjectMapper();
+        }
+    }
+
+    /**
+     * Faux {@link MalwareScanner} programmable (Story 1.8). « Sain » par défaut pour
+     * que tout ce que cette classe prouvait déjà reste prouvé ; les cas de rejet et
+     * d'indisponibilité sont armés test par test.
+     *
+     * <p>Il compte ses appels : c'est le seul moyen de prouver l'ORDRE des gardes —
+     * qu'un fichier de 12 Mo ou un GIF déguisé en {@code .pdf} est refusé <em>sans
+     * jamais</em> atteindre le moteur. Un test qui vérifierait seulement le code
+     * d'erreur passerait tout aussi bien si le scan tournait d'abord.
+     */
+    static class ProgrammableMalwareScanner implements MalwareScanner {
+        /** Nombre d'octets exact des contenus à déclarer infectés (identité par taille + hash suffirait ; la taille suffit ici). */
+        volatile java.util.function.Predicate<byte[]> infectedWhen = content -> false;
+        volatile boolean unavailable = false;
+        final java.util.concurrent.atomic.AtomicInteger calls = new java.util.concurrent.atomic.AtomicInteger();
+
+        @Override
+        public ScanVerdict scan(byte[] content) {
+            calls.incrementAndGet();
+            if (unavailable) {
+                throw new MalwareScanUnavailableException("panne simulée");
+            }
+            return infectedWhen.test(content) ? ScanVerdict.infected("Test.Simulated-Signature") : ScanVerdict.clean();
+        }
+
+        void reset() {
+            infectedWhen = content -> false;
+            unavailable = false;
+            calls.set(0);
         }
     }
 
@@ -145,6 +185,20 @@ class EvidenceServiceTest {
     private AuditLogRepository auditLogs;
     @Autowired
     private EvidenceStorage storage;
+    @Autowired
+    private MalwareScanner scanner;
+
+    /**
+     * Le faux scanner et le faux stockage sont des singletons de contexte, partagés
+     * par toutes les méthodes : sans remise à zéro, un test qui arme le scanner — ou
+     * qui laisse un objet dans la carte — contaminerait les suivants. La transaction
+     * de test, elle, est rejouée à zéro par Spring ; ces deux doubles ne le sont pas.
+     */
+    @org.junit.jupiter.api.BeforeEach
+    void resetDoubles() {
+        ((ProgrammableMalwareScanner) scanner).reset();
+        ((InMemoryEvidenceStorage) storage).objects.clear();
+    }
 
     private static byte[] pdfBytes() {
         return ("%PDF-1.4\n1 0 obj<</Type/Catalog>>endobj\ntrailer<</Root 1 0 R>>\n%%EOF")
@@ -1009,5 +1063,131 @@ class EvidenceServiceTest {
                 .findFirst().orElseThrow();
         assertThat(activeDto.withdrawnAt()).isNull();
         assertThat(activeDto.withdrawnByUserId()).isNull();
+    }
+
+    // --- Story 1.8: malware scan at ingestion ---
+
+    /** PDF valide portant un marqueur, pour que le faux scanner puisse cibler UN fichier d'un lot. */
+    private static byte[] markedPdfBytes(String marker) {
+        return ("%PDF-1.4\n1 0 obj<</Type/Catalog>>endobj\n% " + marker + "\ntrailer<</Root 1 0 R>>\n%%EOF")
+                .getBytes(StandardCharsets.US_ASCII);
+    }
+
+    private static MockMultipartFile markedPdf(String filename, String marker) {
+        return new MockMultipartFile("files", filename, "application/pdf", markedPdfBytes(marker));
+    }
+
+    private ProgrammableMalwareScanner fakeScanner() {
+        return (ProgrammableMalwareScanner) scanner;
+    }
+
+    private int storedObjectCount() {
+        return ((InMemoryEvidenceStorage) storage).objects.size();
+    }
+
+    @Test
+    @DisplayName("A clean deposit calls the scanner exactly once per file — the scan is really wired in")
+    void cleanDepositScansEveryFileOnce() {
+        User buyer = persistUser("buyerAV0@example.com", Role.BUYER);
+        User seller = persistUser("sellerAV0@example.com", Role.SELLER);
+        EscrowTransaction tx = persistTransaction(buyer.getId(), seller.getId(), EscrowState.FUNDS_LOCKED);
+        AuthPrincipal actor = new AuthPrincipal(buyer.getId(), buyer.getEmail(), Role.BUYER);
+
+        // Deux fichiers sains : le comportement observable est INCHANGÉ (mêmes lignes,
+        // mêmes audits) et le scan n'ajoute qu'un aller-retour par fichier, sur les
+        // octets déjà en mémoire — aucune relecture.
+        evidenceService.deposit(actor, tx.getId(),
+                List.of(pdf("a.pdf"), markedPdf("b.pdf", "SECOND")), null, null);
+
+        assertThat(fakeScanner().calls.get()).isEqualTo(2);
+        assertThat(evidenceFiles.count()).isEqualTo(2);
+        assertThat(auditLogs.findByTransactionIdOrderByTimestampAsc(tx.getId()))
+                .extracting(a -> a.getPayload().path("action").asText())
+                .containsOnly("EVIDENCE_ADDED");
+    }
+
+    // Les cas à VERDICT POSITIF (fichier infecté, lot dont un fichier est infecté,
+    // contenu du message de rejet) ne peuvent pas vivre ici : ils auditent, et
+    // `recordEvidenceRejectedByScan` est en REQUIRES_NEW. Cette classe est un slice
+    // dont la transaction de test ne commite JAMAIS, si bien que la seconde
+    // transaction ne voit pas la ligne `escrow_transactions` du test et l'INSERT
+    // d'audit échoue sur `audit_logs_transaction_id_fkey` — un artefact du harnais,
+    // pas du code. Ils sont donc dans EvidenceMalwareAuditIntegrationTest
+    // (Propagation.NOT_SUPPORTED), où les assertions portent en plus sur la vérité
+    // COMMITÉE : c'est le seul endroit où « l'audit survit au rollback » veut dire
+    // quelque chose.
+
+    @Test
+    @DisplayName("A scanner that cannot answer fails the deposit (never a silent store-without-scan)")
+    void scannerUnavailableFailsTheDeposit() {
+        User buyer = persistUser("buyerAV4@example.com", Role.BUYER);
+        User seller = persistUser("sellerAV4@example.com", Role.SELLER);
+        EscrowTransaction tx = persistTransaction(buyer.getId(), seller.getId(), EscrowState.FUNDS_LOCKED);
+        AuthPrincipal actor = new AuthPrincipal(buyer.getId(), buyer.getEmail(), Role.BUYER);
+
+        fakeScanner().unavailable = true;
+
+        // Le service laisse remonter l'exception du port ; c'est GlobalExceptionHandler
+        // qui la traduit en 502 SCAN_UNAVAILABLE (prouvé par EvidenceScanErrorMappingTest).
+        assertThatThrownBy(() -> evidenceService.deposit(actor, tx.getId(),
+                List.of(pdf("proof.pdf")), null, null))
+                .isInstanceOf(MalwareScanUnavailableException.class);
+
+        assertThat(evidenceFiles.count()).isZero();
+        assertThat(storedObjectCount()).isZero();
+        // Aucun audit : une panne de scanner n'est PAS un événement de sécurité à
+        // consigner dans une table append-only à rétention >= 5 ans.
+        assertThat(auditLogs.findByTransactionIdOrderByTimestampAsc(tx.getId())).isEmpty();
+    }
+
+    @Test
+    @DisplayName("An oversized file is refused by the cheap guard WITHOUT ever reaching the scanner")
+    void oversizedFileNeverReachesTheScanner() {
+        User buyer = persistUser("buyerAV5@example.com", Role.BUYER);
+        User seller = persistUser("sellerAV5@example.com", Role.SELLER);
+        EscrowTransaction tx = persistTransaction(buyer.getId(), seller.getId(), EscrowState.FUNDS_LOCKED);
+        AuthPrincipal actor = new AuthPrincipal(buyer.getId(), buyer.getEmail(), Role.BUYER);
+
+        byte[] tooBig = new byte[(int) (EvidenceService.MAX_FILE_SIZE + 1)];
+        MockMultipartFile file = new MockMultipartFile("files", "big.pdf", "application/pdf", tooBig);
+
+        assertThatThrownBy(() -> evidenceService.deposit(actor, tx.getId(), List.of(file), null, null))
+                .isInstanceOf(BadRequestException.class);
+
+        assertThat(fakeScanner().calls.get()).isZero();
+    }
+
+    @Test
+    @DisplayName("A GIF disguised as a .pdf is refused by Tika WITHOUT ever reaching the scanner")
+    void offWhitelistTypeNeverReachesTheScanner() {
+        User buyer = persistUser("buyerAV6@example.com", Role.BUYER);
+        User seller = persistUser("sellerAV6@example.com", Role.SELLER);
+        EscrowTransaction tx = persistTransaction(buyer.getId(), seller.getId(), EscrowState.FUNDS_LOCKED);
+        AuthPrincipal actor = new AuthPrincipal(buyer.getId(), buyer.getEmail(), Role.BUYER);
+
+        // Magic bytes GIF87a, extension et Content-Type mensongers.
+        byte[] gif = "GIF87a     ,".getBytes(StandardCharsets.US_ASCII);
+        MockMultipartFile file = new MockMultipartFile("files", "invoice.pdf", "application/pdf", gif);
+
+        assertThatThrownBy(() -> evidenceService.deposit(actor, tx.getId(), List.of(file), null, null))
+                .isInstanceOf(BadRequestException.class);
+
+        assertThat(fakeScanner().calls.get()).isZero();
+    }
+
+    @Test
+    @DisplayName("An empty file is refused before the scanner too — the cheap guards keep their precedence")
+    void emptyFileNeverReachesTheScanner() {
+        User buyer = persistUser("buyerAV7@example.com", Role.BUYER);
+        User seller = persistUser("sellerAV7@example.com", Role.SELLER);
+        EscrowTransaction tx = persistTransaction(buyer.getId(), seller.getId(), EscrowState.FUNDS_LOCKED);
+        AuthPrincipal actor = new AuthPrincipal(buyer.getId(), buyer.getEmail(), Role.BUYER);
+
+        MockMultipartFile file = new MockMultipartFile("files", "empty.pdf", "application/pdf", new byte[0]);
+
+        assertThatThrownBy(() -> evidenceService.deposit(actor, tx.getId(), List.of(file), null, null))
+                .isInstanceOf(BadRequestException.class);
+
+        assertThat(fakeScanner().calls.get()).isZero();
     }
 }

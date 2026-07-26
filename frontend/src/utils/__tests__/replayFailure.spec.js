@@ -60,6 +60,26 @@ describe('classifyReplayFailure — the verdict comes from the code, not the HTT
     expect(classifyReplayFailure(httpError(502, { code: 'STORAGE_UNAVAILABLE' }))).toBe('transient')
   })
 
+  it('classifies SCAN_UNAVAILABLE (502) as transient — an antivirus outage must never freeze a legitimate proof', () => {
+    // Story 1.8. Le garde-fou TRANSIENT_CODES ci-dessous prouve la SYNCHRONISATION
+    // avec l'enum ; il ne prouve pas que ce code-ci se comporte comme il le doit.
+    // Sans cette entrée, le défaut « permanent » gèlerait une preuve pour une
+    // simple panne d'infrastructure.
+    expect(classifyReplayFailure(httpError(502, { code: 'SCAN_UNAVAILABLE' }))).toBe('transient')
+  })
+
+  it('classifies EVIDENCE_MALWARE_DETECTED (400) as permanent and renders a real sentence, not the raw code', () => {
+    // Rejouer le même fichier redéclenchera à l'identique : l'entrée doit être
+    // gelée, avec un motif lisible. `SOME_CODE` n'est pas une phrase.
+    const err = httpError(400, { code: 'EVIDENCE_MALWARE_DETECTED' })
+    expect(classifyReplayFailure(err)).toBe('permanent')
+
+    const label = describeFailure(extractFailureReason(err))
+    expect(label).not.toContain('EVIDENCE_MALWARE_DETECTED')
+    expect(label).toBe(FAILURE_LABELS.EVIDENCE_MALWARE_DETECTED)
+    expect(label).toMatch(/antivirus/i)
+  })
+
   it('classifies DISPUTE_ALREADY_RESOLVED (409) as permanent — same status, opposite verdict', () => {
     expect(classifyReplayFailure(httpError(409, { code: 'DISPUTE_ALREADY_RESOLVED' }))).toBe('permanent')
   })

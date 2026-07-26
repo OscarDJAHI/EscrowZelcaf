@@ -104,6 +104,14 @@ initialisation — every problem listed in one error.
 > Rotation (ajout d'une clé, bascule, re-chiffrement au redémarrage) :
 > [`Docs/runbook-rotation-cles-chiffrement.md`](Docs/runbook-rotation-cles-chiffrement.md).
 
+> **Analyse anti-malware** (Story 1.8) : le service `clamav` fait partie du
+> **minimum vital** de la stack locale, pas des extras. Tout fichier déposé est
+> analysé avant d'être stocké et **il n'existe aucun moyen de désactiver le scan** :
+> si `clamav` n'est pas démarré (ou pas encore `healthy` — il charge ~1,3 Go de
+> signatures, d'où un premier `up` plus long et ~2 Go de RAM), tout dépôt de preuve
+> échoue en `502 SCAN_UNAVAILABLE`. Exploitation, symptômes et lecture des entrées
+> d'audit : [`Docs/runbook-antivirus-ingestion.md`](Docs/runbook-antivirus-ingestion.md).
+
 > **Stack déjà initialisée ?** Postgres/pgAdmin/MinIO n'appliquent les mots de
 > passe qu'à la création de leurs volumes. Après un changement de secrets :
 > `docker compose -f infra/docker-compose.yml down -v` (supprime les données locales).
@@ -195,7 +203,12 @@ plus audit-trail and RabbitMQ-fan-out assertions) was validated against a live
 PostgreSQL + RabbitMQ stack.
 
 > The backend suite needs a running **Docker** daemon (Testcontainers spins up
-> PostgreSQL/MinIO). Frontend: `cd frontend && npm run test` (Vitest).
+> PostgreSQL/MinIO, plus a real ClamAV since Story 1.8). Frontend:
+> `cd frontend && npm run test` (Vitest).
+>
+> On Apple Silicon, `clamav/clamav` publishes **amd64 manifests only**: pre-pull it
+> once with `docker pull --platform linux/amd64 clamav/clamav:1.4.3_base`, otherwise
+> `ClamavMalwareScannerIntegrationTest` fails on "no matching manifest".
 
 ---
 
@@ -240,6 +253,6 @@ Every push / pull request on `develop` and `main` runs
 ```
 backend/     Spring Boot escrow core (Maven)
 frontend/    Vue 3 PWA (Vite)
-infra/       docker-compose.yml (postgres, rabbitmq, backend, frontend)
+infra/       docker-compose.yml (postgres, rabbitmq, minio, clamav, backend, frontend)
 Docs/        Product & technical specifications (PRD, tech stack, schema, plan)
 ```

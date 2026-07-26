@@ -17,6 +17,8 @@ import com.zlecaf.escrow.repository.PartnerKeyNonceRepository;
 import com.zlecaf.escrow.repository.UserRepository;
 import com.zlecaf.escrow.security.crypto.EncryptedStringConverter;
 import com.zlecaf.escrow.security.crypto.SecretCipher;
+import com.zlecaf.escrow.service.scan.MalwareScanner;
+import com.zlecaf.escrow.service.scan.ScanVerdict;
 import com.zlecaf.escrow.service.storage.EvidenceNotFoundException;
 import com.zlecaf.escrow.service.storage.EvidenceStorage;
 import com.zlecaf.escrow.web.ApiExceptions.UnauthorizedException;
@@ -105,6 +107,18 @@ class PartnerNonceConcurrencyIntegrationTest {
         @Bean
         ObjectMapper objectMapper() {
             return new ObjectMapper();
+        }
+
+        /**
+         * Story 1.8 : {@code MalwareScanner} est desormais une dependance
+         * OBLIGATOIRE d'{@code EvidenceService}. Ce faux scanner rend TOUJOURS
+         * « sain » pour que cette classe continue de prouver exactement ce qu'elle
+         * prouvait — jamais en desactivant le scan, qui n'a volontairement aucun
+         * interrupteur.
+         */
+        @Bean
+        MalwareScanner malwareScanner() {
+            return content -> ScanVerdict.clean();
         }
     }
 

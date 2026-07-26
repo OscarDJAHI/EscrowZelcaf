@@ -66,6 +66,26 @@ escrow:
     keys: ${ESCROW_CRYPTO_KEYS}
     active-key-id: ${ESCROW_CRYPTO_ACTIVE_KEY_ID:}
 
+  antivirus:
+    # Analyse anti-malware à l'ingestion (Story 1.8, NFR-P7). Service voisin clamd,
+    # interrogé en INSTREAM sur TCP. Hôte et port ne sont PAS des secrets : ils ont
+    # donc des défauts et n'entrent pas dans RequiredSecretsEnvironmentPostProcessor.
+    #
+    # Il n'existe volontairement AUCUNE clé pour désactiver le scan : un dépôt sans
+    # clamd joignable échoue en 502 SCAN_UNAVAILABLE (transitoire, donc rejoué par la
+    # file offline). C'est le comportement voulu — cf. Docs/runbook-antivirus-ingestion.md.
+    #
+    # Le défaut « clamav » est le nom du service dans infra/docker-compose.yml ;
+    # hors conteneur (mvn spring-boot:run), poser ESCROW_ANTIVIRUS_HOST=localhost.
+    host: ${ESCROW_ANTIVIRUS_HOST:clamav}
+    port: ${ESCROW_ANTIVIRUS_PORT:3310}
+    # Timeouts bornés : le scan est SYNCHRONE dans la requête de dépôt. Sans borne,
+    # un clamd qui accepte la connexion puis se tait (rechargement de bases) tiendrait
+    # un thread de requête indéfiniment. La lecture est la plus lente des deux : c'est
+    # elle qui attend l'analyse effective des octets.
+    connect-timeout-ms: ${ESCROW_ANTIVIRUS_CONNECT_TIMEOUT_MS:2000}
+    read-timeout-ms: ${ESCROW_ANTIVIRUS_READ_TIMEOUT_MS:30000}
+
   auth:
     password:
       # Politique de robustesse (Story 1.6, NFR-P5). Longueurs en OCTETS UTF-8 et

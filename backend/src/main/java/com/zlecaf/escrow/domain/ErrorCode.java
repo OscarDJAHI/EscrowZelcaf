@@ -51,6 +51,16 @@ public enum ErrorCode {
     /** The file itself is unacceptable: empty, off-whitelist, inconsistent type, or over the size cap. */
     EVIDENCE_INVALID(Retryability.PERMANENT),
 
+    /**
+     * L'analyse antivirus à l'ingestion a déclenché sur le fichier (Story 1.8,
+     * NFR-P7). PERMANENT, et non « transitoire le temps que les bases changent » :
+     * rejouer le MÊME fichier redéclenchera à l'identique, donc la file offline doit
+     * geler l'entrée et afficher le motif plutôt que la rejouer indéfiniment. Le nom
+     * de la signature reste au journal serveur et dans l'entrée d'audit — jamais
+     * dans la réponse, qui serait sinon un banc d'essai d'évasion.
+     */
+    EVIDENCE_MALWARE_DETECTED(Retryability.PERMANENT),
+
     /** Withdrawing would leave a DISPUTED transaction with no active evidence (FR-6). */
     EVIDENCE_FLOOR_VIOLATION(Retryability.PERMANENT),
 
@@ -93,6 +103,16 @@ public enum ErrorCode {
 
     /** The object store is unreachable or failed; the deposit may succeed later. */
     STORAGE_UNAVAILABLE(Retryability.TRANSIENT),
+
+    /**
+     * Aucun verdict d'analyse n'a pu être obtenu : moteur injoignable, timeout,
+     * réponse incomprise (Story 1.8, NFR-P7). TRANSIENT — le fichier n'est pas en
+     * cause, le scanner l'était : la file DOIT rejouer, faute de quoi une preuve
+     * parfaitement légitime serait gelée définitivement par une panne d'infra.
+     * Symétrique de {@link #STORAGE_UNAVAILABLE}, l'autre dépendance sortante du
+     * dépôt.
+     */
+    SCAN_UNAVAILABLE(Retryability.TRANSIENT),
 
     /**
      * Anti-bruteforce (Story 1.3, NFR-P2) : l'origine a depasse le seuil de

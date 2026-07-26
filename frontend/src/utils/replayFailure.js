@@ -10,7 +10,7 @@
  */
 
 /**
- * Mirror of the four `Retryability.TRANSIENT` codes of
+ * Mirror of the `Retryability.TRANSIENT` codes of
  * `backend/src/main/java/com/zlecaf/escrow/domain/ErrorCode.java` — that file is
  * the authority; the envelope does not serialise retryability (deliberate: the
  * policy belongs to the client), so the front has to mirror it.
@@ -30,6 +30,11 @@ export const TRANSIENT_CODES = new Set([
   // Revue 1.6 — filet de sécurité du GlobalExceptionHandler : un défaut interne
   // (panne de base, indisponibilité passagère) est circonstanciel, donc rejouable.
   'INTERNAL_ERROR',
+  // Story 1.8 — l'analyse antivirus à l'ingestion n'a pas pu rendre de verdict
+  // (moteur injoignable, timeout). Le fichier n'est PAS en cause : sans cette
+  // entrée, le défaut « permanent » gèlerait définitivement une preuve légitime
+  // sur une simple panne d'infrastructure.
+  'SCAN_UNAVAILABLE',
 ])
 
 /**
@@ -80,6 +85,12 @@ export const FAILURE_LABELS = Object.freeze({
   UNAUTHORIZED_TRANSITION: 'Your role is not allowed to perform this action on this transaction.',
   WINDOW_CLOSED: 'Evidence can no longer be changed at this stage of the transaction.',
   EVIDENCE_INVALID: 'One of the attached files was refused (empty, wrong type, or too large).',
+  // Story 1.8 — verdict d'un scan antivirus à l'ingestion. Rejouer le même fichier
+  // redéclencherait à l'identique : l'entrée est gelée et ce libellé dit quoi faire
+  // (retirer la pièce), sans jamais nommer la signature — le serveur ne la renvoie
+  // pas, et le front n'a donc rien à en dire.
+  EVIDENCE_MALWARE_DETECTED:
+    'One of the attached files was refused by the antivirus scan. Remove it and attach a clean copy.',
   EVIDENCE_FLOOR_VIOLATION: 'A disputed transaction must keep at least one piece of evidence.',
   TOO_MANY_FILES: 'Too many files were attached for a single deposit.',
   COMMENT_TOO_SHORT: 'The comment was missing or too short.',

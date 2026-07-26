@@ -2,6 +2,7 @@ package com.zlecaf.escrow.web;
 
 import com.zlecaf.escrow.domain.ErrorCode;
 import com.zlecaf.escrow.service.TransitionException;
+import com.zlecaf.escrow.service.scan.MalwareScanUnavailableException;
 import com.zlecaf.escrow.service.storage.EvidenceStorageException;
 import com.zlecaf.escrow.web.ApiExceptions.*;
 import org.slf4j.Logger;
@@ -118,6 +119,18 @@ public class GlobalExceptionHandler {
         // Object store unreachable/failed (not a missing object): report a 502 in
         // the standard envelope. No SDK detail is leaked — a fixed, neutral message.
         return body(HttpStatus.BAD_GATEWAY, ErrorCode.STORAGE_UNAVAILABLE, "Stockage de preuves indisponible");
+    }
+
+    @ExceptionHandler(MalwareScanUnavailableException.class)
+    public ResponseEntity<Map<String, Object>> onMalwareScanUnavailable(MalwareScanUnavailableException ex) {
+        // Analyse antivirus impossible (moteur injoignable, timeout, réponse
+        // incomprise) : 502 dans l'enveloppe standard, sur le modèle exact de l'autre
+        // dépendance sortante du dépôt. Le code est TRANSITOIRE — la file offline
+        // rejouera au lieu de geler une preuve légitime — et la cause détaillée reste
+        // dans le journal serveur : ni l'hôte, ni le port, ni la réponse du moteur ne
+        // franchissent la frontière HTTP.
+        LOG.warn("Evidence ingestion refused: malware scan unavailable", ex);
+        return body(HttpStatus.BAD_GATEWAY, ErrorCode.SCAN_UNAVAILABLE, "Analyse antivirus indisponible");
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)

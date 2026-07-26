@@ -8,6 +8,7 @@ import com.zlecaf.escrow.domain.Role;
 import com.zlecaf.escrow.repository.EscrowTransactionRepository;
 import com.zlecaf.escrow.repository.EvidenceFileRepository;
 import com.zlecaf.escrow.security.AuthPrincipal;
+import com.zlecaf.escrow.service.scan.MalwareScanner;
 import com.zlecaf.escrow.service.storage.EvidenceStorage;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
@@ -46,10 +47,15 @@ class EvidenceDownloadStreamLifecycleTest {
     private final TransactionAccess access = mock(TransactionAccess.class);
     private final EvidenceContentValidator validator = mock(EvidenceContentValidator.class);
     private final EvidenceStorage storage = mock(EvidenceStorage.class);
+    // Story 1.8 : dépendance obligatoire du service. Le téléchargement ne l'appelle
+    // jamais (le scan est à l'INGESTION), mais le constructeur l'exige — et c'est
+    // exactement la garantie voulue : on ne peut pas construire un service qui
+    // ingérerait sans scanner.
+    private final MalwareScanner scanner = mock(MalwareScanner.class);
     private final AuditService auditService = mock(AuditService.class);
 
     private final EvidenceService service = new EvidenceService(
-            transactions, evidenceFiles, access, validator, storage, auditService);
+            transactions, evidenceFiles, access, validator, storage, scanner, auditService);
 
     private final AuthPrincipal actor = new AuthPrincipal(7L, "party@example.com", Role.BUYER);
 
