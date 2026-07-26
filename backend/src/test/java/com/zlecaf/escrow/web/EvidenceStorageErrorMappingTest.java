@@ -86,7 +86,7 @@ class EvidenceStorageErrorMappingTest {
                 .andExpect(jsonPath("$.code").value("SCAN_UNAVAILABLE"))
                 // Message FIXE : ni l'hôte, ni le port, ni la cause technique ne
                 // franchissent la frontière HTTP.
-                .andExpect(jsonPath("$.message").value("Analyse antivirus indisponible"))
+                .andExpect(jsonPath("$.message").value("Malware scanning is unavailable"))
                 .andExpect(jsonPath("$.message").value(org.hamcrest.Matchers.not(
                         org.hamcrest.Matchers.containsString("clamd"))))
                 .andExpect(jsonPath("$.timestamp").exists());

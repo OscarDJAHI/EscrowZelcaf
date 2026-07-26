@@ -81,10 +81,17 @@ escrow:
     port: ${ESCROW_ANTIVIRUS_PORT:3310}
     # Timeouts bornés : le scan est SYNCHRONE dans la requête de dépôt. Sans borne,
     # un clamd qui accepte la connexion puis se tait (rechargement de bases) tiendrait
-    # un thread de requête indéfiniment. La lecture est la plus lente des deux : c'est
+    # un thread de requête indéfiniment. La lecture est la plus lente des trois : c'est
     # elle qui attend l'analyse effective des octets.
+    #
+    # write-timeout-ms couvre l'autre moitié du dialogue (revue 1.8) : SO_TIMEOUT ne
+    # borne QUE les lectures, si bien qu'un clamd qui accepte puis cesse de lire
+    # bloquait l'ENVOI indéfiniment — thread de requête, connexion JDBC et verrou de
+    # ligne escrow pris sans fin, ni 502 ni rejeu. Un chien de garde ferme alors le
+    # socket, ce qui débloque l'écriture et rend une indisponibilité ordinaire.
     connect-timeout-ms: ${ESCROW_ANTIVIRUS_CONNECT_TIMEOUT_MS:2000}
     read-timeout-ms: ${ESCROW_ANTIVIRUS_READ_TIMEOUT_MS:30000}
+    write-timeout-ms: ${ESCROW_ANTIVIRUS_WRITE_TIMEOUT_MS:30000}
 
   auth:
     password:

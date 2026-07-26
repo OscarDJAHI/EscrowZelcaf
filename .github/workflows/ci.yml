@@ -26,7 +26,12 @@ jobs:
   backend:
     name: Backend (Maven + Testcontainers)
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    # Relevé de 25 à 45 à la revue 1.8 : la story ajoute un conteneur clamav qui
+    # télécharge ~113 Mo de signatures avant d'écouter (l'image « _base » n'en
+    # embarque aucune, contrairement à ce qui était supposé), plus un
+    # withStartupTimeout de 5 min et une boucle de disponibilité de 3 min. Le budget
+    # de 25 min pouvait être consommé par ce seul test avant même de rendre un verdict.
+    timeout-minutes: 45
     defaults:
       run:
         working-directory: backend

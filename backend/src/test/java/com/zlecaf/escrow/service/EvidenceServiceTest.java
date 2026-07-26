@@ -16,7 +16,7 @@ import com.zlecaf.escrow.security.AuthPrincipal;
 import com.zlecaf.escrow.security.crypto.EncryptedStringConverter;
 import com.zlecaf.escrow.security.crypto.SecretCipher;
 import com.zlecaf.escrow.service.scan.MalwareScanUnavailableException;
-import com.zlecaf.escrow.service.scan.MalwareScanner;
+import com.zlecaf.escrow.service.scan.MalwareScanGateway;
 import com.zlecaf.escrow.service.scan.ScanVerdict;
 import com.zlecaf.escrow.service.storage.EvidenceNotFoundException;
 import com.zlecaf.escrow.service.storage.EvidenceStorage;
@@ -99,8 +99,8 @@ class EvidenceServiceTest {
         }
 
         @Bean
-        MalwareScanner malwareScanner() {
-            return new ProgrammableMalwareScanner();
+        MalwareScanGateway malwareScanner() {
+            return new ProgrammableMalwareScanGateway();
         }
 
         @Bean
@@ -110,7 +110,7 @@ class EvidenceServiceTest {
     }
 
     /**
-     * Faux {@link MalwareScanner} programmable (Story 1.8). « Sain » par défaut pour
+     * Faux {@link MalwareScanGateway} programmable (Story 1.8). « Sain » par défaut pour
      * que tout ce que cette classe prouvait déjà reste prouvé ; les cas de rejet et
      * d'indisponibilité sont armés test par test.
      *
@@ -119,7 +119,7 @@ class EvidenceServiceTest {
      * jamais</em> atteindre le moteur. Un test qui vérifierait seulement le code
      * d'erreur passerait tout aussi bien si le scan tournait d'abord.
      */
-    static class ProgrammableMalwareScanner implements MalwareScanner {
+    static class ProgrammableMalwareScanGateway implements MalwareScanGateway {
         /** Nombre d'octets exact des contenus à déclarer infectés (identité par taille + hash suffirait ; la taille suffit ici). */
         volatile java.util.function.Predicate<byte[]> infectedWhen = content -> false;
         volatile boolean unavailable = false;
@@ -186,7 +186,7 @@ class EvidenceServiceTest {
     @Autowired
     private EvidenceStorage storage;
     @Autowired
-    private MalwareScanner scanner;
+    private MalwareScanGateway scanner;
 
     /**
      * Le faux scanner et le faux stockage sont des singletons de contexte, partagés
@@ -196,7 +196,7 @@ class EvidenceServiceTest {
      */
     @org.junit.jupiter.api.BeforeEach
     void resetDoubles() {
-        ((ProgrammableMalwareScanner) scanner).reset();
+        ((ProgrammableMalwareScanGateway) scanner).reset();
         ((InMemoryEvidenceStorage) storage).objects.clear();
     }
 
@@ -1077,8 +1077,8 @@ class EvidenceServiceTest {
         return new MockMultipartFile("files", filename, "application/pdf", markedPdfBytes(marker));
     }
 
-    private ProgrammableMalwareScanner fakeScanner() {
-        return (ProgrammableMalwareScanner) scanner;
+    private ProgrammableMalwareScanGateway fakeScanner() {
+        return (ProgrammableMalwareScanGateway) scanner;
     }
 
     private int storedObjectCount() {

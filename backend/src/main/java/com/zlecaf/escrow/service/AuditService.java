@@ -5,8 +5,10 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.zlecaf.escrow.domain.AuditLog;
 import com.zlecaf.escrow.domain.EscrowEvent;
 import com.zlecaf.escrow.domain.EscrowState;
+import com.zlecaf.escrow.domain.EscrowTransaction;
 import com.zlecaf.escrow.domain.ParticipantRole;
 import com.zlecaf.escrow.repository.AuditLogRepository;
+import com.zlecaf.escrow.repository.EscrowTransactionRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -21,10 +23,13 @@ import org.springframework.transaction.annotation.Transactional;
 public class AuditService {
 
     private final AuditLogRepository auditLogs;
+    private final EscrowTransactionRepository transactions;
     private final ObjectMapper objectMapper;
 
-    public AuditService(AuditLogRepository auditLogs, ObjectMapper objectMapper) {
+    public AuditService(AuditLogRepository auditLogs, EscrowTransactionRepository transactions,
+                        ObjectMapper objectMapper) {
         this.auditLogs = auditLogs;
+        this.transactions = transactions;
         this.objectMapper = objectMapper;
     }
 
@@ -134,8 +139,21 @@ public class AuditService {
         payload.put("filename", sanitizedFilename);
         payload.put("sha256", sha256);
         payload.put("signature", signature);
-        // Un rejet n'est pas un changement d'état : previous == next == currentState.
-        save(transactionId, actorId, currentState, currentState, payload);
+        // État DURABLE, pas celui de l'appelant (revue 1.8). Sur la route de litige
+        // composite, EscrowService bascule la transaction en DISPUTED AVANT de déposer
+        // les pièces ; l'entité en mémoire porte donc DISPUTED, mais le rejet fait
+        // rollback et la transaction reste dans son état antérieur. Auditer
+        // l'instantané de l'appelant gravait un état jamais commité dans une table
+        // append-only conservée >= 5 ans.
+        //
+        // Cette méthode étant en REQUIRES_NEW, sa transaction voit l'état COMMITÉ. Le
+        // SELECT est non bloquant : sous MVCC Postgres, un lecteur simple n'attend pas
+        // le SELECT ... FOR UPDATE que détient la transaction appelante.
+        EscrowState durableState = transactions.findById(transactionId)
+                .map(EscrowTransaction::getState)
+                .orElse(currentState);
+        // Un rejet n'est pas un changement d'état : previous == next.
+        save(transactionId, actorId, durableState, durableState, payload);
     }
 
     /**

@@ -19,7 +19,8 @@ import com.zlecaf.escrow.repository.UserRepository;
 import com.zlecaf.escrow.security.AuthPrincipal;
 import com.zlecaf.escrow.security.crypto.EncryptedStringConverter;
 import com.zlecaf.escrow.security.crypto.SecretCipher;
-import com.zlecaf.escrow.service.scan.MalwareScanner;
+import com.zlecaf.escrow.service.scan.MalwareScanGateway;
+import com.zlecaf.escrow.service.scan.MalwareScanUnavailableException;
 import com.zlecaf.escrow.service.scan.ScanVerdict;
 import com.zlecaf.escrow.service.storage.EvidenceNotFoundException;
 import com.zlecaf.escrow.service.storage.EvidenceStorage;
@@ -101,6 +102,84 @@ class EscrowDisputeServiceTest {
         registry.add("spring.jpa.hibernate.ddl-auto", () -> "none");
     }
 
+    // --- Revue 1.8 : la route de litige composite, jamais couverte par l'antivirus ---
+
+    @Test
+    @DisplayName("Revue 1.8 — une PANNE de scanner sur la route de litige n'est PAS auditee")
+    void disputeScannerOutageIsNotAudited() {
+        // Le catch (RuntimeException) d'openDispute avalait MalwareScanUnavailableException
+        // comme les autres et ecrivait une ligne recordFailure. Deux consequences : il
+        // violait l'invariant explicite de la story (« indisponibilite NON auditee »,
+        // sans quoi un incident d'infrastructure inonde une table append-only a
+        // retention >= 5 ans, une ligne par tentative), et il y persistait l'hote et le
+        // port de clamd via ex.getMessage() — que GlobalExceptionHandler prend
+        // precisement soin de tenir hors de la reponse HTTP.
+        User buyer = persistUser("dispmw1@example.com", Role.BUYER);
+        User seller = persistUser("dispmw1s@example.com", Role.SELLER);
+        EscrowTransaction tx = persistTransaction(buyer.getId(), seller.getId(), EscrowState.FUNDS_LOCKED);
+        AuthPrincipal actor = new AuthPrincipal(buyer.getId(), buyer.getEmail(), Role.BUYER);
+
+        scanner.unavailable = true;
+        try {
+            assertThatThrownBy(() -> escrowService.openDispute(actor, tx.getId(),
+                    List.of(pdf("receipt.pdf")), "the item never arrived", null))
+                    .isInstanceOf(MalwareScanUnavailableException.class);
+        } finally {
+            scanner.unavailable = false;
+        }
+
+        // Rien n'a bouge, et RIEN n'a ete audite.
+        assertThat(stateOf(tx.getId())).isEqualTo(EscrowState.FUNDS_LOCKED);
+        assertThat(evidenceFor(tx.getId())).isEmpty();
+        assertThat(auditFor(tx.getId())).isEmpty();
+    }
+
+    @Test
+    @DisplayName("Revue 1.8 — un fichier INFECTE sur la route de litige : rollback complet, et l'audit porte l'etat DURABLE")
+    void disputeWithInfectedFileRollsBackAndAuditsTheDurableState() {
+        User buyer = persistUser("dispmw2@example.com", Role.BUYER);
+        User seller = persistUser("dispmw2s@example.com", Role.SELLER);
+        EscrowTransaction tx = persistTransaction(buyer.getId(), seller.getId(), EscrowState.FUNDS_LOCKED);
+        AuthPrincipal actor = new AuthPrincipal(buyer.getId(), buyer.getEmail(), Role.BUYER);
+
+        scanner.infectedWhen = content -> true;
+        try {
+            assertThatThrownBy(() -> escrowService.openDispute(actor, tx.getId(),
+                    List.of(pdf("receipt.pdf")), "the item never arrived", null))
+                    .isInstanceOf(BadRequestException.class);
+        } finally {
+            scanner.infectedWhen = content -> false;
+        }
+
+        // La transition est annulee : la transaction n'a jamais ete DISPUTED.
+        assertThat(stateOf(tx.getId())).isEqualTo(EscrowState.FUNDS_LOCKED);
+        assertThat(evidenceFor(tx.getId())).isEmpty();
+
+        // Le rejet survit au rollback (REQUIRES_NEW). DEUX lignes, qui disent deux
+        // faits distincts : « ce fichier a ete refuse pour malware » (la trace du
+        // NFR-P7, avec le detail) et « cette tentative d'ouverture de litige a
+        // echoue » (comportement PREEXISTANT, identique pour un fichier trop gros ou
+        // un stockage injoignable). La seconde n'est pas un doublon : la supprimer
+        // ferait disparaitre la trace qu'un litige a ete tente. Contrairement a une
+        // panne de scanner, un rejet EST auditable — l'invariant de la story porte sur
+        // l'indisponibilite, pas sur le rejet.
+        List<AuditLog> audit = auditFor(tx.getId());
+        assertThat(audit).hasSize(2);
+        AuditLog rejection = audit.stream()
+                .filter(a -> a.getPayload().has("action")
+                        && "EVIDENCE_REJECTED_MALWARE".equals(a.getPayload().get("action").asText()))
+                .findFirst().orElseThrow();
+        assertThat(audit).anySatisfy(a ->
+                assertThat(a.getPayload().path("outcome").asText()).isEqualTo("REJECTED"));
+
+        // ...et il porte l'etat REELLEMENT commite. openDispute bascule l'entite en
+        // DISPUTED AVANT de deposer : auditer l'instantane de l'appelant gravait
+        // DISPUTED — un etat que cette transaction n'a jamais atteint — pour toujours,
+        // dans une table WORM.
+        assertThat(rejection.getPreviousState()).isEqualTo(EscrowState.FUNDS_LOCKED.name());
+        assertThat(rejection.getNextState()).isEqualTo(EscrowState.FUNDS_LOCKED.name());
+    }
+
     @TestConfiguration
     static class TestConfig {
         @Bean
@@ -114,15 +193,35 @@ class EscrowDisputeServiceTest {
         }
 
         /**
-         * Story 1.8 : {@code MalwareScanner} est desormais une dependance
-         * OBLIGATOIRE d'{@code EvidenceService}. Ce faux scanner rend TOUJOURS
-         * « sain » pour que cette classe continue de prouver exactement ce qu'elle
-         * prouvait — jamais en desactivant le scan, qui n'a volontairement aucun
-         * interrupteur.
+         * Story 1.8 : {@code MalwareScanGateway} est desormais une dependance
+         * OBLIGATOIRE d'{@code EvidenceService}. Sain par DEFAUT pour que cette classe
+         * continue de prouver exactement ce qu'elle prouvait — jamais en desactivant
+         * le scan, qui n'a volontairement aucun interrupteur.
+         *
+         * <p>Scriptable depuis la revue 1.8 : il rendait auparavant TOUJOURS « sain »,
+         * si bien qu'aucun fichier infecte ni aucune panne de scanner n'a jamais
+         * traverse la route de litige composite. C'est exactement pour cela que les
+         * defauts de cette route — indisponibilite auditee contre l'invariant, hote et
+         * port de clamd graves dans une table a retention >= 5 ans, etat jamais commite
+         * — sont passes inapercus alors que la story cite les trois routes.
          */
         @Bean
-        MalwareScanner malwareScanner() {
-            return content -> ScanVerdict.clean();
+        ScriptedScanner malwareScanner() {
+            return new ScriptedScanner();
+        }
+    }
+
+    /** Faux scanner pilotable test par test (revue 1.8). */
+    static class ScriptedScanner implements MalwareScanGateway {
+        volatile java.util.function.Predicate<byte[]> infectedWhen = content -> false;
+        volatile boolean unavailable = false;
+
+        @Override
+        public ScanVerdict scan(byte[] content) {
+            if (unavailable) {
+                throw new MalwareScanUnavailableException("panne simulee");
+            }
+            return infectedWhen.test(content) ? ScanVerdict.infected("Test.Signature") : ScanVerdict.clean();
         }
     }
 
@@ -172,6 +271,8 @@ class EscrowDisputeServiceTest {
     private AuditLogRepository auditLogs;
     @Autowired
     private EvidenceStorage storage;
+    @Autowired
+    private ScriptedScanner scanner;
 
     // --- fixtures (committed via the repositories, since the test is non-transactional) ---
 

@@ -129,8 +129,10 @@ public class GlobalExceptionHandler {
         // rejouera au lieu de geler une preuve légitime — et la cause détaillée reste
         // dans le journal serveur : ni l'hôte, ni le port, ni la réponse du moteur ne
         // franchissent la frontière HTTP.
+        // Message en anglais comme ses voisins (revue 1.8) : le backend n'émet pas de
+        // texte localisé, le libellé utilisateur est porté par le frontend (AD-23).
         LOG.warn("Evidence ingestion refused: malware scan unavailable", ex);
-        return body(HttpStatus.BAD_GATEWAY, ErrorCode.SCAN_UNAVAILABLE, "Analyse antivirus indisponible");
+        return body(HttpStatus.BAD_GATEWAY, ErrorCode.SCAN_UNAVAILABLE, "Malware scanning is unavailable");
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)

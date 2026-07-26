@@ -1,7 +1,7 @@
 package com.zlecaf.escrow.service.scan;
 
 /**
- * Verdict rendu par le port {@link MalwareScanner} (Story 1.8).
+ * Verdict rendu par le port {@link MalwareScanGateway} (Story 1.8).
  *
  * <p>Deux états seulement, et pas de troisième : « sain » et « infecté ». Un
  * « je ne sais pas » n'a délibérément aucune représentation ici — il se signale

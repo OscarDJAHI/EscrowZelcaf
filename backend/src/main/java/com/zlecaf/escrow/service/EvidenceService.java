@@ -10,7 +10,7 @@ import com.zlecaf.escrow.domain.UploaderType;
 import com.zlecaf.escrow.repository.EscrowTransactionRepository;
 import com.zlecaf.escrow.repository.EvidenceFileRepository;
 import com.zlecaf.escrow.security.AuthPrincipal;
-import com.zlecaf.escrow.service.scan.MalwareScanner;
+import com.zlecaf.escrow.service.scan.MalwareScanGateway;
 import com.zlecaf.escrow.service.scan.ScanVerdict;
 import com.zlecaf.escrow.service.storage.EvidenceNotFoundException;
 import com.zlecaf.escrow.service.storage.EvidenceStorage;
@@ -82,7 +82,7 @@ public class EvidenceService {
     private final TransactionAccess access;
     private final EvidenceContentValidator validator;
     private final EvidenceStorage storage;
-    private final MalwareScanner scanner;
+    private final MalwareScanGateway scanner;
     private final AuditService auditService;
 
     public EvidenceService(EscrowTransactionRepository transactions,
@@ -90,7 +90,7 @@ public class EvidenceService {
                            TransactionAccess access,
                            EvidenceContentValidator validator,
                            EvidenceStorage storage,
-                           MalwareScanner scanner,
+                           MalwareScanGateway scanner,
                            AuditService auditService) {
         this.transactions = transactions;
         this.evidenceFiles = evidenceFiles;
@@ -288,17 +288,43 @@ public class EvidenceService {
         // l'exception ci-dessous déclenche. Une panne de scanner, elle, n'est PAS
         // auditée (WARN seulement) : l'auditer inonderait une table append-only à
         // rétention >= 5 ans (AD-25) au premier incident d'infrastructure.
-        auditService.recordEvidenceRejectedByScan(tx.getId(), attribution.auditActorId(),
-                attribution.auditRole(), tx.getState(), safeName, sha256Hex(bytes), verdict.signature());
+        //
+        // L'échec de l'audit ne doit PAS changer le verdict rendu au client (revue
+        // 1.8). Sans cette garde, une base indisponible faisait remonter l'exception
+        // d'audit à la place du rejet : elle sortait en 500 INTERNAL_ERROR, classé
+        // TRANSIENT, et la file offline rejouait le fichier infecté indéfiniment —
+        // l'exact contraire du classement PERMANENT d'EVIDENCE_MALWARE_DETECTED. On
+        // perd alors la trace, pas le refus : le fichier reste rejeté, et la perte de
+        // trace est criée dans les journaux.
+        try {
+            auditService.recordEvidenceRejectedByScan(tx.getId(), attribution.auditActorId(),
+                    attribution.auditRole(), tx.getState(), forLog(safeName), sha256Hex(bytes),
+                    forLog(verdict.signature()));
+        } catch (RuntimeException auditFailure) {
+            log.error("Malware detected on transaction {} but the audit entry could NOT be written "
+                            + "(file '{}', signature '{}') — the deposit is still refused, the trail is not",
+                    tx.getId(), forLog(safeName), forLog(verdict.signature()), auditFailure);
+        }
         log.warn("Malware detected on evidence ingestion for transaction {} (file '{}', signature '{}'): "
                         + "deposit rejected, nothing stored",
-                tx.getId(), forLog(safeName), verdict.signature());
+                tx.getId(), forLog(safeName), forLog(verdict.signature()));
         // Le message nomme le fichier — sans quoi le déposant d'un lot de vingt
         // pièces ne saurait pas laquelle retirer — mais TAIT le nom de signature :
         // le rendre transformerait l'endpoint en banc d'essai d'évasion.
+        //
+        // En anglais comme tous ses voisins de cette méthode (« Uploaded file is
+        // empty », « File exceeds the maximum allowed size ») : le backend n'émet pas
+        // de texte localisé, le libellé utilisateur est porté par le frontend (AD-23,
+        // même arbitrage qu'à la revue 1.6). Le message était en français alors que
+        // EvidenceDeposit.vue l'affiche brut, si bien qu'un déposant en ligne lisait
+        // du français quand la file offline montrait l'anglais pour le MÊME échec.
+        //
+        // Nom passé par forLog (revue 1.8) : sanitizeFilename borne le basename mais
+        // ne retire pas les caractères de contrôle, et ce nom part aussi dans le
+        // payload d'audit que le runbook invite l'opérateur à lire dans un terminal.
         throw new BadRequestException(ErrorCode.EVIDENCE_MALWARE_DETECTED,
-                (safeName == null ? "Un fichier du dépôt" : "Le fichier « " + safeName + " »")
-                        + " a été refusé : contenu malveillant détecté.");
+                (safeName == null ? "A file in this deposit" : "File \"" + forLog(safeName) + "\"")
+                        + " was refused: malicious content detected.");
     }
 
     /**

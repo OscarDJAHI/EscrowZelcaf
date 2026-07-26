@@ -71,11 +71,27 @@ ESCROW_ANTIVIRUS_HOST=clamav      # nom du service compose (défaut)
 ESCROW_ANTIVIRUS_PORT=3310
 ESCROW_ANTIVIRUS_CONNECT_TIMEOUT_MS=2000
 ESCROW_ANTIVIRUS_READ_TIMEOUT_MS=30000
+ESCROW_ANTIVIRUS_WRITE_TIMEOUT_MS=30000   # chien de garde d'écriture (revue 1.8)
 ```
 
 Aucune de ces valeurs n'est un secret : elles n'apparaissent pas dans la validation
 des secrets au démarrage, et un hôte absent ne fait **pas** échouer le boot — il fait
-échouer les dépôts, en 502.
+échouer les dépôts, en 502. En revanche un **port hors bornes** fait désormais échouer
+le démarrage avec un message nommant `escrow.antivirus.port` (revue 1.8) : il partait
+auparavant en 500 au premier dépôt, présentant une faute de configuration comme un
+défaut serveur.
+
+> ⚠️ **Sous compose, ces variables sont codées en dur dans `infra/docker-compose.yml`**
+> (`ESCROW_ANTIVIRUS_HOST: clamav`), sans passthrough `${…}` : les poser dans
+> `infra/.env` **ne fait rien**. Elles ne sont réglables que hors conteneur, ou en
+> modifiant le compose. Les deux documents se contredisaient avant la revue 1.8.
+
+**Pourquoi un timeout d'écriture séparé.** `SO_TIMEOUT` ne borne que les lectures.
+Un clamd qui accepte la connexion puis cesse de lire — toutes ses `MaxThreads`
+occupées, ou un rechargement de bases — bloquait `write` indéfiniment dès que les
+tampons du socket étaient pleins, en tenant le thread de requête, la connexion JDBC
+et le verrou de ligne escrow. Le chien de garde ferme le socket, ce qui débloque
+l'écriture et rend un 502 ordinaire.
 
 Hors conteneur (`mvn spring-boot:run`), poser `ESCROW_ANTIVIRUS_HOST=localhost` et
 lancer un clamd local, sinon aucun dépôt ne passera.
@@ -99,17 +115,37 @@ Une trace de démarrage saine se termine par `socket found, clamd started.`
 
 ### Mise à jour des bases virales
 
-L'image utilisée est la variante **`_base`** (`clamav/clamav:1.4.3_base`) : les bases
-sont **embarquées dans l'image**, donc aucun téléchargement bloquant au premier
-démarrage — c'est ce qui rend la stack utilisable hors ligne et en CI. Le compose
-pose `CLAMAV_NO_FRESHCLAM=true`, qui désactive la mise à jour automatique.
+> **Corrigé à la revue 1.8.** Ce runbook affirmait que l'image `_base` embarque les
+> bases virales. **C'est faux** : l'image fait ~79 Mo, `/var/lib/clamav` y est vide,
+> et son `/init` lance `freshclam` dès que ce dossier est vide. Tout ce qui suit a
+> été réécrit sur le comportement réel.
 
-- **En local / CI** : rien à faire. Les bases datent de l'image ; c'est suffisant pour
-  vérifier que la chaîne fonctionne.
-- **En staging / production** : les bases doivent vieillir le moins possible.
-  Retirer `CLAMAV_NO_FRESHCLAM` (freshclam tourne alors en tâche de fond dans le
-  conteneur et rafraîchit les signatures), et relever l'image de temps en temps —
-  une image `_base` figée est une base figée.
+L'image utilisée est la variante **`_base`** (`clamav/clamav:1.4.3_base`). Elle ne
+porte **aucune signature** : au tout premier démarrage, le conteneur télécharge
+`main.cvd` + `daily.cvd` + `bytecode.cvd` (~113 Mo) **avant** que clamd n'écoute.
+
+Ce qui rend les démarrages suivants rapides et hors ligne, c'est le **volume nommé
+`clamavdb`** monté sur `/var/lib/clamav` (posé à la revue 1.8) : les bases y
+persistent d'une recréation de conteneur à l'autre. Sans lui, chaque
+`docker compose up --build` repayait les 113 Mo — et sur un lien lent dépassait le
+budget du healthcheck, ce qui, le backend étant gaté par `depends_on:
+service_healthy`, empêchait **toute la stack** de démarrer au lieu de dégrader en
+502.
+
+Le compose pose `CLAMAV_NO_FRESHCLAMD=true`. Deux précisions qui comptent :
+
+- **Le nom exact est `CLAMAV_NO_FRESHCLAMD`**, avec un `D` final (`/init` de l'image,
+  ligne 67). La variante sans `D`, posée jusqu'à la revue 1.8, n'était lue par
+  personne : `freshclam` tournait quand même, contrairement à ce que le compose
+  affirmait.
+- Elle coupe le **daemon** de mise à jour, pas le téléchargement initial — celui-ci
+  est inconditionnel quand le volume est vide.
+
+- **En local / CI** : rien à faire au-delà du premier démarrage, plus long. Les bases
+  vivent ensuite dans le volume.
+- **En staging / production** : les bases doivent vieillir le moins possible. Retirer
+  `CLAMAV_NO_FRESHCLAMD` (freshclam tourne alors en tâche de fond et rafraîchit les
+  signatures), et relever l'image de temps en temps.
 
 Mettre à jour manuellement, sans attendre :
 
