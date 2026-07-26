@@ -106,6 +106,14 @@ public enum ErrorCode {
     /** Bean-validation rejected the request body. */
     VALIDATION_ERROR(Retryability.PERMANENT),
 
+    /**
+     * Le mot de passe fourni (inscription ou changement) ne respecte pas la
+     * politique de robustesse (Story 1.6, NFR-P5). PERMANENT : rejouer le même mot
+     * de passe échouera à l'identique. Le message énumère les règles (endpoint
+     * public, PAS anti-énumération — contrairement à AUTH_FAILED).
+     */
+    WEAK_PASSWORD(Retryability.PERMANENT),
+
     /** A required multipart part, request parameter or header is absent. */
     MISSING_REQUEST_PART(Retryability.PERMANENT),
 

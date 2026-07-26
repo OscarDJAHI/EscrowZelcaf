@@ -88,6 +88,15 @@ class ErrorCodeContractTest {
     }
 
     @Test
+    @DisplayName("WEAK_PASSWORD is PERMANENT (Story 1.6): replaying the same weak password fails identically")
+    void weakPasswordIsPermanent() {
+        // Ajout coordonné Story 1.6. PERMANENT : ne rejoint pas la partition transient
+        // (le client ne doit jamais rejouer un mot de passe faible), donc n'affecte pas
+        // transientPartitionIsExact — mais on verrouille explicitement le classement.
+        assertThat(ErrorCode.WEAK_PASSWORD.retryability()).isEqualTo(Retryability.PERMANENT);
+    }
+
+    @Test
     @DisplayName("The partner auth failures share ONE opaque code: no key-id enumeration oracle")
     void partnerAuthHasExactlyOneCode() {
         // Anti-enumeration is the point: unknown key, inactive key, bad signature,

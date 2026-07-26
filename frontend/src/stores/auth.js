@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { loginUser, registerUser } from '@/api/auth'
+import { loginUser, registerUser, logoutUser } from '@/api/auth'
 import { TOKEN_STORAGE_KEY } from '@/api/client'
 
 const USER_STORAGE_KEY = 'escrow_user'
@@ -72,9 +72,21 @@ export const useAuthStore = defineStore('auth', {
     },
 
     logout() {
+      // Vidage local SYNCHRONE et immédiat (déconnexion client garantie), puis
+      // révocation serveur best-effort en fire-and-forget avec le jeton capturé
+      // (Story 1.6) : le serveur cesse d'accepter ce jeton, pas seulement le client.
+      // Hors ligne ou jeton déjà invalide, l'échec est ignoré. L'hygiène approfondie
+      // (file offline, appareil partagé) relève de la Story 1.9.
+      const revokedToken = this.token
       this.token = null
       this.user = null
       this.persist()
+      if (revokedToken) {
+        // Différé en microtâche : logout() ne lève JAMAIS de façon synchrone, quel
+        // que soit l'état du client HTTP ; tout échec (réseau, jeton déjà invalide)
+        // est avalé — la déconnexion locale ci-dessus reste effective.
+        Promise.resolve(revokedToken).then(logoutUser).catch(() => {})
+      }
     },
   },
 })

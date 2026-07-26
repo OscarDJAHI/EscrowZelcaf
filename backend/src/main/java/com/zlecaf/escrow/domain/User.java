@@ -27,6 +27,13 @@ public class User {
     @Column(nullable = false, length = 50)
     private Role role;
 
+    /**
+     * Version de jeton (Story 1.6, NFR-P5). Chaque JWT émis embarque cette valeur ;
+     * l'incrémenter révoque instantanément toutes les sessions du compte côté serveur.
+     */
+    @Column(name = "token_version", nullable = false)
+    private int tokenVersion = 0;
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "company_id")
     private Company company;
@@ -59,6 +66,9 @@ public class User {
 
     public Role getRole() { return role; }
     public void setRole(Role role) { this.role = role; }
+
+    public int getTokenVersion() { return tokenVersion; }
+    public void setTokenVersion(int tokenVersion) { this.tokenVersion = tokenVersion; }
 
     public Company getCompany() { return company; }
     public void setCompany(Company company) { this.company = company; }

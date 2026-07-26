@@ -1,6 +1,8 @@
 package com.zlecaf.escrow.security;
 
 import com.zlecaf.escrow.domain.Role;
+import com.zlecaf.escrow.domain.User;
+import com.zlecaf.escrow.repository.UserRepository;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.JwtException;
 import jakarta.servlet.FilterChain;
@@ -27,9 +29,11 @@ import java.util.List;
 public class JwtAuthFilter extends OncePerRequestFilter {
 
     private final JwtService jwtService;
+    private final UserRepository users;
 
-    public JwtAuthFilter(JwtService jwtService) {
+    public JwtAuthFilter(JwtService jwtService, UserRepository users) {
         this.jwtService = jwtService;
+        this.users = users;
     }
 
     @Override
@@ -43,14 +47,30 @@ public class JwtAuthFilter extends OncePerRequestFilter {
             try {
                 Claims claims = jwtService.parse(token);
                 Long userId = Long.valueOf(claims.getSubject());
-                Role role = Role.valueOf(claims.get("role", String.class));
-                String email = claims.get("email", String.class);
-                AuthPrincipal principal = new AuthPrincipal(userId, email, role);
 
-                var authorities = List.of(new SimpleGrantedAuthority("ROLE_" + role.name()));
-                var authentication = new UsernamePasswordAuthenticationToken(principal, null, authorities);
-                authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
-                SecurityContextHolder.getContext().setAuthentication(authentication);
+                // Révocation côté serveur (Story 1.6, NFR-P5) : la signature + exp ne
+                // suffisent plus. On confronte le claim `tv` à la version courante en
+                // base ; un token dont la version est périmée (logout, changement de mot
+                // de passe/rôle, désactivation) est refusé, même non expiré. Un compte
+                // absent est refusé aussi. Un token sans `tv` vaut version 0. On
+                // n'authentifie QUE si l'utilisateur existe ET la version correspond ;
+                // sinon on laisse le contexte non authentifié (rejet 403 en aval).
+                User user = users.findById(userId).orElse(null);
+                Integer tokenVersionClaim = claims.get("tv", Integer.class);
+                int presentedVersion = tokenVersionClaim == null ? 0 : tokenVersionClaim;
+
+                if (user != null && presentedVersion == user.getTokenVersion()) {
+                    Role role = Role.valueOf(claims.get("role", String.class));
+                    String email = claims.get("email", String.class);
+                    AuthPrincipal principal = new AuthPrincipal(userId, email, role);
+
+                    var authorities = List.of(new SimpleGrantedAuthority("ROLE_" + role.name()));
+                    var authentication = new UsernamePasswordAuthenticationToken(principal, null, authorities);
+                    authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
+                    SecurityContextHolder.getContext().setAuthentication(authentication);
+                } else {
+                    SecurityContextHolder.clearContext();
+                }
             } catch (JwtException | IllegalArgumentException ex) {
                 // Malformed / expired token: leave the context unauthenticated.
                 SecurityContextHolder.clearContext();

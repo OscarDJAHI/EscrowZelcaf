@@ -35,6 +35,8 @@ public class JwtService {
                 .subject(String.valueOf(user.getId()))
                 .claim("email", user.getEmail())
                 .claim("role", user.getRole().name())
+                // Version de jeton (Story 1.6) : le filtre la compare à users.token_version.
+                .claim("tv", user.getTokenVersion())
                 .issuedAt(Date.from(now))
                 .expiration(Date.from(now.plusSeconds(ttlSeconds)))
                 .signWith(key)

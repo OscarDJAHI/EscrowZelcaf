@@ -1,12 +1,15 @@
 package com.zlecaf.escrow.service;
 
+import com.zlecaf.escrow.domain.ErrorCode;
 import com.zlecaf.escrow.domain.Role;
 import com.zlecaf.escrow.domain.User;
 import com.zlecaf.escrow.repository.UserRepository;
 import com.zlecaf.escrow.security.JwtService;
+import com.zlecaf.escrow.security.PasswordPolicy;
 import com.zlecaf.escrow.web.ApiExceptions.BadRequestException;
 import com.zlecaf.escrow.web.ApiExceptions.UnauthorizedException;
 import com.zlecaf.escrow.web.ApiExceptions.ConflictException;
+import com.zlecaf.escrow.web.ApiExceptions.NotFoundException;
 import com.zlecaf.escrow.web.dto.AuthDtos.*;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -18,11 +21,14 @@ public class AuthService {
     private final UserRepository users;
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
+    private final PasswordPolicy passwordPolicy;
 
-    public AuthService(UserRepository users, PasswordEncoder passwordEncoder, JwtService jwtService) {
+    public AuthService(UserRepository users, PasswordEncoder passwordEncoder, JwtService jwtService,
+                       PasswordPolicy passwordPolicy) {
         this.users = users;
         this.passwordEncoder = passwordEncoder;
         this.jwtService = jwtService;
+        this.passwordPolicy = passwordPolicy;
     }
 
     @Transactional
@@ -31,6 +37,8 @@ public class AuthService {
         if (users.existsByEmail(email)) {
             throw new ConflictException("Email already registered");
         }
+        // Politique de robustesse (Story 1.6, NFR-P5) : autorité unique, avant le hachage.
+        passwordPolicy.validate(request.password());
         // Le rôle n'est JAMAIS attribué par le client à l'inscription. Liste BLANCHE :
         // seuls les rôles non-privilégiés {BUYER, SELLER} sont acceptés ; tout autre rôle
         // (ADMIN — arbitre, contrôle des fonds via RESOLVE_RELEASE/REFUND — ou un futur
@@ -64,5 +72,41 @@ public class AuthService {
             throw new UnauthorizedException("Invalid credentials");
         }
         return new AuthResponse(jwtService.generateToken(user), UserDto.from(user));
+    }
+
+    /**
+     * Change le mot de passe d'un utilisateur authentifié (Story 1.6, AC #3).
+     * Vérifie l'ancien mot de passe, applique la politique au nouveau, puis
+     * <b>révoque toutes les sessions</b> — le jeton courant (ancienne version)
+     * devient invalide, l'utilisateur doit se reconnecter.
+     */
+    @Transactional
+    public void changePassword(Long userId, ChangePasswordRequest request) {
+        User user = users.findById(userId)
+                .orElseThrow(() -> new NotFoundException("User not found"));
+        if (!passwordEncoder.matches(request.oldPassword(), user.getPasswordHash())) {
+            // L'utilisateur est déjà authentifié (on sait qui il est) : pas de risque
+            // d'énumération, un message clair est légitime. Distinct de WEAK_PASSWORD.
+            throw new BadRequestException(ErrorCode.INVALID_REQUEST, "L'ancien mot de passe est incorrect");
+        }
+        passwordPolicy.validate(request.newPassword());
+        user.setPasswordHash(passwordEncoder.encode(request.newPassword()));
+        user.setTokenVersion(user.getTokenVersion() + 1);
+        users.save(user);
+    }
+
+    /**
+     * Révoque toutes les sessions d'un compte en incrémentant sa version de jeton
+     * (Story 1.6). Primitive unique réutilisée par le logout, le changement de mot
+     * de passe (ci-dessus), et plus tard le changement de rôle (7.2, AD-21) / la
+     * désactivation. Idempotente au sens où chaque appel invalide les jetons émis
+     * jusque-là.
+     */
+    @Transactional
+    public void revokeSessions(Long userId) {
+        User user = users.findById(userId)
+                .orElseThrow(() -> new NotFoundException("User not found"));
+        user.setTokenVersion(user.getTokenVersion() + 1);
+        users.save(user);
     }
 }

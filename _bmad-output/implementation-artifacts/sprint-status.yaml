@@ -74,7 +74,7 @@
 # Epics 6-7-8 → Epics 9-10 → Epic 11 en continu (11-9 avant production).
 
 generated: 2026-07-24
-last_updated: "2026-07-25 (1-4 & 1-5 done — revue soldée 8 patchs, CI verte run 30157027932, 320 tests)"
+last_updated: "2026-07-25 (1-6 review — politique mdp + révocation JWT token_version, 343 tests)"
 project: Escrow_claude (Production)
 project_key: NOKEY
 tracking_system: file-system
@@ -88,7 +88,7 @@ development_status:
   1-3-anti-bruteforce-authentification: done
   1-4-tls-bout-en-bout-entetes-securite: done
   1-5-cors-allowlist-swagger-ferme-production: done
-  1-6-politique-mots-de-passe-revocation-jwt: backlog
+  1-6-politique-mots-de-passe-revocation-jwt: review
   1-7-chiffrement-au-repos: backlog
   1-8-scan-anti-malware-ingestion: backlog
   1-9-hygiene-session-appareil-partage: backlog

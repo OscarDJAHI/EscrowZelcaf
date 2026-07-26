@@ -13,7 +13,10 @@ public final class AuthDtos {
 
     public record RegisterRequest(
             @Email @NotBlank String email,
-            @NotBlank @Size(min = 6, max = 100) String password,
+            // La robustesse (longueur mini + complexité) est portée par PasswordPolicy
+            // (Story 1.6), autorité unique réutilisée au changement/reset. Ici on ne garde
+            // qu'un @NotBlank + un plafond garde-fou (bcrypt tronque à 72 octets, DoS).
+            @NotBlank @Size(max = 72) String password,
             String firstName,
             String lastName,
             // Rôle optionnel et non-privilégié : le serveur retombe sur BUYER si absent et
@@ -23,6 +26,11 @@ public final class AuthDtos {
     public record LoginRequest(
             @Email @NotBlank String email,
             @NotBlank String password) {}
+
+    /** Changement de mot de passe authentifié (Story 1.6). */
+    public record ChangePasswordRequest(
+            @NotBlank String oldPassword,
+            @NotBlank @Size(max = 72) String newPassword) {}
 
     public record UserDto(Long id, String email, String firstName, String lastName, Role role) {
         public static UserDto from(User u) {

@@ -83,6 +83,7 @@ export const FAILURE_LABELS = Object.freeze({
   NOT_A_PARTY: 'You are not a party to this transaction.',
   TRANSACTION_NOT_FOUND: 'This transaction no longer exists.',
   VALIDATION_ERROR: 'The server rejected the details of this request.',
+  WEAK_PASSWORD: 'The password does not meet the security policy (length and character variety).',
   MISSING_REQUEST_PART: 'Part of this request never reached the server.',
   INVALID_REQUEST: 'The server rejected this request.',
   RESOURCE_NOT_FOUND: 'What this action referred to no longer exists.',
