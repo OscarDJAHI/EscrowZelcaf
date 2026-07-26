@@ -284,7 +284,14 @@ public class EvidenceService {
      * downloadable (restitution is not masking). The stream comes only from the
      * {@link EvidenceStorage} port; a missing object translates to a 404. The
      * returned {@link InputStream} outlives this transaction and is consumed by
-     * the web layer, so it is never read into memory here.
+     * the web layer.
+     *
+     * <p><strong>Plus de streaming depuis la Story 1.7.</strong> L'adaptateur
+     * matérialise l'objet pour le déchiffrer : GCM n'authentifie qu'au tag final,
+     * un flux rendu au fil de l'eau serait du clair non authentifié. Le flux rendu
+     * ici est donc adossé à un tampon mémoire, borné par la limite métier de
+     * taille de pièce — d'où le maintien de la borne, et le report au ledger de la
+     * question du plafond mémoire sous téléchargements concurrents.
      *
      * <p><strong>Why writable.</strong> The download is audited ({@code
      * EVIDENCE_DOWNLOADED}) atomically with the access authorization, so the

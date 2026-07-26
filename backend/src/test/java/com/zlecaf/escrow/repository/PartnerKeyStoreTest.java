@@ -4,12 +4,16 @@ import com.zlecaf.escrow.domain.Company;
 import com.zlecaf.escrow.domain.PartnerHmacKey;
 import com.zlecaf.escrow.domain.PartnerKeyNonce;
 import com.zlecaf.escrow.domain.WebhookSubscription;
+import com.zlecaf.escrow.security.crypto.EncryptedStringConverter;
+import com.zlecaf.escrow.security.crypto.SecretCipher;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.jdbc.AutoConfigureTestDatabase;
 import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
+import org.springframework.context.annotation.Import;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.dao.InvalidDataAccessApiUsageException;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.testcontainers.containers.PostgreSQLContainer;
@@ -33,10 +37,14 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  */
 @DataJpaTest
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
+// Les deux colonnes secret_key sont converties depuis la Story 1.7 : Hibernate
+// réclame le convertisseur (et son SecretCipher) dès la construction du métamodèle,
+// or une tranche @DataJpaTest exclut le scan de composants.
+@Import({SecretCipher.class, EncryptedStringConverter.class})
 @Testcontainers
 class PartnerKeyStoreTest {
 
-    /** Inbound HMAC secret satisfying the {@code ck_partner_hmac_keys_secret_len} CHECK (36 bytes >= 32). */
+    /** Inbound HMAC secret satisfying the entity's >= 32 UTF-8 byte floor (36 bytes). */
     private static final String VALID_SECRET = "INBOUND-HMAC-SECRET-0123456789ABCDEF";
 
     @Container
@@ -186,7 +194,7 @@ class PartnerKeyStoreTest {
     }
 
     @Test
-    @DisplayName("A secret shorter than 32 bytes is rejected at admission by the length CHECK")
+    @DisplayName("A secret shorter than 32 bytes is rejected at admission by the entity guard")
     void weakSecretRejected() {
         Company company = persistCompany("Carrier Weak");
 
@@ -196,14 +204,20 @@ class PartnerKeyStoreTest {
         weak.setSecretKey("tooshort");
         weak.setActive(true);
 
+        // Le plancher est désormais DOUBLE : @PrePersist sur l'entité (seul point qui
+        // voit le clair côté application) ET le CHECK V7 tolérant l'enveloppe (seul
+        // point qui couvre le provisioning en SQL direct). C'est l'entité qui rejette
+        // ici, donc en IllegalArgumentException — le type est épinglé pour que le jour
+        // où l'admission de clés passe par une API (Epic 7), le changement de statut
+        // HTTP qui en découlerait ne passe pas inaperçu.
         assertThatThrownBy(() -> partnerKeys.saveAndFlush(weak))
-                .isInstanceOf(DataIntegrityViolationException.class)
-                // Pin the failure to the length CHECK, not any incidental integrity violation.
-                .hasStackTraceContaining("ck_partner_hmac_keys_secret_len");
+                .isInstanceOf(InvalidDataAccessApiUsageException.class)
+                .hasMessageContaining("partner_hmac_keys.secret_key")
+                .hasMessageContaining("minimum 32");
     }
 
     @Test
-    @DisplayName("The length CHECK boundary is exactly >= 32 bytes (32 accepted, 31 rejected)")
+    @DisplayName("The length floor is exactly >= 32 UTF-8 BYTES (32 accepted, 31 rejected, accents comptés en octets)")
     void secretLengthBoundaryEnforced() {
         Company company = persistCompany("Carrier Boundary");
 
@@ -217,15 +231,26 @@ class PartnerKeyStoreTest {
         partnerKeys.saveAndFlush(atFloorKey);
         assertThat(partnerKeys.findByKeyIdAndActiveTrue("key-32")).isPresent();
 
-        // 31 bytes -> just under the floor -> rejected by ck_partner_hmac_keys_secret_len.
+        // 31 CARACTÈRES mais 32 OCTETS (un « é » en pèse deux) -> accepté : la garde
+        // compte des octets, pas des caractères (régression prouvée en Story 1.6).
+        PartnerHmacKey accentedKey = new PartnerHmacKey();
+        accentedKey.setKeyId("key-accented");
+        accentedKey.setCompanyId(company.getId());
+        accentedKey.setSecretKey("é" + "C".repeat(30));
+        accentedKey.setActive(true);
+        partnerKeys.saveAndFlush(accentedKey);
+        assertThat(partnerKeys.findByKeyIdAndActiveTrue("key-accented")).isPresent();
+
+        // 31 bytes -> just under the floor -> rejected by the entity guard.
         PartnerHmacKey underKey = new PartnerHmacKey();
         underKey.setKeyId("key-31");
         underKey.setCompanyId(company.getId());
         underKey.setSecretKey("A".repeat(31));
         underKey.setActive(true);
         assertThatThrownBy(() -> partnerKeys.saveAndFlush(underKey))
-                .isInstanceOf(DataIntegrityViolationException.class)
-                .hasStackTraceContaining("ck_partner_hmac_keys_secret_len");
+                .isInstanceOf(InvalidDataAccessApiUsageException.class)
+                .hasMessageContaining("partner_hmac_keys.secret_key")
+                .hasMessageContaining("minimum 32");
     }
 
     @Test
@@ -240,6 +265,25 @@ class PartnerKeyStoreTest {
 
         assertThat(json).doesNotContain("secretKey");
         assertThat(json).doesNotContain(VALID_SECRET);
+    }
+
+    @Test
+    @DisplayName("Serializing the outbound subscription never leaks its secret either (AD-29 symmetry)")
+    void webhookSecretNotSerialized() throws Exception {
+        Company company = persistCompany("Carrier Webhook Serialize");
+        WebhookSubscription subscription = new WebhookSubscription();
+        subscription.setCompanyId(company.getId());
+        subscription.setTargetUrl("https://partner.example/hook");
+        subscription.setSecretKey("OUTBOUND-WEBHOOK-SECRET");
+        subscription.setEventType("ALL");
+        subscription.setActive(true);
+
+        String json = new com.fasterxml.jackson.databind.ObjectMapper()
+                .findAndRegisterModules()
+                .writeValueAsString(webhookSubscriptions.save(subscription));
+
+        assertThat(json).doesNotContain("secretKey");
+        assertThat(json).doesNotContain("OUTBOUND-WEBHOOK-SECRET");
     }
 
     @Test

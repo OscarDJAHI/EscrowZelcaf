@@ -1,5 +1,6 @@
 package com.zlecaf.escrow.service.storage;
 
+import com.zlecaf.escrow.security.crypto.SecretCipher;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -8,14 +9,20 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
 import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
+import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.CreateBucketRequest;
+import software.amazon.awssdk.services.s3.model.GetObjectRequest;
 import software.amazon.awssdk.services.s3.model.HeadObjectRequest;
+import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.URI;
+import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
+import java.util.Base64;
 import java.util.Random;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -25,6 +32,10 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * Proves the storage round-trip against a real MinIO. The adapter is built
  * directly rather than through a Spring context: nothing here needs the broker
  * or the database, and mocking the round-trip would prove nothing.
+ *
+ * <p>Depuis la Story 1.7 la preuve porte aussi sur le chiffrement côté client :
+ * l'objet relu par un {@link S3Client} nu — c'est-à-dire ce que voit qui copie le
+ * volume — ne doit contenir aucun octet en clair.
  */
 @Testcontainers
 class MinioEvidenceStorageTest {
@@ -37,6 +48,16 @@ class MinioEvidenceStorageTest {
     private static S3Client s3Client;
     private static MinioEvidenceStorage storage;
 
+    /** Matériel de clé déterministe et manifestement de 32 octets (AES-256). */
+    private static String keyMaterial(byte filler) {
+        byte[] raw = new byte[32];
+        Arrays.fill(raw, filler);
+        return Base64.getEncoder().encodeToString(raw);
+    }
+
+    private static final String V1 = "v1:" + keyMaterial((byte) 0x41);
+    private static final String V2 = "v2:" + keyMaterial((byte) 0x42);
+
     @BeforeAll
     static void setUp() {
         s3Client = S3Client.builder()
@@ -47,7 +68,15 @@ class MinioEvidenceStorageTest {
                 .region(Region.US_EAST_1)
                 .build();
         s3Client.createBucket(CreateBucketRequest.builder().bucket(BUCKET).build());
-        storage = new MinioEvidenceStorage(s3Client, BUCKET);
+        storage = new MinioEvidenceStorage(s3Client, BUCKET, new SecretCipher(V1, "v1"));
+    }
+
+    /** Lecture BRUTE de l'objet, sans passer par l'adaptateur : la vue de l'attaquant. */
+    private static byte[] rawObject(String storageKey) throws IOException {
+        try (InputStream in = s3Client.getObject(GetObjectRequest.builder()
+                .bucket(BUCKET).key(storageKey).build())) {
+            return in.readAllBytes();
+        }
     }
 
     /** Deterministic by design: a fixed seed keeps failures reproducible, and
@@ -154,9 +183,81 @@ class MinioEvidenceStorageTest {
                 .forcePathStyle(true)
                 .region(Region.US_EAST_1)
                 .build();
-        MinioEvidenceStorage brokenStorage = new MinioEvidenceStorage(broken, BUCKET);
+        MinioEvidenceStorage brokenStorage = new MinioEvidenceStorage(broken, BUCKET, new SecretCipher(V1, "v1"));
 
         assertThatThrownBy(() -> brokenStorage.store(1L, fixedBytes(16), "application/pdf"))
                 .isInstanceOf(EvidenceStorageException.class);
+    }
+
+    @Test
+    @DisplayName("L'objet au repos ne contient PAS le clair et porte le magic ESCX (NFR-P6)")
+    void storedObjectIsEncryptedAtRest() throws IOException {
+        byte[] confidential = "CONNAISSEMENT BL-2026-0042 — cargaison confidentielle".getBytes(StandardCharsets.UTF_8);
+
+        String storageKey = storage.store(42L, confidential, "application/pdf");
+
+        byte[] atRest = rawObject(storageKey);
+        assertThat(Arrays.copyOf(atRest, 4)).isEqualTo("ESCX".getBytes(StandardCharsets.US_ASCII));
+        assertThat(new String(atRest, StandardCharsets.ISO_8859_1)).doesNotContain("CONNAISSEMENT");
+        assertThat(atRest).isNotEqualTo(confidential);
+        try (InputStream in = storage.load(storageKey)) {
+            assertThat(in.readAllBytes()).isEqualTo(confidential);
+        }
+    }
+
+    @Test
+    @DisplayName("Un objet legacy déposé en clair (avant la story) reste lisible tel quel")
+    void legacyPlaintextObjectStaysReadable() throws IOException {
+        // Dépôt DIRECT, sans passer par l'adaptateur : l'état exact d'un bucket
+        // peuplé avant la Story 1.7. La rétention WORM interdit que cette lecture casse.
+        byte[] legacy = fixedBytes(2048);
+        String storageKey = "42/objet-legacy-en-clair";
+        s3Client.putObject(PutObjectRequest.builder().bucket(BUCKET).key(storageKey).build(),
+                RequestBody.fromBytes(legacy));
+
+        try (InputStream in = storage.load(storageKey)) {
+            assertThat(in.readAllBytes()).isEqualTo(legacy);
+        }
+    }
+
+    @Test
+    @DisplayName("Un objet écrit sous v1 reste lisible après bascule sur v2 (pas de reprise objet nécessaire)")
+    void objectWrittenUnderV1StaysReadableAfterRotation() throws IOException {
+        byte[] content = fixedBytes(4096);
+        String storageKey = storage.store(42L, content, "image/jpeg");
+
+        // Trousseau élargi + clé active basculée : v1 reste au trousseau, c'est
+        // précisément la condition de lisibilité rappelée par le runbook.
+        MinioEvidenceStorage rotated = new MinioEvidenceStorage(s3Client, BUCKET,
+                new SecretCipher(V1 + "," + V2, "v2"));
+
+        try (InputStream in = rotated.load(storageKey)) {
+            assertThat(in.readAllBytes()).isEqualTo(content);
+        }
+        // ...et toute NOUVELLE écriture part sous v2, sans que l'ancienne devienne illisible.
+        String afterRotation = rotated.store(42L, content, "image/jpeg");
+        try (InputStream in = rotated.load(afterRotation)) {
+            assertThat(in.readAllBytes()).isEqualTo(content);
+        }
+    }
+
+    @Test
+    @DisplayName("Un octet altéré dans l'objet stocké -> lecture refusée (jamais de preuve corrompue rendue)")
+    void tamperedObjectIsRejectedOnLoad() throws IOException {
+        String storageKey = storage.store(42L, fixedBytes(512), "application/pdf");
+        byte[] atRest = rawObject(storageKey);
+        atRest[atRest.length - 1] ^= 0x01;
+        s3Client.putObject(PutObjectRequest.builder().bucket(BUCKET).key(storageKey).build(),
+                RequestBody.fromBytes(atRest));
+
+        // Le port ne laisse fuir aucun type crypto : l'échec sort en exception NEUTRE
+        // de stockage (502), comme une panne S3 — un IllegalStateException nu
+        // deviendrait un 500 sans le champ `code` dont le client a besoin (AD-10).
+        // Le diagnostic actionnable reste dans la cause, journalisée.
+        assertThatThrownBy(() -> storage.load(storageKey))
+                .isInstanceOf(EvidenceStorageException.class)
+                .cause()
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("tag GCM");
     }
 }

@@ -113,6 +113,12 @@ services:
       ESCROW_STORAGE_BUCKET: escrow-evidence
       ESCROW_STORAGE_ACCESS_KEY: ${MINIO_ROOT_USER:-escrow-storage}
       ESCROW_STORAGE_SECRET_KEY: ${MINIO_ROOT_PASSWORD:?MINIO_ROOT_PASSWORD manquant}
+      # Chiffrement au repos (Story 1.7) : sans le trousseau, plus rien de ce qui a
+      # été chiffré n'est relisible — ces clés se sauvegardent comme un backup.
+      # active-key-id reste vide tant qu'il n'y a qu'une clé (déduite) ; on ne le
+      # renseigne que pendant une rotation (cf. runbook).
+      ESCROW_CRYPTO_KEYS: ${ESCROW_CRYPTO_KEYS:?ESCROW_CRYPTO_KEYS manquant (format id:cle_base64, 32 octets)}
+      ESCROW_CRYPTO_ACTIVE_KEY_ID: ${ESCROW_CRYPTO_ACTIVE_KEY_ID:-}
       # Optionnels (Story 1.1) — vides = aucun ADMIN créé au démarrage.
       ESCROW_BOOTSTRAP_ADMIN_EMAIL: ${ESCROW_BOOTSTRAP_ADMIN_EMAIL:-}
       ESCROW_BOOTSTRAP_ADMIN_PASSWORD: ${ESCROW_BOOTSTRAP_ADMIN_PASSWORD:-}

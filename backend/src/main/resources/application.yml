@@ -51,6 +51,21 @@ escrow:
     access-key: ${ESCROW_STORAGE_ACCESS_KEY:escrow-storage}  # identifiant (non secret), aligné sur le compose
     secret-key: ${ESCROW_STORAGE_SECRET_KEY}
 
+  crypto:
+    # Chiffrement au repos (Story 1.7, AD-29/NFR-P6). Le trousseau REQUIS — aucun
+    # défaut : une clé par défaut équivaudrait à pas de chiffrement du tout.
+    #
+    # keys : « id:cléBase64 » séparés par des virgules, chaque clé faisant
+    #   EXACTEMENT 32 octets une fois décodée (AES-256) — openssl rand -base64 32.
+    #   Plusieurs clés cohabitent volontairement : les anciennes servent à relire
+    #   les enveloppes qu'elles ont produites, la seule clé ACTIVE chiffre.
+    # active-key-id : id de la clé de chiffrement. Vide = déduit quand le trousseau
+    #   n'a qu'une clé (déploiement initial) ; OBLIGATOIRE dès qu'il y en a
+    #   plusieurs, c'est-à-dire pendant une rotation — voir
+    #   Docs/runbook-rotation-cles-chiffrement.md.
+    keys: ${ESCROW_CRYPTO_KEYS}
+    active-key-id: ${ESCROW_CRYPTO_ACTIVE_KEY_ID:}
+
   auth:
     password:
       # Politique de robustesse (Story 1.6, NFR-P5). Longueurs en OCTETS UTF-8 et

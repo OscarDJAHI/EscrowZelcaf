@@ -91,8 +91,16 @@ Without `infra/.env`, compose fails fast naming the **first** missing variable
 (`:?` syntax, Docker Compose v2 required). The backend goes further: it refuses
 to boot unless its critical secrets (`ESCROW_JWT_SECRET`,
 `SPRING_DATASOURCE_PASSWORD`, `SPRING_RABBITMQ_PASSWORD`,
-`ESCROW_STORAGE_SECRET_KEY`) are present, **not left at the `remplacez-moi`
-sentinel values**, and ≥ 32 bytes for the JWT — every problem listed in one error.
+`ESCROW_STORAGE_SECRET_KEY`, `ESCROW_CRYPTO_KEYS`) are present, **not left at the
+`remplacez-moi` sentinel values**, and ≥ 32 bytes for the JWT — every problem
+listed in one error.
+
+> **Chiffrement au repos** (Story 1.7) : `ESCROW_CRYPTO_KEYS` porte le trousseau
+> (`id:cléBase64,…`, 32 octets par clé) qui chiffre les secrets HMAC en base et les
+> binaires de preuves dans le stockage objet. **Ces clés ne sont nulle part
+> ailleurs** : les perdre rend les données irrécupérables, les sauvegarder à part.
+> Rotation (ajout d'une clé, bascule, re-chiffrement au redémarrage) :
+> [`Docs/runbook-rotation-cles-chiffrement.md`](Docs/runbook-rotation-cles-chiffrement.md).
 
 > **Stack déjà initialisée ?** Postgres/pgAdmin/MinIO n'appliquent les mots de
 > passe qu'à la création de leurs volumes. Après un changement de secrets :

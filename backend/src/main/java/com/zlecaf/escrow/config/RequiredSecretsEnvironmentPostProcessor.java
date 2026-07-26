@@ -16,7 +16,7 @@ import org.springframework.core.env.ConfigurableEnvironment;
  * application.yml ne fournit plus de valeur par défaut pour les secrets
  * critiques : sans cette classe, le démarrage échouerait quand même, mais sur
  * le PREMIER placeholder non résoluble rencontré, au hasard de l'ordre
- * d'initialisation des beans. Ici on vérifie les quatre d'un coup, après le
+ * d'initialisation des beans. Ici on les vérifie tous d'un coup, après le
  * chargement des fichiers de configuration, et on nomme TOUTES les variables
  * manquantes dans une seule erreur actionnable.
  */
@@ -27,7 +27,12 @@ public class RequiredSecretsEnvironmentPostProcessor implements EnvironmentPostP
             "spring.datasource.password", "SPRING_DATASOURCE_PASSWORD",
             "spring.rabbitmq.password", "SPRING_RABBITMQ_PASSWORD",
             "escrow.jwt.secret", "ESCROW_JWT_SECRET",
-            "escrow.storage.secret-key", "ESCROW_STORAGE_SECRET_KEY");
+            "escrow.storage.secret-key", "ESCROW_STORAGE_SECRET_KEY",
+            // Trousseau de chiffrement au repos (Story 1.7, AD-29). Sa validation
+            // FINE (format id:base64, 32 octets, ids uniques) appartient à
+            // SecretCipher, qui seul sait ce qu'est une clé valable ; ici on
+            // n'attrape que l'absence et la sentinelle, comme pour les autres.
+            "escrow.crypto.keys", "ESCROW_CRYPTO_KEYS");
 
     /**
      * Valeurs sentinelles de infra/.env.example : leur présence signifie que

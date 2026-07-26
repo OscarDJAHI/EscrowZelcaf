@@ -22,7 +22,10 @@ class RequiredSecretsEnvironmentPostProcessorTest {
                 .withProperty("spring.datasource.password", "x")
                 .withProperty("spring.rabbitmq.password", "x")
                 .withProperty("escrow.jwt.secret", "x".repeat(32))
-                .withProperty("escrow.storage.secret-key", "x");
+                .withProperty("escrow.storage.secret-key", "x")
+                // Story 1.7 : ici on ne teste que présence/sentinelle ; la validité du
+                // trousseau (format, 32 octets, id actif) est prouvée par SecretCipherTest.
+                .withProperty("escrow.crypto.keys", "v1:x");
     }
 
     @Test
@@ -47,8 +50,8 @@ class RequiredSecretsEnvironmentPostProcessorTest {
     }
 
     @Test
-    @DisplayName("tous manquants -> les quatre variables sont nommées dans UNE erreur")
-    void allMissing_listsAllFour() {
+    @DisplayName("tous manquants -> les cinq variables sont nommées dans UNE erreur")
+    void allMissing_listsThemAll() {
         MockEnvironment env = new MockEnvironment();
 
         assertThatThrownBy(() -> processor.postProcessEnvironment(env, null))
@@ -56,7 +59,31 @@ class RequiredSecretsEnvironmentPostProcessorTest {
                 .hasMessageContaining("SPRING_DATASOURCE_PASSWORD")
                 .hasMessageContaining("SPRING_RABBITMQ_PASSWORD")
                 .hasMessageContaining("ESCROW_JWT_SECRET")
-                .hasMessageContaining("ESCROW_STORAGE_SECRET_KEY");
+                .hasMessageContaining("ESCROW_STORAGE_SECRET_KEY")
+                .hasMessageContaining("ESCROW_CRYPTO_KEYS");
+    }
+
+    @Test
+    @DisplayName("trousseau de chiffrement absent -> démarrage refusé en nommant ESCROW_CRYPTO_KEYS (Story 1.7)")
+    void missingCryptoKeyring_isRejected() {
+        MockEnvironment env = envWithAllSecrets();
+        env.setProperty("escrow.crypto.keys", "");
+
+        assertThatThrownBy(() -> processor.postProcessEnvironment(env, null))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("ESCROW_CRYPTO_KEYS")
+                .hasMessageContaining("escrow.crypto.keys");
+    }
+
+    @Test
+    @DisplayName("trousseau laissé à la sentinelle de .env.example -> refusé (le cp sans édition ne passe pas)")
+    void sentinelCryptoKeyring_isRejected() {
+        MockEnvironment env = envWithAllSecrets();
+        env.setProperty("escrow.crypto.keys", "remplacez-moi");
+
+        assertThatThrownBy(() -> processor.postProcessEnvironment(env, null))
+                .hasMessageContaining("ESCROW_CRYPTO_KEYS")
+                .hasMessageContaining("exemple");
     }
 
     @Test

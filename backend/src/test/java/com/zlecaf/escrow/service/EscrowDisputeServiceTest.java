@@ -17,6 +17,8 @@ import com.zlecaf.escrow.repository.EscrowTransactionRepository;
 import com.zlecaf.escrow.repository.EvidenceFileRepository;
 import com.zlecaf.escrow.repository.UserRepository;
 import com.zlecaf.escrow.security.AuthPrincipal;
+import com.zlecaf.escrow.security.crypto.EncryptedStringConverter;
+import com.zlecaf.escrow.security.crypto.SecretCipher;
 import com.zlecaf.escrow.service.storage.EvidenceNotFoundException;
 import com.zlecaf.escrow.service.storage.EvidenceStorage;
 import com.zlecaf.escrow.web.ApiExceptions.BadRequestException;
@@ -74,8 +76,11 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  */
 @DataJpaTest
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
+// SecretCipher + EncryptedStringConverter : les colonnes de secrets sont converties
+// depuis la Story 1.7, Hibernate les réclame à la construction du métamodèle.
 @Import({EscrowService.class, EvidenceService.class, EscrowStateMachine.class, AuditService.class,
-        EvidenceContentValidator.class, TransactionAccess.class, EscrowDisputeServiceTest.TestConfig.class})
+        EvidenceContentValidator.class, TransactionAccess.class, SecretCipher.class,
+        EncryptedStringConverter.class, EscrowDisputeServiceTest.TestConfig.class})
 @Testcontainers
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
 class EscrowDisputeServiceTest {
