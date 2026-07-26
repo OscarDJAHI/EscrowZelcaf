@@ -146,6 +146,35 @@ export function describeFailure(failure) {
 }
 
 /**
+ * A dead session — expired or revoked — told apart from a business verdict.
+ *
+ * The *absence* of an envelope is what identifies it: an expired JWT never
+ * reaches `@RestControllerAdvice`. `JwtAuthFilter` clears the context and
+ * `anyRequest().authenticated()` rejects it through Spring Security's default
+ * entry point, which — with no httpBasic, formLogin or custom
+ * AuthenticationEntryPoint in `SecurityConfig` — is Http403ForbiddenEntryPoint.
+ * Hence 403, not the 401 one would expect, and hence no code. 401 is covered
+ * too, because the day a real entry point is configured this must keep holding.
+ *
+ * A *coded* 401/403 is a real verdict and must never end a session:
+ * NOT_A_PARTY / UNAUTHORIZED_TRANSITION are authorization answers about a
+ * resource, and AUTH_FAILED is a failed *login* — logging the user out on it
+ * would reset the sign-in form on every mistyped password.
+ *
+ * One definition, two callers (`classifyReplayFailure` below and the response
+ * interceptor of `api/client.js`). Two copies would drift, and each direction of
+ * drift is a real defect: a business verdict that signs the user out, or a
+ * revoked token left in a zombie authenticated UI.
+ * @param {{code: string|null, status: number|null}|null|undefined} failure as `extractFailureReason` shapes it
+ * @returns {boolean}
+ */
+export function isBareAuthFailure(failure) {
+  // `== null` and not `=== null`: `extractFailureReason` normalises to null, but
+  // `classifyReplayFailure` and the interceptor both read raw envelopes too.
+  return failure?.code == null && (failure?.status === 401 || failure?.status === 403)
+}
+
+/**
  * The order of the rules is the contract: the status decides *before* the code,
  * because a code may be absent.
  * @param {object} err an AxiosError, or any rejection from the shared client
@@ -161,15 +190,10 @@ export function classifyReplayFailure(err) {
   const code = res.data?.code ?? null
 
   // Session expired: the request is valid again once re-authenticated, so this
-  // must never freeze evidence. The *absence* of an envelope is what identifies
-  // it — an expired JWT never reaches `@RestControllerAdvice`: `JwtAuthFilter`
-  // clears the context and `anyRequest().authenticated()` rejects it through
-  // Spring Security's default entry point, which — with no httpBasic, formLogin
-  // or custom AuthenticationEntryPoint in `SecurityConfig` — is
-  // Http403ForbiddenEntryPoint. Hence 403, not the 401 one would expect, and
-  // hence no code. A *coded* 401/403 is a real verdict (NOT_A_PARTY,
-  // UNAUTHORIZED_TRANSITION, AUTH_FAILED) and is left to the rules below.
-  if (code === null && (status === 401 || status === 403)) return 'transient'
+  // must never freeze evidence. Shared with the interceptor that ends the
+  // session on the very same signal — see `isBareAuthFailure`. A *coded* 401/403
+  // is a real verdict and is left to the rules below.
+  if (isBareAuthFailure({ code, status })) return 'transient'
 
   if (TRANSIENT_CODES.has(code)) return 'transient'
 

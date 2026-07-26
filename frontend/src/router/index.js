@@ -43,7 +43,11 @@ router.beforeEach((to) => {
   const auth = useAuthStore()
 
   if (!to.meta.public && !auth.isAuthenticated) {
-    return { name: 'auth' }
+    // UX-DR32: a deep link opened without a session must come back to its target
+    // once signed in. Omitted for the dashboard — `redirect=/` is where the sign-
+    // in screen sends people anyway, and spelling it out only makes the URL
+    // longer and the open-redirect guard's job less obvious.
+    return to.fullPath === '/' ? { name: 'auth' } : { name: 'auth', query: { redirect: to.fullPath } }
   }
   if (to.name === 'auth' && auth.isAuthenticated) {
     return { name: 'dashboard' }

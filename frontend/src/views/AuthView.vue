@@ -1,10 +1,51 @@
 <script setup>
 import { reactive, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 
 const router = useRouter()
+const route = useRoute()
 const auth = useAuthStore()
+
+/**
+ * Where to land once signed in. `redirect` comes off the URL, so it comes off
+ * whoever wrote the link: without this guard `?redirect=//evil.example/x` turns
+ * the sign-in screen into an open redirect, and a protocol-relative URL is
+ * exactly the shape that slips past a naive "starts with /" check.
+ *
+ * Only a relative path is accepted, and anything else — an absolute URL, an
+ * array (a repeated query parameter), a missing value — degrades to the
+ * dashboard rather than being sanitised into something half-trusted.
+ *
+ * The backslash form is refused alongside `//` so that the code enforces what
+ * this comment claims. `/\evil.example` passes a naive `startsWith('/')` and
+ * fails `startsWith('//')`, yet browsers and several URL parsers treat `\` as
+ * `/` — today vue-router happens to resolve it same-origin, so nothing escapes,
+ * but that is an implementation detail of the consumer, not a property of the
+ * guard. A guard whose safety depends on its caller is not a guard.
+ *
+ * Control characters are stripped BEFORE those tests for the same reason. Query
+ * values reach us percent-decoded, so `?redirect=/%09/evil.example` arrives as
+ * `/<TAB>/evil.example`: it passes `startsWith('/')`, fails `startsWith('//')`,
+ * and is then read as `//evil.example` by every URL parser that follows the WHATWG
+ * rule of discarding tabs and newlines. Removing them first means the string the
+ * guard inspects is the string a parser will see.
+ */
+function safeRedirect(target) {
+  if (typeof target !== 'string') return '/'
+  // The class below is spelled with `\u` ESCAPES and must stay that way. Written
+  // with the literal bytes it matches — which is how it first shipped — the NUL
+  // turns this file into a binary blob: `git diff` reports `- -` instead of a
+  // patch, `grep -r` skips it without a word, and this story's own verification
+  // greps over `frontend/src` then pass while blind to the sign-in screen. The
+  // regex behaves identically either way; only the tooling can tell them apart,
+  // and it is the tooling that will review the next change to this guard.
+  // eslint-disable-next-line no-control-regex
+  const cleaned = target.replace(/[\u0000-\u001f\u007f]/g, '')
+  return cleaned.startsWith('/') && !cleaned.startsWith('//') && !cleaned.startsWith('/\\')
+    ? cleaned
+    : '/'
+}
 
 const mode = ref('login')
 
@@ -30,7 +71,10 @@ async function handleSubmit() {
       ? await auth.login({ email: form.email, password: form.password })
       : await auth.register({ ...form })
   submitting.value = false
-  if (ok) router.push('/')
+  // `replace`, not `push`: the sign-in screen has no business in the history of
+  // a signed-in user, where Back would land them on it only to be bounced by the
+  // route guard.
+  if (ok) router.replace(safeRedirect(route.query.redirect))
 }
 </script>
 

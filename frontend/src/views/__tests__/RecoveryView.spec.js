@@ -63,7 +63,7 @@ function mountView(pinia, entryId = ENTRY_ID) {
 
 let pinia
 
-beforeEach(() => {
+beforeEach(async () => {
   localStorage.clear()
   pinia = createPinia()
   setActivePinia(pinia)
@@ -72,7 +72,11 @@ beforeEach(() => {
   // stays free of test-shaped conditionals.
   URL.createObjectURL = vi.fn(() => 'blob:fake-url')
   URL.revokeObjectURL = vi.fn()
-  useAuthStore().applySession({ token: 'alice-token', user: { ...USER } })
+  // Awaited since Story 1.9: `applySession` now adopts the queue for the new
+  // session, and that read ends by setting `hydrated`. Left in flight it lands
+  // mid-test, after a case has set `hydrated` to false on purpose — production
+  // awaits it too (`auth.login`), so this fixture matches the real sequence.
+  await useAuthStore().applySession({ token: 'alice-token', user: { ...USER } })
 })
 
 afterEach(() => {
