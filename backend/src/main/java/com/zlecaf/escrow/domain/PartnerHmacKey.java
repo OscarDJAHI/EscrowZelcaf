@@ -19,13 +19,15 @@ import java.time.Instant;
 public class PartnerHmacKey {
 
     /**
-     * Plancher de robustesse du secret entrant, en OCTETS UTF-8. Reprend la valeur
-     * du CHECK {@code ck_partner_hmac_keys_secret_len} supprimé en V7 : la base ne
-     * voit plus que le chiffré, mesurer sa longueur n'aurait plus aucun sens.
-     * Compter en octets et non en caractères est délibéré (régression prouvée en
-     * Story 1.6 : 32 caractères accentués ne font pas 32 octets).
+     * Plancher de robustesse du secret entrant, en OCTETS UTF-8. Valeur de
+     * référence de la plateforme : le CHECK {@code ck_partner_hmac_keys_secret_len}
+     * (V5, reformulé en V7 puis resserré en V8) la double côté base pour les
+     * écritures en SQL direct, et {@code SecretsEncryptionBootstrap} la relit ici
+     * plutôt que de la recopier. Compter en octets et non en caractères est
+     * délibéré (régression prouvée en Story 1.6 : 32 caractères accentués ne font
+     * pas 32 octets).
      */
-    private static final int MIN_SECRET_BYTES = 32;
+    public static final int MIN_SECRET_BYTES = 32;
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)

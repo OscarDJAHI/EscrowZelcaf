@@ -1,5 +1,6 @@
 package com.zlecaf.escrow.config;
 
+import com.zlecaf.escrow.domain.PartnerHmacKey;
 import com.zlecaf.escrow.security.crypto.EncryptedStringConverter;
 import com.zlecaf.escrow.security.crypto.SecretCipher;
 import org.slf4j.Logger;
@@ -55,7 +56,11 @@ public class SecretsEncryptionBootstrap {
      * serait un durcissement hors périmètre de cette story.
      */
     private static final List<SealedTable> SEALED_TABLES = List.of(
-            new SealedTable("partner_hmac_keys", 32),
+            // Plancher emprunté à l'entité, jamais recopié : la valeur vit à UN seul
+            // endroit côté application (le CHECK de la base la double côté SQL, et son
+            // commentaire renvoie ici). Trois copies indépendantes divergeraient au
+            // premier durcissement.
+            new SealedTable("partner_hmac_keys", PartnerHmacKey.MIN_SECRET_BYTES),
             new SealedTable("webhook_subscriptions", 0));
 
     @Bean
@@ -79,8 +84,8 @@ public class SecretsEncryptionBootstrap {
                             + "ESCROW_CRYPTO_KEYS — la remettre au trousseau et redémarrer "
                             + "(Docs/runbook-rotation-cles-chiffrement.md).", e);
                 }
-                log.info("Chiffrement au repos [{}] : {} scellée(s), {} pivotée(s), {} inchangée(s)",
-                        table.name(), sweep.sealed(), sweep.rotated(), sweep.untouched());
+                log.info("Chiffrement au repos [{}] : {} scellée(s), {} pivotée(s), {} inchangée(s), {} vide(s) ignorée(s)",
+                        table.name(), sweep.sealed(), sweep.rotated(), sweep.untouched(), sweep.skipped());
             }
         };
     }
@@ -90,33 +95,47 @@ public class SecretsEncryptionBootstrap {
         int sealed = 0;
         int rotated = 0;
         int untouched = 0;
+        int skipped = 0;
         String update = "UPDATE " + table + " SET secret_key = ? WHERE id = ?";
         for (Map<String, Object> row : jdbc.queryForList("SELECT id, secret_key FROM " + table + " ORDER BY id")) {
             Long id = ((Number) row.get("id")).longValue();
             String stored = (String) row.get("secret_key");
             if (stored == null || stored.isEmpty()) {
-                untouched++;
+                // Compté À PART, jamais avec « inchangée » : une ligne vide n'est pas
+                // une ligne déjà protégée. Les confondre ferait lire « tout est
+                // chiffré » à un opérateur dont une ligne porte un secret vide, qui
+                // fera échouer sa première signature (HmacSigner refuse une clé vide).
+                log.warn("Chiffrement au repos [{}] id={} : secret vide, ligne IGNORÉE — "
+                        + "rien à chiffrer, mais cette ligne ne pourra jamais signer.", table, id);
+                skipped++;
             } else if (!cipher.isEnvelope(stored)) {
                 requireStrongEnough(sealedTable, id, stored);
                 jdbc.update(update, cipher.encryptToText(stored, EncryptedStringConverter.AAD), id);
                 sealed++;
             } else if (!cipher.activeKeyId().equals(cipher.keyIdOf(stored))) {
                 String plaintext = cipher.decryptFromText(stored, EncryptedStringConverter.AAD);
+                // Le plancher est revérifié ICI aussi : la rotation est la SEULE autre
+                // occasion où le clair repasse en mémoire. Sans ce contrôle, une
+                // enveloppe entrée par un chemin qui a contourné le scellement (SQL
+                // direct sur une base dont on possède la clé) serait re-scellée
+                // indéfiniment sans qu'aucune couche ne constate jamais sa faiblesse.
+                requireStrongEnough(sealedTable, id, plaintext);
                 jdbc.update(update, cipher.encryptToText(plaintext, EncryptedStringConverter.AAD), id);
                 rotated++;
             } else {
                 untouched++;
             }
         }
-        return new Sweep(sealed, rotated, untouched);
+        return new Sweep(sealed, rotated, untouched, skipped);
     }
 
     /**
-     * Refuse de sceller un clair sous le plancher : une fois chiffré, plus aucune
-     * couche ne peut constater sa faiblesse. Inatteignable en pratique sur
-     * {@code partner_hmac_keys} (le CHECK de V5 puis celui de V7 l'interdisent) —
-     * c'est précisément pour cela qu'échouer ici est sûr : si le cas se produit,
-     * c'est qu'une garde a sauté, et le silence serait pire que l'arrêt.
+     * Refuse de sceller (ou de re-sceller) un clair sous le plancher : une fois
+     * chiffré, plus aucune couche ne peut constater sa faiblesse. Inatteignable en
+     * pratique sur {@code partner_hmac_keys} (le CHECK de V5, puis celui de V7
+     * resserré en V8, l'interdisent) — c'est précisément pour cela qu'échouer ici
+     * est sûr : si le cas se produit, c'est qu'une garde a sauté, et le silence
+     * serait pire que l'arrêt.
      */
     private static void requireStrongEnough(SealedTable table, Long id, String plaintext) {
         if (table.minPlaintextBytes() == 0) {
@@ -137,5 +156,5 @@ public class SecretsEncryptionBootstrap {
     private record SealedTable(String name, int minPlaintextBytes) {}
 
     /** Décompte de synthèse d'un balayage — la seule trace laissée, jamais de valeur. */
-    private record Sweep(int sealed, int rotated, int untouched) {}
+    private record Sweep(int sealed, int rotated, int untouched, int skipped) {}
 }

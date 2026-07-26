@@ -190,6 +190,22 @@ class MinioEvidenceStorageTest {
     }
 
     @Test
+    @DisplayName("Un objet démesuré est refusé AVANT d'être chargé en mémoire (le tas n'est pas une limite)")
+    void oversizedObjectIsRefusedInsteadOfMaterialized() {
+        // Tout ce qui atteint le bucket n'est pas passé par le contrôle de taille du
+        // service : restauration de sauvegarde, outil d'admin parlant à S3 en direct.
+        // Depuis la Story 1.7 la lecture matérialise l'objet (GCM n'authentifie qu'au
+        // tag final) : sans plafond, un seul objet suffirait à emporter la JVM.
+        byte[] oversized = new byte[10 * 1024 * 1024 + 8192];
+        s3Client.putObject(PutObjectRequest.builder().bucket(BUCKET).key("42/oversized").build(),
+                RequestBody.fromBytes(oversized));
+
+        assertThatThrownBy(() -> storage.load("42/oversized"))
+                .isInstanceOf(EvidenceStorageException.class)
+                .hasStackTraceContaining("plafond de matérialisation");
+    }
+
+    @Test
     @DisplayName("L'objet au repos ne contient PAS le clair et porte le magic ESCX (NFR-P6)")
     void storedObjectIsEncryptedAtRest() throws IOException {
         byte[] confidential = "CONNAISSEMENT BL-2026-0042 — cargaison confidentielle".getBytes(StandardCharsets.UTF_8);

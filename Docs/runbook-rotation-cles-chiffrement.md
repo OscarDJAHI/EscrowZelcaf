@@ -87,12 +87,26 @@ deux tables de secrets et re-chiffre sous `v2` tout ce qui portait `v1`. La trac
 le confirme, une ligne par table :
 
 ```
-Chiffrement au repos [partner_hmac_keys] : 0 scellée(s), 3 pivotée(s), 0 inchangée(s)
-Chiffrement au repos [webhook_subscriptions] : 0 scellée(s), 1 pivotée(s), 0 inchangée(s)
+Chiffrement au repos [partner_hmac_keys] : 0 scellée(s), 3 pivotée(s), 0 inchangée(s), 0 vide(s) ignorée(s)
+Chiffrement au repos [webhook_subscriptions] : 0 scellée(s), 1 pivotée(s), 0 inchangée(s), 0 vide(s) ignorée(s)
 ```
 
 Le balayage est **idempotent** : un second redémarrage affiche `0 pivotée(s)` et
 n'écrit rien.
+
+> ⚠️ **`vide(s) ignorée(s)` n'est pas anodin.** Une ligne dont `secret_key` est vide
+> n'est ni scellée ni pivotée : il n'y a rien à chiffrer. Elle est comptée à part
+> (et non parmi les « inchangées ») parce qu'elle ne pourra **jamais** signer —
+> la première livraison de webhook qui l'emploiera échouera. Un compteur non nul
+> se traite en corrigeant la ligne, pas en relançant le balayage.
+
+> ⚠️ **Le balayage est un événement de démarrage, pas une réconciliation continue.**
+> Chaque instance chiffre avec la clé active qu'elle a lue à SON démarrage : pendant
+> la 2ᵉ vague, une instance encore en `v1` qui crée un abonnement webhook écrit une
+> ligne `v1` **après** que l'instance déjà redémarrée a pivoté la table. Ce n'est pas
+> une anomalie et rien n'est perdu (`v1` est toujours au trousseau) — mais la
+> vérification ci-dessous n'a de sens qu'une fois **toutes** les instances
+> redémarrées, et un reliquat se résorbe par un redémarrage supplémentaire.
 
 ## Ce que la rotation ne fait PAS : les objets
 
@@ -140,10 +154,19 @@ Déchiffrement impossible : la clé « v1 » n'est pas dans ESCROW_CRYPTO_KEYS
 
 Le remède est alors exactement celui-là : remettre `v1` et redémarrer.
 
-**Le backend refuse de démarrer** si une clé manque au trousseau alors qu'une ligne
-de secret la référence encore — c'est délibéré : servir des requêtes avec des secrets
-partenaires indéchiffrables serait pire qu'un arrêt. Le message nomme la table
-concernée et la table est laissée **intacte** (aucune ligne à moitié pivotée) :
+> ⚠️ **L'arrêt n'est pas instantané : il y a une fenêtre où l'instance répond.** Le
+> balayage s'exécute *après* l'ouverture du port HTTP (c'est un `CommandLineRunner`),
+> donc entre l'ouverture et l'échec, l'instance accepte des requêtes et son
+> `/actuator/health` répond `UP` — un orchestrateur peut donc lui router du trafic
+> pendant quelques instants avant qu'elle ne meure. La fenêtre est brève (les tables
+> de secrets sont petites) mais réelle. En pratique : **surveiller la trace de
+> démarrage, pas seulement le healthcheck**, et considérer une instance comme saine
+> uniquement après avoir vu sa ligne `Chiffrement au repos [...]` par table.
+
+**Le backend s'arrête au démarrage** si une clé manque au trousseau alors qu'une
+ligne de secret la référence encore — c'est délibéré : servir des requêtes avec des
+secrets partenaires indéchiffrables serait pire qu'un arrêt. Le message nomme la
+table concernée et la table est laissée **intacte** (aucune ligne à moitié pivotée) :
 
 ```
 Chiffrement au repos [partner_hmac_keys] : balayage interrompu, table laissée INTACTE
@@ -163,3 +186,20 @@ Chiffrement au repos [partner_hmac_keys] : 3 scellée(s), 0 pivotée(s), 0 incha
 
 Idem côté objets : une preuve déposée avant la story se relit telle quelle, avec un
 WARN nommant sa clé de stockage. Aucun déploiement ne rend une preuve illisible.
+
+> ⚠️ **La mise en service elle-même n'est PAS transparente en multi-instance.** Dès
+> que la première instance 1.7 a scellé les tables, une instance encore en version
+> antérieure lit l'enveloppe `esc:1:v1:…` **comme si c'était le secret** : elle
+> rejette alors toute signature partenaire (401) et signe ses webhooks avec une
+> valeur fausse. Il n'existe pas de version intermédiaire « sait lire, n'écrit pas
+> encore » — le premier déploiement de 1.7 doit donc se faire **en bascule
+> complète** (toutes les instances passées en 1.7 avant que l'une d'elles ne
+> serve du trafic), et non en déploiement tournant. En mono-instance — la
+> topologie livrée aujourd'hui — la question ne se pose pas.
+
+Deux lignes vides (`0 vide(s) ignorée(s)`) et aucun `Scellement refusé` : la mise en
+service est complète. Si le démarrage échoue en nommant une ligne sous le plancher
+de 32 octets, c'est un secret partenaire trop faible provisionné en SQL direct
+avant la story : le remplacer, puis redémarrer. Le chiffrer aurait rendu sa
+faiblesse invisible à toutes les couches — c'est pourquoi le balayage préfère
+s'arrêter.

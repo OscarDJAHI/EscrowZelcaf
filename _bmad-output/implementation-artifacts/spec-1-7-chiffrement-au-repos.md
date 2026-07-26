@@ -116,6 +116,28 @@ warnings: ['oversized', 'multiple-goals']
   - `[low]` `[patch]` Javadoc de `EvidenceService.download` devenue fausse (« never read into memory here »), corrigée avec la raison structurelle (GCM authentifie au tag final).
   - `[low]` `[patch]` `PartnerKeyStoreTest` avait perdu ses assertions de type (`hasStackTraceContaining` seul, qui passe sur n'importe quelle exception) : type d'exception ré-épinglé sur les deux cas.
 
+### 2026-07-26 — Review pass (suivi)
+- intent_gap: 0
+- bad_spec: 0
+- patch: 14: (high 0, medium 5, low 9)
+- defer: 3: (high 0, medium 1, low 2)
+- reject: 5: (high 0, medium 0, low 5)
+- addressed_findings:
+  - `[medium]` `[patch]` Le CHECK reformulé en V7 (`secret_key LIKE 'esc:%' OR octet_length >= 32`) est **plus large** que ce que l'application reconnaît comme enveloppe (`SecretCipher.TEXT_ENVELOPE_PATTERN` exige la forme complète) : `INSERT … 'esc:secret-du-transitaire'` (25 octets) franchissait la contrainte tout en étant lu comme un clair legacy — un secret HMAC faible signait pour de bon jusqu'au redémarrage suivant, lequel échouait alors définitivement. La garde restaurée à la passe précédente ne couvrait donc pas le chemin qu'elle visait (provisioning en SQL direct). **V8** resserre le CHECK sur le motif exact de l'application ; test d'intégration dédié.
+  - `[medium]` `[patch]` Le plancher de robustesse n'était vérifié que sur la branche **scellement** du balayage, pas sur la branche **rotation** — or la rotation est la seule autre occasion où le clair repasse en mémoire. Une enveloppe bien formée d'un secret faible se serait re-scellée indéfiniment sans qu'aucune couche ne constate jamais sa faiblesse. `requireStrongEnough` appliqué aux deux branches ; test dédié.
+  - `[medium]` `[patch]` Le test censé prouver l'atomicité du balayage ne prouvait rien : une seule ligne en base (l'échec survenait avant tout `UPDATE`) et, sous la transaction de `@DataJpaTest`, le `TransactionTemplate` du runner ne faisait que rejoindre celle du test — son rollback se réduisait à un `rollback-only` sans effet observable. Réécrit en `NOT_SUPPORTED` avec deux lignes (la première pivotée, la seconde illisible) : l'assertion échouerait désormais si la transaction de production disparaissait.
+  - `[medium]` `[patch]` `load()` matérialise l'objet (contrainte structurelle de GCM) en s'appuyant sur un commentaire faux : la limite de 10 Mo est vérifiée à l'**ingestion applicative** et ne borne rien à la lecture. Un objet arrivé par un autre chemin (restauration, outil d'admin, futur canal d'ingestion) emportait la JVM entière via `readAllBytes()`. Plafond explicite posé sur `contentLength` avant tout chargement (502), commentaire rendu exact, test avec un objet de 10 Mo + 8 Ko.
+  - `[medium]` `[patch]` La matrice E/S du contrat exige que les configurations de trousseau invalides soient « agrégées au message unique de la Story 1.2 » : seules la présence et la sentinelle l'étaient, une clé de 31 octets ou un identifiant actif hors trousseau ne surgissant qu'au redémarrage suivant, à l'initialisation du bean. `SecretCipher.keyringProblems` (le constructeur réel, sans duplication de logique) est désormais invoqué par le fail-fast ; 3 tests, dont la non-duplication du message quand le trousseau est absent.
+  - `[low]` `[patch]` Une ligne au secret **vide** était comptée « inchangée », comme une ligne déjà protégée : la trace de synthèse — seule preuve de contrôle citée par le runbook — faisait lire « tout est chiffré » à un opérateur dont une ligne ne pourra jamais signer. Compteur distinct + WARN nommant table et id + test.
+  - `[low]` `[patch]` Le WARN de lecture legacy promettait un scellement « au prochain démarrage » faux dans deux cas atteignables (valeur vide, clair sous le plancher, qui arrête le démarrage) : message corrigé et renvoyé vers la trace du runner.
+  - `[low]` `[patch]` Javadoc de `FORMAT_VERSION` : « un format 2 futur resterait lisible » est l'inverse du code (`isEnvelope` le reconnaît, `requireSupportedVersion` le rejette). Corrigée en détecteur de downgrade, avec la contrainte de déploiement en deux temps qui en découle.
+  - `[low]` `[patch]` Le plancher de 32 octets existait en trois exemplaires indépendants (entité, runner, SQL) : le runner lit désormais `PartnerHmacKey.MIN_SECRET_BYTES` et le commentaire de V8 y renvoie — une seule valeur côté application.
+  - `[low]` `[patch]` Javadoc de `MIN_SECRET_BYTES` devenue fausse à la passe précédente (« CHECK supprimé en V7 » : il avait justement été conservé) — corrigée avec l'historique réel V5 → V7 → V8.
+  - `[low]` `[patch]` Runbook : « le backend refuse de démarrer » présentait comme instantané un arrêt qui suit l'ouverture du port HTTP (le balayage est un `CommandLineRunner`) — pendant la fenêtre, `/actuator/health` répond `UP` et un orchestrateur peut router du trafic. Fenêtre documentée, avec la consigne de valider la trace de démarrage et non le seul healthcheck.
+  - `[low]` `[patch]` Runbook : la requête de contrôle de rotation (`… LIKE 'esc:1:v1:%'` doit rendre 0) peut légitimement rendre autre chose tant qu'une instance non redémarrée écrit encore sous l'ancienne clé. Caveat ajouté, avec le remède (un redémarrage de plus).
+  - `[low]` `[patch]` Runbook : rien ne disait que la **mise en service** de 1.7 n'est pas déployable en rolling update (une instance pré-1.7 lit l'enveloppe comme si c'était le secret). Section ajoutée ; le fond reste au ledger.
+  - `[low]` `[patch]` La rotation n'était couverte par test que sur `partner_hmac_keys` — or `webhook_subscriptions` est la seule des deux à avoir un chemin d'écriture applicatif réel. Test de rotation ajouté sur la seconde table.
+
 ## Design Notes
 
 **Pourquoi chiffrement côté client plutôt que SSE serveur.** Le backend objet définitif n'est pas tranché (MinIO est un binaire orphelin, la bascule S3 est une exigence de lancement) : un SSE-S3/KES est une configuration d'infrastructure qui ne survit pas à la bascule et ne protège pas un `pg_dump`. Le chiffrement dans l'adaptateur est indépendant du fournisseur, testable en Testcontainers, et c'est la lecture littérale d'AD-29 (« côté stockage objet, **derrière `EvidenceStorage`** ») croisée avec AD-6 (rien hors de l'adaptateur ne connaît S3).
@@ -146,66 +168,72 @@ Binaire (objets) : `ESCX` ‖ version(1) ‖ longueur id(1) ‖ id ‖ iv(12) �
 - `db/migration/V7__…sql` est bien la migration suivante (V6 = dernière) et ne contient aucun secret.
 - Le runbook de rotation décrit une procédure exécutable sans lire le code, et indique explicitement le moment où retirer l'ancienne clé du trousseau devient sûr.
 
+
 ## Auto Run Result
 
 Status: done
 
 ### Changement livré
 
-Chiffrement applicatif au repos (AD-29 / NFR-P6) : une primitive unique **AES-256-GCM**
-(`SecretCipher`) alimentée par un trousseau de clés versionnées injectées par
-`ESCROW_CRYPTO_KEYS`, branchée sur les deux seules catégories de données sensibles
-existantes — les deux colonnes de secrets HMAC (via un `AttributeConverter` JPA) et les
-binaires de preuves (chiffrement côté client dans l'adaptateur de stockage, derrière le
-port `EvidenceStorage`). L'enveloppe porte sa version et l'identifiant de clé, tous deux
-authentifiés ; la rotation est livrée avec (trousseau multi-clés, balayage idempotent au
-démarrage qui pivote les lignes en JDBC brut, runbook opérationnel).
+Passe de **revue de suivi** sur la Story 1.7 (chiffrement au repos AES-256-GCM),
+déclenchée par le `followup_review_recommended: true` de la passe précédente. Aucun
+écart d'intention ni de spec : le contrat tient, et le code n'a pas été re-dérivé.
+**14 correctifs** ont été appliqués sur le livrable existant, dont cinq qui changent
+un comportement : une contrainte de base resserrée (migration **V8**), le plancher de
+robustesse étendu à la branche de rotation, un plafond de matérialisation sur le
+téléchargement, et la validation fine du trousseau ramenée dans le message unique de
+démarrage. Un test d'atomicité qui ne prouvait rien a été réécrit pour prouver ce
+qu'il annonçait.
 
 ### Fichiers
 
 | Fichier | Rôle |
 | --- | --- |
-| `backend/src/main/java/com/zlecaf/escrow/security/crypto/SecretCipher.java` | Primitive unique : trousseau, enveloppes texte et binaire, AES-256-GCM |
-| `backend/src/main/java/com/zlecaf/escrow/security/crypto/EncryptedStringConverter.java` | Chiffrement transparent des colonnes, tolérant les valeurs legacy |
-| `backend/src/main/java/com/zlecaf/escrow/config/SecretsEncryptionBootstrap.java` | Scellement et rotation des lignes déjà persistées (JDBC brut, idempotent) |
-| `backend/src/main/resources/db/migration/V7__encrypted_secrets_at_rest.sql` | Colonnes en `TEXT`, contrainte de plancher reformulée pour tolérer l'enveloppe |
-| `backend/src/main/java/com/zlecaf/escrow/service/storage/MinioEvidenceStorage.java` | Chiffre/déchiffre les objets, AAD = clé de stockage, erreurs en 502 neutre |
-| `backend/src/main/java/com/zlecaf/escrow/domain/{PartnerHmacKey,WebhookSubscription}.java` | `@Convert`, plancher en octets UTF-8 (partenaire), `WRITE_ONLY` symétrique |
-| `backend/src/main/java/com/zlecaf/escrow/config/RequiredSecretsEnvironmentPostProcessor.java` | 5ᵉ secret obligatoire : démarrage refusé sans trousseau |
-| `backend/src/main/java/com/zlecaf/escrow/web/dto/WebhookDtos.java` | Plafond de taille restauré après le passage en `TEXT` |
-| `backend/src/main/java/com/zlecaf/escrow/service/EvidenceService.java` | Javadoc du téléchargement corrigée (plus de streaming, raison structurelle) |
-| `application.yml`, `test/resources/application.properties`, `infra/.env.example`, `infra/docker-compose.yml`, `README.md` | Configuration et provisionnement des clés |
-| `Docs/runbook-rotation-cles-chiffrement.md` | Procédure de rotation en deux vagues, conditions de retrait d'une clé |
-| 5 classes de test créées ou étendues | `SecretCipherTest`, `EncryptedSecretsIntegrationTest`, `SecretsEncryptionBootstrapTest`, `MinioEvidenceStorageTest`, `PartnerKeyStoreTest` (+ 7 tranches `@DataJpaTest` important les deux beans) |
+| `backend/src/main/resources/db/migration/V8__tighten_partner_secret_envelope_check.sql` | **Nouveau** : CHECK aligné sur la forme réelle de l'enveloppe (un clair court préfixé `esc:` ne passe plus) |
+| `backend/src/main/java/com/zlecaf/escrow/config/SecretsEncryptionBootstrap.java` | Plancher revérifié à la rotation, secrets vides comptés et signalés à part |
+| `backend/src/main/java/com/zlecaf/escrow/service/storage/MinioEvidenceStorage.java` | Plafond de matérialisation avant chargement (502), commentaire rendu exact |
+| `backend/src/main/java/com/zlecaf/escrow/config/RequiredSecretsEnvironmentPostProcessor.java` | Causes fines du trousseau agrégées au message unique de la Story 1.2 |
+| `backend/src/main/java/com/zlecaf/escrow/security/crypto/SecretCipher.java` | `keyringProblems` (validation sans lever, sans duplication), javadoc de version corrigée |
+| `backend/src/main/java/com/zlecaf/escrow/security/crypto/EncryptedStringConverter.java` | WARN legacy : promesse de scellement rendue conditionnelle et exacte |
+| `backend/src/main/java/com/zlecaf/escrow/domain/PartnerHmacKey.java` | `MIN_SECRET_BYTES` devient la source unique du plancher, javadoc rectifiée |
+| `Docs/runbook-rotation-cles-chiffrement.md` | Fenêtre d'arrêt non instantanée, caveat de la requête de contrôle, bascule complète à la mise en service, compteur `vide(s)` |
+| 4 classes de test | `SecretsEncryptionBootstrapTest` (+4), `RequiredSecretsEnvironmentPostProcessorTest` (+3), `EncryptedSecretsIntegrationTest` (+1), `MinioEvidenceStorageTest` (+1) |
 
 ### Revue
 
-- **10 correctifs appliqués** (1 haut, 6 moyens, 3 bas) — détail dans le journal de triage.
-- **4 reports** consignés au ledger : absence de contrôle d'intégrité au téléchargement ;
-  plafond mémoire sous téléchargements concurrents ; AAD de colonne non liée à la table ;
-  perte d'isolation des livraisons webhook si une clé est retirée à chaud.
-- **3 rejets** : faux positif d'enveloppe sur un objet legacy (impossible — les magics
-  JPEG/PNG/PDF admis ne valent jamais `ESCX`) ; longueur d'un secret publiée dans un
-  message de configuration ; balayage démarrant après l'ouverture du port HTTP (sans
-  conséquence, la lecture tolère les deux formes).
+- **14 correctifs appliqués** (0 haut, 5 moyens, 9 bas) — détail dans le journal de triage.
+- **3 reports** consignés au ledger comme entrées nouvelles : mise en service non
+  déployable en rolling update ; balayage de démarrage non paginé sur une table dont
+  la taille est pilotée par les appelants ; sûreté de la détection d'enveloppe binaire
+  contingente à la liste blanche de types de la Story 1.1.
+- **5 rejets** : `@Size(max = 255)` prétendu incohérent en unités (faux — `varchar(n)`
+  de Postgres compte lui aussi des caractères) ; objet tronqué à moins de 4 octets
+  servi tel quel (déjà couvert par le report « aucun contrôle d'intégrité au
+  téléchargement ») ; absence de plafond de longueur sur `PartnerHmacKey.secretKey` et
+  sur l'entité `WebhookSubscription` (aucun écrivain applicatif n'existe, ce serait un
+  durcissement non demandé) ; `findByActiveTrue()` qui tombe en bloc (doublon d'une
+  entrée déjà au ledger).
 
 ### Vérification
 
-- `cd backend && ./mvnw test` → **403 tests, 0 échec, BUILD SUCCESS** (362 avant la story).
-- `cd frontend && npm run test` → **174 tests, 0 échec** (compteur inchangé, aucune modification frontend).
-- Démarrage sans `ESCROW_CRYPTO_KEYS` → refus nommant la variable.
-- `grep -rn "esc:1:\|ESCX"` sur `resources/`, `infra/`, `Docs/` → uniquement de la
+- `cd backend && ./mvnw test` → **412 tests, 0 échec, BUILD SUCCESS** (403 avant cette
+  passe : +9 tests). Docker requis — Testcontainers Postgres 16 et MinIO réels.
+  Message de fin `Surefire is going to kill self fork JVM` observé après
+  `System.exit(0)` : artefact d'arrêt de Testcontainers, sans effet sur le résultat.
+- `cd frontend && npm run test` → **174 tests, 0 échec** (compteur inchangé, aucune
+  modification frontend).
+- Flyway applique bien 8 migrations, `v8` incluse, sur base neuve.
+- `grep -rn "esc:1:\|ESCX" backend/src/main/resources infra/ Docs/` → uniquement de la
   documentation ; aucune clé ni enveloppe réelle versionnée.
 
 ### Risques résiduels
 
-- **Effet de déploiement** : les lignes et objets antérieurs restent lisibles, mais les
-  lignes ne sont scellées qu'au premier redémarrage ; les objets déjà déposés en clair ne
-  sont **jamais** repris (report assumé), ce qui rend l'ancienne clé nécessaire à vie.
-- **Perdre le trousseau, c'est perdre les données** : aucune copie n'existe en base, dans
-  le stockage ni dans le dépôt. La sauvegarde des clés est une exigence d'exploitation,
-  pas une bonne pratique — elle sera reprise par l'outillage AR-P4 (Story 11.2).
-- Trois catégories nommées par AD-29 (coordonnées bancaires, secrets TOTP, résultats AML)
-  n'ont pas encore de table : elles réutiliseront `SecretCipher` en 2.6, 3.5 et 4.9.
-- Le contenu de `messages` (demandé par la revue de sécurité SEC-C2, absent d'AD-29) reste
-  hors périmètre : contradiction à remonter au spine, non tranchée ici.
+- **Le CHECK V8 et `SecretCipher.FORMAT_VERSION` doivent évoluer ensemble.** Le motif
+  SQL épouse désormais la forme exacte de l'enveloppe : introduire un format 2 sans
+  toucher la contrainte ferait rejeter les nouvelles écritures. C'est écrit en tête de
+  la migration, mais rien ne le contraint mécaniquement.
+- **Le plafond de matérialisation est une constante locale** (10 Mo + marge) et non la
+  limite métier elle-même, qui vit dans un autre paquet. Un relèvement de la taille
+  maximale d'une pièce doit relever les deux.
+- Les trois reports ci-dessus restent ouverts, ainsi que les quatre de la passe
+  précédente — aucun n'est bloquant à la topologie mono-instance livrée.

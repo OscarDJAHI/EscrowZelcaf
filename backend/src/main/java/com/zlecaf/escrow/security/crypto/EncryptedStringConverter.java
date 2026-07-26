@@ -62,7 +62,10 @@ public class EncryptedStringConverter implements AttributeConverter<String, Stri
             // n'est pas connue ici (le convertisseur ne reçoit que la valeur), la
             // trace de démarrage du runner de scellement donne le décompte par table.
             log.warn("Secret lu EN CLAIR : ligne écrite avant le chiffrement au repos (Story 1.7). "
-                    + "Elle sera scellée au prochain démarrage par SecretsEncryptionBootstrap.");
+                    + "Le prochain démarrage la scelle — SAUF si elle est vide ou sous le plancher de "
+                    + "robustesse, deux cas que SecretsEncryptionBootstrap signale nommément (table et id) "
+                    + "et qu'il faut corriger à la main. C'est sa trace de démarrage, et non ce WARN, qui "
+                    + "donne le décompte par table.");
             return dbData;
         }
         return cipher.decryptFromText(dbData, AAD);

@@ -198,6 +198,23 @@ class EncryptedSecretsIntegrationTest {
     }
 
     @Test
+    @DisplayName("Le CHECK V8 refuse un clair court DÉGUISÉ en enveloppe (« esc:… » n'est pas un laissez-passer)")
+    void directSqlInsertOfShortValueLookingLikeAnEnvelopeIsRejected() {
+        Long companyId = persistCompany();
+
+        // V7 tolérait l'enveloppe par un simple LIKE 'esc:%' — plus large que ce que
+        // l'application reconnaît. Une valeur de 25 octets passait donc la contrainte
+        // tout en étant lue comme un secret legacy EN CLAIR : un secret HMAC faible
+        // authentifiait pour de bon jusqu'au redémarrage suivant, qui échouait.
+        assertThatThrownBy(() -> jdbc.update(
+                "INSERT INTO partner_hmac_keys (key_id, company_id, secret_key, active, created_at)"
+                        + " VALUES (?, ?, ?, true, now())", "key-sql-fake-envelope", companyId,
+                "esc:secret-du-transitaire"))
+                .isInstanceOf(DataIntegrityViolationException.class)
+                .hasMessageContaining("ck_partner_hmac_keys_secret_len");
+    }
+
+    @Test
     @DisplayName("La vérification HMAC partenaire fonctionne toujours de bout en bout sur un secret chiffré")
     void partnerSignatureStillVerifiesAfterEncryption() {
         persistPartnerKey("key-signing", PARTNER_SECRET);

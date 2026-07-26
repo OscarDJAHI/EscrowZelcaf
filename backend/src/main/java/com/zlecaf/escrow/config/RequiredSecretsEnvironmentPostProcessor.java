@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
+import com.zlecaf.escrow.security.crypto.SecretCipher;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.context.config.ConfigDataEnvironmentPostProcessor;
 import org.springframework.boot.env.EnvironmentPostProcessor;
@@ -29,9 +30,10 @@ public class RequiredSecretsEnvironmentPostProcessor implements EnvironmentPostP
             "escrow.jwt.secret", "ESCROW_JWT_SECRET",
             "escrow.storage.secret-key", "ESCROW_STORAGE_SECRET_KEY",
             // Trousseau de chiffrement au repos (Story 1.7, AD-29). Sa validation
-            // FINE (format id:base64, 32 octets, ids uniques) appartient à
-            // SecretCipher, qui seul sait ce qu'est une clé valable ; ici on
-            // n'attrape que l'absence et la sentinelle, comme pour les autres.
+            // FINE reste dans SecretCipher — qui seul sait ce qu'est une clé
+            // valable — mais elle est INVOQUÉE ici (cf. cryptoKeyringProblems)
+            // pour que ses causes rejoignent le message unique plutôt que de
+            // surgir un redémarrage plus tard, à l'initialisation du bean.
             "escrow.crypto.keys", "ESCROW_CRYPTO_KEYS");
 
     /**
@@ -63,12 +65,35 @@ public class RequiredSecretsEnvironmentPostProcessor implements EnvironmentPostP
                         + " octets requis pour HS256");
             }
         }
+        problems.addAll(cryptoKeyringProblems(environment));
         if (!problems.isEmpty()) {
             throw new IllegalStateException(
                     "Démarrage refusé : secret(s) obligatoire(s) invalide(s) — "
                             + String.join(" ; ", problems)
                             + ". Fournir ces variables d'environnement (NFR-P1) ; aucune valeur par défaut n'existe.");
         }
+    }
+
+    /**
+     * Validité SYNTAXIQUE du trousseau de chiffrement (Story 1.7) : format
+     * {@code id:base64}, 32 octets décodés, identifiants uniques, et identifiant
+     * actif présent au trousseau.
+     *
+     * <p>Silencieux quand le trousseau est absent ou resté à la sentinelle : la
+     * boucle principale l'a déjà signalé, un second message sur la même variable
+     * n'ajouterait que du bruit. C'est {@code SecretCipher} qui décide, ici on ne
+     * fait que lui poser la question au bon moment.
+     */
+    private List<String> cryptoKeyringProblems(ConfigurableEnvironment environment) {
+        String rawKeyring = resolveOrNull(environment, "escrow.crypto.keys");
+        if (rawKeyring == null || rawKeyring.isBlank() || rawKeyring.startsWith(SENTINEL_PREFIX)) {
+            return List.of();
+        }
+        // Les messages nomment déjà leur variable (ESCROW_CRYPTO_KEYS ou
+        // ESCROW_CRYPTO_ACTIVE_KEY_ID) : les préfixer une seconde fois les rendrait
+        // illisibles dans l'énumération.
+        return SecretCipher.keyringProblems(
+                rawKeyring, resolveOrNull(environment, "escrow.crypto.active-key-id"));
     }
 
     /** Ordre stable pour un message d'erreur déterministe (Map.of ne garantit rien). */

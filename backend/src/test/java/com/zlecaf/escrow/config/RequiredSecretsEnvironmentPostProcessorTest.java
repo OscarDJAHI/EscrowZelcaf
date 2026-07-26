@@ -23,10 +23,14 @@ class RequiredSecretsEnvironmentPostProcessorTest {
                 .withProperty("spring.rabbitmq.password", "x")
                 .withProperty("escrow.jwt.secret", "x".repeat(32))
                 .withProperty("escrow.storage.secret-key", "x")
-                // Story 1.7 : ici on ne teste que présence/sentinelle ; la validité du
-                // trousseau (format, 32 octets, id actif) est prouvée par SecretCipherTest.
-                .withProperty("escrow.crypto.keys", "v1:x");
+                // Story 1.7 : trousseau RÉELLEMENT valide (32 octets décodés) — depuis la
+                // revue, le fail-fast invoque la validation fine de SecretCipher pour
+                // agréger ses causes au message unique, une valeur factice échouerait.
+                .withProperty("escrow.crypto.keys", VALID_KEYRING);
     }
+
+    /** « escrow-test-only-key-32-bytes!!! » en base64 : exactement 32 octets décodés. */
+    private static final String VALID_KEYRING = "v1:ZXNjcm93LXRlc3Qtb25seS1rZXktMzItYnl0ZXMhISE=";
 
     @Test
     @DisplayName("tous les secrets présents -> démarrage autorisé")
@@ -84,6 +88,49 @@ class RequiredSecretsEnvironmentPostProcessorTest {
         assertThatThrownBy(() -> processor.postProcessEnvironment(env, null))
                 .hasMessageContaining("ESCROW_CRYPTO_KEYS")
                 .hasMessageContaining("exemple");
+    }
+
+    @Test
+    @DisplayName("clé de chiffrement mal dimensionnée -> cause AGRÉGÉE au message unique (Story 1.7)")
+    void invalidCryptoKeySize_isAggregatedIntoTheSingleMessage() {
+        MockEnvironment env = envWithAllSecrets();
+        // 31 octets décodés au lieu de 32 : la faute la plus probable d'un opérateur
+        // qui colle une clé tronquée. Sans agrégation, elle ne surgissait qu'au
+        // redémarrage SUIVANT, à l'initialisation du bean SecretCipher.
+        env.setProperty("escrow.crypto.keys", "v1:" + java.util.Base64.getEncoder()
+                .encodeToString(new byte[31]));
+        env.setProperty("spring.datasource.password", "");
+
+        assertThatThrownBy(() -> processor.postProcessEnvironment(env, null))
+                .isInstanceOf(IllegalStateException.class)
+                // les DEUX problèmes dans la même erreur : c'est tout l'objet du fail-fast
+                .hasMessageContaining("SPRING_DATASOURCE_PASSWORD")
+                .hasMessageContaining("ESCROW_CRYPTO_KEYS")
+                .hasMessageContaining("31 octets");
+    }
+
+    @Test
+    @DisplayName("identifiant de clé actif hors trousseau -> refusé dès le fail-fast, pas au démarrage du bean")
+    void activeKeyIdOutsideKeyring_isRejectedEarly() {
+        MockEnvironment env = envWithAllSecrets();
+        env.setProperty("escrow.crypto.active-key-id", "v2");
+
+        assertThatThrownBy(() -> processor.postProcessEnvironment(env, null))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("ESCROW_CRYPTO_ACTIVE_KEY_ID")
+                .hasMessageContaining("v2");
+    }
+
+    @Test
+    @DisplayName("trousseau absent -> une SEULE plainte, pas un doublon présence + syntaxe")
+    void missingKeyring_isReportedOnlyOnce() {
+        MockEnvironment env = envWithAllSecrets();
+        env.setProperty("escrow.crypto.keys", "");
+
+        assertThatThrownBy(() -> processor.postProcessEnvironment(env, null))
+                .satisfies(error -> assertThat(error.getMessage().split("ESCROW_CRYPTO_KEYS", -1))
+                        .as("la variable ne doit être nommée qu'une fois")
+                        .hasSize(2));
     }
 
     @Test

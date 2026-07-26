@@ -38,6 +38,16 @@ public class MinioEvidenceStorage implements EvidenceStorage {
 
     private static final Logger log = LoggerFactory.getLogger(MinioEvidenceStorage.class);
 
+    /**
+     * Plafond de ce que {@link #load(String)} accepte de charger en mémoire :
+     * la limite métier de 10 Mo par pièce ({@code EvidenceService.MAX_FILE_SIZE},
+     * d'un autre paquet), plus la marge d'enveloppe (magic, version, id de clé,
+     * IV et tag ~ quelques dizaines d'octets). Un objet plus gros que cela n'a pas
+     * pu être déposé par l'application : c'est une anomalie de stockage, traitée
+     * comme une indisponibilité (502) plutôt qu'en épuisant le tas.
+     */
+    private static final long MAX_OBJECT_BYTES = 10_485_760L + 4_096L;
+
     private final S3Client s3Client;
     private final String bucket;
     private final SecretCipher cipher;
@@ -99,10 +109,21 @@ public class MinioEvidenceStorage implements EvidenceStorage {
                 .build();
         // Objet lu INTÉGRALEMENT en mémoire : GCM n'authentifie qu'une fois le tag
         // final vérifié, donc un flux déchiffré à la volée rendrait du clair non
-        // authentifié — exactement ce que « jamais de clair partiel » interdit. Le
-        // service borne déjà les preuves à 10 Mo/fichier.
+        // authentifié — exactement ce que « jamais de clair partiel » interdit.
+        //
+        // La borne est donc posée ICI, et non déduite de la limite d'ingestion : tout
+        // ce qui atteint le bucket n'est pas passé par le contrôle de taille du
+        // service (restauration de sauvegarde, outil d'admin parlant à S3 en direct,
+        // futur canal d'ingestion). Sans ce plafond, un seul objet surdimensionné
+        // suffirait à emporter la JVM entière, pas seulement sa requête.
         byte[] stored;
         try (ResponseInputStream<GetObjectResponse> object = s3Client.getObject(request)) {
+            Long declaredLength = object.response().contentLength();
+            if (declaredLength != null && declaredLength > MAX_OBJECT_BYTES) {
+                throw new EvidenceStorageException(storageKey, new IllegalStateException(
+                        "Objet de " + declaredLength + " octets au-delà du plafond de matérialisation ("
+                                + MAX_OBJECT_BYTES + ") : refus de le charger en mémoire."));
+            }
             stored = object.readAllBytes();
         } catch (NoSuchKeyException e) {
             // Translated here so callers never need an S3 type to handle a miss.

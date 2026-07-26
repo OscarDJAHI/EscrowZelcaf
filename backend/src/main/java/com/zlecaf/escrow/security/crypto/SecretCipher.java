@@ -14,6 +14,7 @@ import java.security.SecureRandom;
 import java.util.Arrays;
 import java.util.Base64;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.regex.Pattern;
@@ -57,7 +58,15 @@ public class SecretCipher {
     private static final int TAG_BITS = 128;
     private static final String TRANSFORMATION = "AES/GCM/NoPadding";
 
-    /** Version du FORMAT d'enveloppe (pas de la clé) : un format 2 futur resterait lisible. */
+    /**
+     * Version du FORMAT d'enveloppe (pas de la clé). Elle ne procure PAS de
+     * compatibilité ascendante : une enveloppe {@code esc:2:…} est reconnue comme
+     * enveloppe puis REJETÉE par {@link #requireSupportedVersion(String)}. C'est un
+     * détecteur de downgrade, pas un pont — introduire un format 2 impose donc un
+     * déploiement en deux temps (d'abord une version qui SAIT lire le format 2,
+     * ensuite seulement une version qui l'ÉCRIT), faute de quoi un rollback rendrait
+     * les lignes réécrites illisibles.
+     */
     static final int FORMAT_VERSION = 1;
     static final String TEXT_PREFIX = "esc";
     static final byte[] BINARY_MAGIC = {'E', 'S', 'C', 'X'};
@@ -74,6 +83,8 @@ public class SecretCipher {
 
     private static final String KEYS_ENV = "ESCROW_CRYPTO_KEYS (escrow.crypto.keys)";
     private static final String ACTIVE_KEY_ENV = "ESCROW_CRYPTO_ACTIVE_KEY_ID (escrow.crypto.active-key-id)";
+    /** Préfixe commun aux refus de configuration, retiré quand le message est agrégé. */
+    private static final String REFUSAL = "Démarrage refusé : ";
 
     private final Map<String, SecretKeySpec> keyring;
     private final String activeKeyId;
@@ -96,7 +107,7 @@ public class SecretCipher {
 
     private static Map<String, SecretKeySpec> parseKeyring(String rawKeyring) {
         if (rawKeyring == null || rawKeyring.isBlank()) {
-            throw new IllegalStateException("Démarrage refusé : " + KEYS_ENV
+            throw new IllegalStateException(REFUSAL +KEYS_ENV
                     + " est absent ou vide. Format attendu : id:cléBase64[,id:cléBase64…]"
                     + " avec des clés de " + KEY_BYTES + " octets (openssl rand -base64 32).");
         }
@@ -108,35 +119,35 @@ public class SecretCipher {
             }
             int separator = trimmed.indexOf(':');
             if (separator <= 0 || separator == trimmed.length() - 1) {
-                throw new IllegalStateException("Démarrage refusé : " + KEYS_ENV
+                throw new IllegalStateException(REFUSAL +KEYS_ENV
                         + " : entrée mal formée, « id:cléBase64 » attendu (le matériel de clé n'est jamais journalisé).");
             }
             String keyId = trimmed.substring(0, separator);
             if (!KEY_ID_PATTERN.matcher(keyId).matches()) {
-                throw new IllegalStateException("Démarrage refusé : " + KEYS_ENV
+                throw new IllegalStateException(REFUSAL +KEYS_ENV
                         + " : identifiant de clé « " + keyId + " » invalide (attendu [A-Za-z0-9_-], 1 à 64 caractères).");
             }
             byte[] material;
             try {
                 material = Base64.getDecoder().decode(trimmed.substring(separator + 1));
             } catch (IllegalArgumentException notBase64) {
-                throw new IllegalStateException("Démarrage refusé : " + KEYS_ENV
+                throw new IllegalStateException(REFUSAL +KEYS_ENV
                         + " : la clé « " + keyId + " » n'est pas du base64 valide.", notBase64);
             }
             if (material.length != KEY_BYTES) {
-                throw new IllegalStateException("Démarrage refusé : " + KEYS_ENV
+                throw new IllegalStateException(REFUSAL +KEYS_ENV
                         + " : la clé « " + keyId + " » fait " + material.length + " octets décodés, "
                         + KEY_BYTES + " exigés (AES-256).");
             }
             if (keys.put(keyId, new SecretKeySpec(material, "AES")) != null) {
                 // Deux clés sous le même id : les enveloppes de l'une deviendraient
                 // indéchiffrables au gré de l'ordre de lecture. Refus explicite.
-                throw new IllegalStateException("Démarrage refusé : " + KEYS_ENV
+                throw new IllegalStateException(REFUSAL +KEYS_ENV
                         + " : identifiant de clé « " + keyId + " » présent deux fois.");
             }
         }
         if (keys.isEmpty()) {
-            throw new IllegalStateException("Démarrage refusé : " + KEYS_ENV + " ne contient aucune clé exploitable.");
+            throw new IllegalStateException(REFUSAL +KEYS_ENV + " ne contient aucune clé exploitable.");
         }
         return Map.copyOf(keys);
     }
@@ -144,7 +155,7 @@ public class SecretCipher {
     private static String resolveActiveKeyId(String configured, Map<String, SecretKeySpec> keyring) {
         if (configured == null || configured.isBlank()) {
             if (keyring.size() > 1) {
-                throw new IllegalStateException("Démarrage refusé : " + ACTIVE_KEY_ENV
+                throw new IllegalStateException(REFUSAL +ACTIVE_KEY_ENV
                         + " est obligatoire dès que le trousseau contient plusieurs clés (ids présents : "
                         + keyring.keySet() + ") — sinon le sens de la rotation serait deviné.");
             }
@@ -152,10 +163,31 @@ public class SecretCipher {
         }
         String keyId = configured.trim();
         if (!keyring.containsKey(keyId)) {
-            throw new IllegalStateException("Démarrage refusé : " + ACTIVE_KEY_ENV
+            throw new IllegalStateException(REFUSAL +ACTIVE_KEY_ENV
                     + " désigne « " + keyId + " », absent du trousseau (ids présents : " + keyring.keySet() + ").");
         }
         return keyId;
+    }
+
+    /**
+     * Problèmes de configuration du trousseau, SANS lever ni construire de bean.
+     *
+     * <p>Existe pour que le fail-fast de la Story 1.2 agrège ces causes au message
+     * unique qui nomme toutes les variables fautives : sans cela, l'opérateur qui
+     * met en service découvre l'absence du trousseau au premier redémarrage, sa
+     * clé de 31 octets au deuxième et son identifiant actif hors trousseau au
+     * troisième. La logique n'est PAS dupliquée — c'est le constructeur réel qui
+     * est exécuté, seul le prefixe de refus est retiré pour l'agrégation.
+     *
+     * @return liste vide quand la configuration est exploitable
+     */
+    public static List<String> keyringProblems(String rawKeyring, String configuredActiveKey) {
+        try {
+            resolveActiveKeyId(configuredActiveKey, parseKeyring(rawKeyring));
+            return List.of();
+        } catch (IllegalStateException invalid) {
+            return List.of(String.valueOf(invalid.getMessage()).replace(REFUSAL, ""));
+        }
     }
 
     /** Identifiant de la clé sous laquelle toute NOUVELLE écriture est scellée. */

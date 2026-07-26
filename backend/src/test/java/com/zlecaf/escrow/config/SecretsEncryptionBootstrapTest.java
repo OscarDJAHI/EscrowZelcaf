@@ -12,6 +12,8 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.annotation.Transactional;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -154,8 +156,99 @@ class SecretsEncryptionBootstrapTest {
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("partner_hmac_keys")
                 .hasMessageContaining("ESCROW_CRYPTO_KEYS");
-        // La transaction de la table a été annulée : rien de pivoté à moitié.
+        // Cette ligne-ci n'a pas bougé — mais elle est la SEULE de la table, et le
+        // balayage a échoué sur elle : c'est {@link #sweepIsAtomicAcrossRowsOfTheSameTable()}
+        // qui prouve l'annulation, avec une ligne déjà pivotée avant l'échec.
         assertThat(rawColumn("partner_hmac_keys", partnerId)).isEqualTo(underV1);
+    }
+
+    @Test
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
+    @DisplayName("Atomicité : la ligne déjà scellée avant l'échec est bien ANNULÉE, pas laissée à moitié")
+    void sweepIsAtomicAcrossRowsOfTheSameTable() throws Exception {
+        // NOT_SUPPORTED est indispensable : sous la transaction de test de @DataJpaTest,
+        // le TransactionTemplate du runner ne ferait que REJOINDRE celle du test, son
+        // rollback se réduirait à un rollback-only sans effet observable, et l'assertion
+        // ci-dessous passerait même sans aucune transaction dans le code de production.
+        // Corollaire : les écritures sont ici réelles, d'où le nettoyage en finally.
+        try {
+            Long companyId = jdbc.queryForObject(
+                    "INSERT INTO companies (name) VALUES ('Transitaire atomique') RETURNING id", Long.class);
+            // A : legacy en clair, scellable. Insérée en PREMIER, donc balayée en premier
+            // (ORDER BY id) : son UPDATE est émis avant que B ne fasse échouer la passe.
+            Long idA = jdbc.queryForObject("INSERT INTO partner_hmac_keys (key_id, company_id, secret_key,"
+                    + " active, created_at) VALUES ('atomic-a', ?, ?, true, now()) RETURNING id",
+                    Long.class, companyId, PARTNER_SECRET);
+            // B : enveloppe scellée par une clé ABSENTE du trousseau — le CHECK
+            // l'accepte (elle est bien formée), le balayage ne peut pas l'ouvrir.
+            String underUnknownKey = new SecretCipher("v9:" + keyMaterial((byte) 0x39), "v9")
+                    .encryptToText(PARTNER_SECRET, EncryptedStringConverter.AAD);
+            jdbc.update("INSERT INTO partner_hmac_keys (key_id, company_id, secret_key, active, created_at)"
+                    + " VALUES ('atomic-b', ?, ?, true, now())", companyId, underUnknownKey);
+
+            assertThatThrownBy(() -> runBootstrap(new SecretCipher(V1, "v1")))
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("partner_hmac_keys")
+                    .hasMessageContaining("INTACTE");
+
+            // Le cœur de la preuve : A avait été scellée dans la même transaction que
+            // l'échec de B, elle est revenue EN CLAIR. Sans transaction, elle serait
+            // restée chiffrée et la table serait à moitié pivotée.
+            assertThat(rawColumn("partner_hmac_keys", idA)).isEqualTo(PARTNER_SECRET);
+        } finally {
+            jdbc.update("DELETE FROM partner_hmac_keys WHERE key_id LIKE 'atomic-%'");
+            jdbc.update("DELETE FROM companies WHERE name = 'Transitaire atomique'");
+        }
+    }
+
+    @Test
+    @DisplayName("La rotation revérifie le plancher : un clair faible n'est jamais re-scellé en silence")
+    void rotationRefusesToResealAWeakSecret() {
+        Long companyId = jdbc.queryForObject(
+                "INSERT INTO companies (name) VALUES ('Transitaire faible chiffré') RETURNING id", Long.class);
+        // Enveloppe BIEN FORMÉE d'un clair sous le plancher : elle franchit le CHECK
+        // (qui ne voit que le chiffré) et le scellement (qui ne traite que le clair).
+        // La rotation est la seule autre occasion où ce clair repasse en mémoire.
+        String weakUnderV1 = new SecretCipher(V1, "v1")
+                .encryptToText("court", EncryptedStringConverter.AAD);
+        jdbc.update("INSERT INTO partner_hmac_keys (key_id, company_id, secret_key, active, created_at)"
+                + " VALUES ('key-weak-sealed', ?, ?, true, now())", companyId, weakUnderV1);
+
+        assertThatThrownBy(() -> runBootstrap(new SecretCipher(V1 + "," + V2, "v2")))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("partner_hmac_keys");
+    }
+
+    @Test
+    @DisplayName("Rotation v1 -> v2 sur webhook_subscriptions aussi : la seconde table n'est pas oubliée")
+    void rotatesWebhookSubscriptionsToo() throws Exception {
+        Long webhookId = insertLegacyWebhook();
+        runBootstrap(new SecretCipher(V1, "v1"));
+        String underV1 = rawColumn("webhook_subscriptions", webhookId);
+
+        SecretCipher rotated = new SecretCipher(V1 + "," + V2, "v2");
+        runBootstrap(rotated);
+
+        String underV2 = rawColumn("webhook_subscriptions", webhookId);
+        assertThat(underV2).startsWith("esc:1:v2:").isNotEqualTo(underV1);
+        assertThat(rotated.decryptFromText(underV2, EncryptedStringConverter.AAD)).isEqualTo(WEBHOOK_SECRET);
+    }
+
+    @Test
+    @DisplayName("Un secret VIDE est ignoré sans faire échouer le balayage, et n'est pas chiffré")
+    void emptySecretIsSkippedWithoutAbortingTheSweep() throws Exception {
+        // Atteignable en SQL direct : NOT NULL n'interdit pas la chaîne vide, et
+        // webhook_subscriptions n'a pas de plancher. Chiffrer une chaîne vide
+        // produirait une enveloppe parfaitement valide d'un secret inutilisable.
+        Long emptyId = jdbc.queryForObject("INSERT INTO webhook_subscriptions (target_url, secret_key,"
+                + " event_type, is_active, created_at) VALUES ('https://p.example/empty', '', 'ALL', true,"
+                + " now()) RETURNING id", Long.class);
+        Long normalId = insertLegacyWebhook();
+
+        runBootstrap(new SecretCipher(V1, "v1"));
+
+        assertThat(rawColumn("webhook_subscriptions", emptyId)).isEmpty();
+        assertThat(rawColumn("webhook_subscriptions", normalId)).startsWith("esc:1:v1:");
     }
 
     @Test
