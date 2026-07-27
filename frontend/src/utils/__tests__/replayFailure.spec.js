@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import {
@@ -9,6 +9,41 @@ import {
   extractFailureReason,
   isBareAuthFailure,
 } from '@/utils/replayFailure'
+
+// Anchored on the Vitest CWD (`frontend/`): under jsdom `import.meta.url` is an
+// http URL, not a file one.
+const BACKEND_DIR = resolve(process.cwd(), '../backend')
+const ERROR_CODE_JAVA = resolve(BACKEND_DIR, 'src/main/java/com/zlecaf/escrow/domain/ErrorCode.java')
+
+// Two guards below read the Java enum as the authority. That coupling is
+// deliberate (see their comments) but it made `npm run test` require a FULL
+// checkout: run from a front-only context — a `docker build frontend/`, a CI job
+// that clones one module — `readFileSync` threw ENOENT and the suite reported a
+// *drift* failure, which is a lie. It could not tell "no backend here" from "the
+// mirror is stale".
+//
+// The two cases are now separated, and only one of them is benign:
+//   - no `../backend` directory at all -> front-only context, the guard is not
+//     applicable and skips WITH ITS REASON PRINTED;
+//   - `../backend` present but the enum missing -> the authority MOVED and this
+//     guard has gone blind. That fails loudly. Skipping there would be the silent
+//     pass this whole barrier exists to prevent.
+const BACKEND_CHECKED_OUT = existsSync(BACKEND_DIR)
+
+/** Reads the authority, or fails with the reason the mirror can no longer be checked. */
+function readErrorCodeJava() {
+  if (!existsSync(ERROR_CODE_JAVA)) {
+    throw new Error(
+      `ErrorCode.java introuvable à ${ERROR_CODE_JAVA} alors que ../backend existe : ` +
+        `l'autorité du contrat a bougé, et cette garde anti-dérive ne protège plus rien. ` +
+        `Corriger le chemin ici, ne pas neutraliser le test.`,
+    )
+  }
+  return readFileSync(ERROR_CODE_JAVA, 'utf8')
+}
+
+/** `it` for the guards that need the backend sources; skipped (not failed) without them. */
+const itWithBackend = it.skipIf(!BACKEND_CHECKED_OUT)
 
 /** Shapes an AxiosError the way `client.js` relays it: `err.response.data` is the envelope. */
 function httpError(status, data) {
@@ -151,7 +186,7 @@ describe('classifyReplayFailure — no code, no assumption', () => {
 })
 
 describe('TRANSIENT_CODES', () => {
-  it('mirrors exactly the TRANSIENT partition declared by ErrorCode.java', () => {
+  itWithBackend('mirrors exactly the TRANSIENT partition declared by ErrorCode.java (needs ../backend)', () => {
     // Read from the authority itself rather than compared to a literal spelled
     // out right here: asserting the Set against a hand-copied list would be a
     // tautology that no backend drift could ever break. `ErrorCodeContractTest`
@@ -159,12 +194,7 @@ describe('TRANSIENT_CODES', () => {
     // dev adding a TRANSIENT code would fix the Java literal and leave the front
     // silently freezing entries that deserved a retry. This is the only link
     // between the two.
-    // Anchored on the Vitest CWD (`frontend/`): under jsdom `import.meta.url` is
-    // an http URL, not a file one.
-    const java = readFileSync(
-      resolve(process.cwd(), '../backend/src/main/java/com/zlecaf/escrow/domain/ErrorCode.java'),
-      'utf8',
-    )
+    const java = readErrorCodeJava()
     const declared = [...java.matchAll(/(\w+)\(Retryability\.TRANSIENT\)/g)].map((m) => m[1])
 
     expect(declared.length).toBeGreaterThan(0) // the regex still matches the enum's shape
@@ -173,7 +203,7 @@ describe('TRANSIENT_CODES', () => {
 })
 
 describe('FAILURE_LABELS', () => {
-  it('names only codes the PERMANENT partition of ErrorCode.java really declares', () => {
+  itWithBackend('names only codes the PERMANENT partition of ErrorCode.java really declares (needs ../backend)', () => {
     // Same rationale as the TRANSIENT_CODES guard: read the authority, never a
     // hand-copied list. A subset assertion, not an equality — AUTH_FAILED is
     // PERMANENT but partner-only, so it legitimately has no label. The regex is
@@ -181,10 +211,7 @@ describe('FAILURE_LABELS', () => {
     // reclassified TRANSIENT backend-side would otherwise keep its label here
     // while becoming unreachable (`classifyReplayFailure` never freezes a
     // transient), and the drift would pass in silence.
-    const java = readFileSync(
-      resolve(process.cwd(), '../backend/src/main/java/com/zlecaf/escrow/domain/ErrorCode.java'),
-      'utf8',
-    )
+    const java = readErrorCodeJava()
     const permanent = [...java.matchAll(/(\w+)\(Retryability\.PERMANENT\)/g)].map((m) => m[1])
 
     expect(permanent.length).toBeGreaterThan(0) // the regex still matches the enum's shape

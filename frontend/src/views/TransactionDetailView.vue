@@ -1,6 +1,6 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { useEscrowStore } from '@/stores/escrow'
 import { useEvidenceStore } from '@/stores/evidence'
@@ -19,7 +19,8 @@ const props = defineProps({
   id: { type: String, required: true },
 })
 
-const route = useRoute()
+// L'identifiant de transaction arrive par la prop `id` (route en mode `props: true`),
+// jamais par `useRoute()` : la liaison était morte, et son import avec elle.
 const router = useRouter()
 const auth = useAuthStore()
 const escrowStore = useEscrowStore()

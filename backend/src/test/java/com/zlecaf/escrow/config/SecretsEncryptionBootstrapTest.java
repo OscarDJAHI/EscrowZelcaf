@@ -2,6 +2,7 @@ package com.zlecaf.escrow.config;
 
 import com.zlecaf.escrow.security.crypto.EncryptedStringConverter;
 import com.zlecaf.escrow.security.crypto.SecretCipher;
+import com.zlecaf.escrow.support.PostgresTestSupport;
 import jakarta.persistence.Convert;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.Table;
@@ -18,9 +19,6 @@ import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
-import org.testcontainers.containers.PostgreSQLContainer;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.lang.reflect.Field;
 import java.util.ArrayList;
@@ -45,21 +43,14 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 @DataJpaTest
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
 @Import({SecretCipher.class, EncryptedStringConverter.class})
-@Testcontainers
 class SecretsEncryptionBootstrapTest {
 
     private static final String PARTNER_SECRET = "INBOUND-HMAC-SECRET-0123456789ABCDEF";
     private static final String WEBHOOK_SECRET = "OUTBOUND-WEBHOOK-SECRET-0123456789";
 
-    @Container
-    static final PostgreSQLContainer<?> POSTGRES =
-            new PostgreSQLContainer<>("postgres:16-alpine");
-
     @DynamicPropertySource
     static void datasource(DynamicPropertyRegistry registry) {
-        registry.add("spring.datasource.url", POSTGRES::getJdbcUrl);
-        registry.add("spring.datasource.username", POSTGRES::getUsername);
-        registry.add("spring.datasource.password", POSTGRES::getPassword);
+        PostgresTestSupport.registerDatabase(registry, SecretsEncryptionBootstrapTest.class);
         registry.add("spring.flyway.enabled", () -> "true");
         registry.add("spring.jpa.hibernate.ddl-auto", () -> "none");
     }

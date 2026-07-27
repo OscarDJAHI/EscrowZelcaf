@@ -1,7 +1,10 @@
 <script setup>
 import { reactive, ref } from 'vue'
 
-const props = defineProps({
+// Pas de `const props =` : les deux props ne sont lues que par le gabarit, où
+// elles sont dans la portée sans liaison. Nommer le résultat laissait une
+// variable morte que rien ne signalait.
+defineProps({
   submitting: { type: Boolean, default: false },
   errorMessage: { type: String, default: '' },
 })

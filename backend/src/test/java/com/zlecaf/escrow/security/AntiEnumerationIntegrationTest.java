@@ -23,6 +23,7 @@ import com.zlecaf.escrow.repository.PartnerHmacKeyRepository;
 import com.zlecaf.escrow.repository.PartnerKeyNonceRepository;
 import com.zlecaf.escrow.service.HmacSigner;
 import com.zlecaf.escrow.service.PartnerSignatureVerifier;
+import com.zlecaf.escrow.support.PostgresTestSupport;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -38,9 +39,6 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.RequestBuilder;
 import org.springframework.web.multipart.MultipartFile;
-import org.testcontainers.containers.PostgreSQLContainer;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
@@ -71,7 +69,6 @@ import java.util.UUID;
  */
 @SpringBootTest
 @AutoConfigureMockMvc
-@Testcontainers
 class AntiEnumerationIntegrationTest {
 
     private static final String STRONG = "Str0ng!Passw0rd";
@@ -80,14 +77,9 @@ class AntiEnumerationIntegrationTest {
     private static final long UNKNOWN_EVIDENCE_ID = 888_888L;
     private static final String PARTNER_SECRET = "INBOUND-HMAC-SECRET-0123456789ABCDEF";
 
-    @Container
-    static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>("postgres:16-alpine");
-
     @DynamicPropertySource
     static void properties(DynamicPropertyRegistry registry) {
-        registry.add("spring.datasource.url", POSTGRES::getJdbcUrl);
-        registry.add("spring.datasource.username", POSTGRES::getUsername);
-        registry.add("spring.datasource.password", POSTGRES::getPassword);
+        PostgresTestSupport.registerDatabase(registry, AntiEnumerationIntegrationTest.class);
     }
 
     @Autowired MockMvc mvc;
@@ -106,9 +98,10 @@ class AntiEnumerationIntegrationTest {
 
     @BeforeEach
     void seed() throws Exception {
-        // Emails uniques par exécution. Le conteneur est propre à cette classe (le
-        // `@Container` statique ci-dessus), mais `seed()` est un `@BeforeEach` : les
-        // méthodes de test partagent donc la MÊME base, et `users.email` est UNIQUE.
+        // Emails uniques par exécution. La base est propre à cette classe
+        // (`PostgresTestSupport.registerDatabase` ci-dessus), mais `seed()` est un
+        // `@BeforeEach` : les méthodes de test partagent donc la MÊME base, et
+        // `users.email` est UNIQUE.
         // Réutiliser des littéraux ferait échouer l'inscription dès la deuxième méthode
         // et rendrait le résultat dépendant de l'ordre d'exécution — exactement le genre
         // de test qui devient rouge un mardi sans qu'une ligne de production ait bougé.

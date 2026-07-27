@@ -8,6 +8,7 @@ import com.zlecaf.escrow.repository.PartnerHmacKeyRepository;
 import com.zlecaf.escrow.repository.PartnerKeyNonceRepository;
 import com.zlecaf.escrow.security.crypto.EncryptedStringConverter;
 import com.zlecaf.escrow.security.crypto.SecretCipher;
+import com.zlecaf.escrow.support.PostgresTestSupport;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -16,9 +17,6 @@ import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
-import org.testcontainers.containers.PostgreSQLContainer;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
@@ -37,21 +35,14 @@ import static org.assertj.core.api.Assertions.assertThat;
 // partner_hmac_keys.secret_key est converti (Story 1.7) : Hibernate réclame le
 // convertisseur et son cipher dès la construction du métamodèle.
 @Import({SecretCipher.class, EncryptedStringConverter.class})
-@Testcontainers
 class PartnerNoncePurgerIntegrationTest {
 
     /** Inbound HMAC secret satisfying the ck_partner_hmac_keys_secret_len CHECK (>= 32 bytes). */
     private static final String VALID_SECRET = "INBOUND-HMAC-SECRET-0123456789ABCDEF";
 
-    @Container
-    static final PostgreSQLContainer<?> POSTGRES =
-            new PostgreSQLContainer<>("postgres:16-alpine");
-
     @DynamicPropertySource
     static void datasource(DynamicPropertyRegistry registry) {
-        registry.add("spring.datasource.url", POSTGRES::getJdbcUrl);
-        registry.add("spring.datasource.username", POSTGRES::getUsername);
-        registry.add("spring.datasource.password", POSTGRES::getPassword);
+        PostgresTestSupport.registerDatabase(registry, PartnerNoncePurgerIntegrationTest.class);
         registry.add("spring.flyway.enabled", () -> "true");
         // Flyway owns the schema; Hibernate must not try to create-drop it.
         registry.add("spring.jpa.hibernate.ddl-auto", () -> "none");

@@ -74,7 +74,7 @@
 # Epics 6-7-8 → Epics 9-10 → Epic 11 en continu (11-9 avant production).
 
 generated: 2026-07-24
-last_updated: "2026-07-27 (rétrospective Epic 1 : epic-1 done 10/10, 8 action items dont 2 soldés — règle de mutation + cloisonnement webhook ; 481 tests backend / 241 frontend)"
+last_updated: "2026-07-28 (bundle QUALITÉ-CI soldé avant l'ouverture de l'Epic 2 : lint frontend, garde d'encodage, conteneur Postgres mutualisé, suite front découplée ; 2 entrées de ledger périmées rectifiées. 484 tests backend / 241 frontend, toujours verts)"
 project: Escrow_claude (Production)
 project_key: NOKEY
 tracking_system: file-system
@@ -213,7 +213,8 @@ action_items:
   - epic: 11
     action: "Bundle QUALITÉ-CI (Story 11-1) AVANT l'Epic 2 : ESLint absent, garde d'encodage/NUL en CI, classe de base Testcontainers, couplage de la suite front, et AUCUN test de composant alors que @vue/test-utils est installé depuis la 4.1 — or la Story 2-2 livre une bibliothèque de composants. Poser la barrière avant d'écrire le code qu'elle doit tenir."
     owner: "Oscard"
-    status: open
+    status: done
+    note: "2026-07-28 : soldé. (1) ESLint installé (config plate, vue/flat/essential, no-await-in-loop, reportUnusedDisableDirectives en erreur), script npm run lint --max-warnings 0, gate dans le job Frontend déjà requis ; 2 défauts réels corrigés (props mort, route/useRoute morts) ; les 6 directives eslint-disable prouvées vraies par mutation dans les deux sens. (2) Garde d'encodage scripts/check-encoding.py + .gitattributes + job CI 'hygiene' ; prouvée sur 3 branches (NUL détecté, UTF-8 invalide détecté, binaire déclaré ignoré). (3) Conteneur Postgres mutualisé (PostgresTestSupport, 18 suites, -188/+39 lignes) : 484 tests verts, 2min21 contre 3min11 ; a révélé et corrigé un plafond de connexions (83 erreurs, max_connections=300). (4) Suite front découplée du checkout backend (skip motivé si ../backend absent, ÉCHEC bruyant si l'autorité a bougé). (5) Deux entrées du bundle étaient PÉRIMÉES et ont été rectifiées : les tests de composant existent depuis la Story 4.4 (le harnais mount() marche ; ce qui reste est la couverture, 3/14, reroutée Epic 9), et la garde ClamAV est conditionnée à l'architecture, donc la CI amd64 exécute déjà le test pour de vrai. ACTION RESTANTE, hors code : ajouter le contexte 'Hygiène (encodage / octets NUL)' aux required status checks de main et develop — sans quoi ce job s'affiche sans bloquer la fusion."
   - epic: 2
     action: "Bundle SESSION-PARTAGÉE (9 entrées) en tête d'Epic 2 : déconnexion non propagée aux onglets, index d'expiration Workbox, logoutUser sans timeout, courses de lecture A vers B, verrou de rejeu. Même surface que celle que l'epic réécrit."
     owner: "Oscard"

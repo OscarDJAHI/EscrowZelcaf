@@ -26,6 +26,7 @@ import com.zlecaf.escrow.web.ApiExceptions.ForbiddenException;
 import com.zlecaf.escrow.web.ApiExceptions.BadRequestException;
 import com.zlecaf.escrow.web.ApiExceptions.NotFoundException;
 import com.zlecaf.escrow.web.dto.EvidenceDtos.EvidenceDto;
+import com.zlecaf.escrow.support.PostgresTestSupport;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -42,9 +43,6 @@ import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.web.multipart.MultipartFile;
-import org.testcontainers.containers.PostgreSQLContainer;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.io.ByteArrayInputStream;
 import java.io.InputStream;
@@ -75,18 +73,11 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 @Import({EvidenceService.class, AuditService.class, EvidenceContentValidator.class,
         TransactionAccess.class, SecretCipher.class, EncryptedStringConverter.class,
         EvidenceServiceTest.TestConfig.class})
-@Testcontainers
 class EvidenceServiceTest {
-
-    @Container
-    static final PostgreSQLContainer<?> POSTGRES =
-            new PostgreSQLContainer<>("postgres:16-alpine");
 
     @DynamicPropertySource
     static void datasource(DynamicPropertyRegistry registry) {
-        registry.add("spring.datasource.url", POSTGRES::getJdbcUrl);
-        registry.add("spring.datasource.username", POSTGRES::getUsername);
-        registry.add("spring.datasource.password", POSTGRES::getPassword);
+        PostgresTestSupport.registerDatabase(registry, EvidenceServiceTest.class);
         registry.add("spring.flyway.enabled", () -> "true");
         // Flyway owns the schema; Hibernate must not try to create-drop it.
         registry.add("spring.jpa.hibernate.ddl-auto", () -> "none");

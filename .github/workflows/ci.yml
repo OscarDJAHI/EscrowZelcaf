@@ -23,6 +23,23 @@ env:
   TRIVY_VERSION: v0.72.0
 
 jobs:
+  # Hygiène du dépôt : barrière contre le défaut qui a mordu DEUX fois (AuthView.vue
+  # en Story 1.9, EvidenceServiceTest.java au balayage 2026-07-27). Un littéral à
+  # octets bruts rend un fichier source binaire pour git et INVISIBLE à `grep` —
+  # donc aux greps de vérification sur lesquels chaque story s'appuie comme preuve —
+  # sans casser la compilation ni rougir une seule assertion. Aucun outil ne
+  # regardait ; c'est ce job qui regarde.
+  # Job séparé et sans dépendance (ni Java ni npm) : il rend son verdict en
+  # quelques secondes, avant que les suites longues n'aient chauffé.
+  hygiene:
+    name: Hygiène (encodage / octets NUL)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: Garde d'encodage (aucun octet NUL, UTF-8 valide)
+        run: python3 scripts/check-encoding.py
+
   backend:
     name: Backend (Maven + Testcontainers)
     runs-on: ubuntu-latest
@@ -60,6 +77,13 @@ jobs:
           cache: npm
           cache-dependency-path: frontend/package-lock.json
       - run: npm ci
+      # Avant les tests, délibérément : le lint rend son verdict en secondes et
+      # attrape une classe de défauts que la suite ne voit pas (le littéral à
+      # octets bruts d'AuthView.vue en Story 1.9 laissait 241 tests verts).
+      # `--max-warnings 0` : un avertissement toléré est un avertissement qui
+      # s'accumule — le dépôt en portait déjà six sous forme de directives
+      # `eslint-disable` qu'aucun analyseur ne lisait.
+      - run: npm run lint
       - run: npm run test
       - run: npm run build
 

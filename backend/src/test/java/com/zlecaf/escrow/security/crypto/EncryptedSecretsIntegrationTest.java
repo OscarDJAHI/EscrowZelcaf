@@ -8,6 +8,7 @@ import com.zlecaf.escrow.repository.PartnerHmacKeyRepository;
 import com.zlecaf.escrow.repository.WebhookSubscriptionRepository;
 import com.zlecaf.escrow.service.HmacSigner;
 import com.zlecaf.escrow.service.PartnerSignatureVerifier;
+import com.zlecaf.escrow.support.PostgresTestSupport;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -19,9 +20,6 @@ import org.springframework.context.annotation.Import;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
-import org.testcontainers.containers.PostgreSQLContainer;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.time.Instant;
 import java.util.List;
@@ -45,22 +43,15 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 @DataJpaTest
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
 @Import({SecretCipher.class, EncryptedStringConverter.class, PartnerSignatureVerifier.class})
-@Testcontainers
 class EncryptedSecretsIntegrationTest {
 
     /** >= 32 octets UTF-8 : plancher porté par l'entité ET par le CHECK V7 tolérant l'enveloppe. */
     private static final String PARTNER_SECRET = "INBOUND-HMAC-SECRET-0123456789ABCDEF";
     private static final String WEBHOOK_SECRET = "OUTBOUND-WEBHOOK-SECRET-0123456789";
 
-    @Container
-    static final PostgreSQLContainer<?> POSTGRES =
-            new PostgreSQLContainer<>("postgres:16-alpine");
-
     @DynamicPropertySource
     static void datasource(DynamicPropertyRegistry registry) {
-        registry.add("spring.datasource.url", POSTGRES::getJdbcUrl);
-        registry.add("spring.datasource.username", POSTGRES::getUsername);
-        registry.add("spring.datasource.password", POSTGRES::getPassword);
+        PostgresTestSupport.registerDatabase(registry, EncryptedSecretsIntegrationTest.class);
         registry.add("spring.flyway.enabled", () -> "true");
         registry.add("spring.jpa.hibernate.ddl-auto", () -> "none");
     }
