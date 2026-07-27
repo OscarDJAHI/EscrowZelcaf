@@ -1,5 +1,5 @@
 # generated: 2026-07-24
-# last_updated: 2026-07-24 (sprint planning production — depuis epics.md re-dérivé, 11 epics / 64 stories)
+# last_updated: 2026-07-27 (rétrospective Epic 1 — epic-1 done, 8 action items enregistrés)
 # project: Escrow_claude (Production)
 # project_key: NOKEY
 # tracking_system: file-system
@@ -74,7 +74,7 @@
 # Epics 6-7-8 → Epics 9-10 → Epic 11 en continu (11-9 avant production).
 
 generated: 2026-07-24
-last_updated: "2026-07-26 (1-9 done — hygiène de session sur appareil partagé, 3 passes de revue soldées : 240 tests frontend)"
+last_updated: "2026-07-27 (rétrospective Epic 1 : epic-1 done 10/10, 8 action items dont 2 soldés — règle de mutation + cloisonnement webhook ; 481 tests backend / 241 frontend)"
 project: Escrow_claude (Production)
 project_key: NOKEY
 tracking_system: file-system
@@ -82,7 +82,7 @@ story_location: "{project-root}/_bmad-output/implementation-artifacts"
 
 development_status:
   # Epic 1 — Sécurité & protection des données (hérité, en cours)
-  epic-1: in-progress
+  epic-1: done # 10/10 stories, rétro 2026-07-27 (epic-1-retro-2026-07-27.md)
   1-1-role-admin-non-auto-attribuable: done # fichier story: 1-1-retirer-auto-attribution-role-admin.md (commit 204def7)
   1-2-externalisation-des-secrets: done # review 2026-07-25: 12 patchs (sentinelles, JWT>=32, alignement identifiants), 247 tests, CI verte
   1-3-anti-bruteforce-authentification: done
@@ -93,7 +93,7 @@ development_status:
   1-8-scan-anti-malware-ingestion: done # revue 2026-07-26 : 21 correctifs (dont prémisse image ClamAV inversée, route de litige non couverte, timeout d'écriture absent), 4 décisions, 5 reports, 452 tests
   1-9-hygiene-session-appareil-partage: done # 3 passes de revue 2026-07-26 : 29 correctifs cumulés (5 hauts : drapeau hydrated menteur, purge locale après le réseau ×2, suite rouge, AuthView.vue devenu binaire), 10 reports, 11 rejets, 240 tests frontend
   1-10-anti-enumeration-ressources: done # revue 2026-07-26 : 15 correctifs (1 haut : 7 rejets natifs Spring en 500/TRANSIENT sur une surface rejouée hors ligne), 7 reports, 4 rejets, 477 tests backend + 241 frontend ; clause « et wallets » de l'AC non livrable (aucune ressource wallet, AD-13/Epic 4) → dette portée au ledger. Revue de SUIVI 2026-07-27 close à la main : ses 3 cycles ont tous expiré (2 timeouts mur, 1 panne API), 2 patchs réels récupérés et vérifiés par mutation (Content-Type épinglé sur les 16 branches ; convention test par regex — nom qualifié et appel multiligne l'esquivaient), +1 test garde-fou. Aucun verdict de revue de suivi complet n'a jamais été rendu
-  epic-1-retrospective: optional
+  epic-1-retrospective: done # 2026-07-27 — 8 action items, dont 2 soldés le jour même (règle de mutation, cloisonnement webhook)
 
   # Epic 2 — Onboarding & comptes d'entreprise (2-1..2-3 = fondation UI, dérogation "As a développeur" assumée)
   epic-2: backlog
@@ -190,6 +190,41 @@ development_status:
   epic-11-retrospective: optional
 
 action_items:
+  # --- Rétrospective Epic 1 (2026-07-27) ---
+  - epic: 1
+    action: "Vérification par mutation OBLIGATOIRE sur tout correctif de sécurité : retirer la garde, constater le rouge, restaurer, consigner dans la spec. Trois correctifs de l'Epic 1 (1.7 CHECK trop large, 1.9 purge à moitié déplacée x2, 1.10 regex de convention contournable) étaient corrects en code et creux en preuve."
+    owner: "Oscard"
+    status: done
+    note: "2026-07-27 : règle écrite dans project-context.md (Testing Rules) avec ses trois cas fondateurs et deux gabarits."
+  - epic: 1
+    action: "Cloisonner par société les abonnements webhook : list() appelait findAll() (lecture inter-tenants) et create() prenait companyId dans le corps (canal d'exfiltration vers l'URL de l'attaquant)."
+    owner: "Oscard"
+    status: done
+    note: "2026-07-27 : findByCompanyId + companyId retiré de SubscriptionRequest + 4 tests sur un endpoint qui n'en avait aucun, vérifiés par mutation. 481 tests backend."
+  - epic: 2
+    action: "Epic 2 en mode INTERACTIF story par story, avec point de contrôle coût/diff entre chaque. Pas de run bmad-loop non surveillé : le run 1.9/1.10 a coûté ~61 M tokens/story (4x le POC) et produit 3 pannes (baseline périmée, divergence d'historique, 3 revues expirées)."
+    owner: "Oscard"
+    status: open
+  - epic: 1
+    action: "Balayer le ledger deferred-work.md : 11 entrées ouvertes jamais triées + 3 décisions en attente (spikes 4-1/4-2/3-1, email partenaire bancaire). À faire AVANT d'ouvrir l'Epic 2."
+    owner: "Oscard"
+    status: open
+  - epic: 1
+    action: "Auditer les endpoints qui court-circuitent la couche service : un contrôleur qui parle directement au repository n'hérite d'aucune garde (AD-3 et consorts vivent côté service). WebhookController était le cas ; rien ne dit qu'il était le seul."
+    owner: "Oscard"
+    status: open
+  - epic: 7
+    action: "Introduire WebhookSubscriptionService pour supprimer le court-circuit contrôleur->repository plutôt que le garder au cas par cas."
+    owner: "Oscard"
+    status: open
+  - epic: 11
+    action: "Régler bmad-loop avant tout usage futur : session_timeout_min (3 revues expirées au mur de 180 min), estampille de baseline (périmée 9 min après le lancement), stratégie de commit sur branche protégée contre le force-push."
+    owner: "Oscard"
+    status: open
+  - epic: 1
+    action: "Uniformiser le nommage et le format des specs : 1-2-*.md vs spec-1-7-*.md dans le même epic, deux formats cohabitent (ancien format story / kernel SPEC), et les 5 specs au format kernel portent toutes warnings: ['oversized']."
+    owner: "Oscard"
+    status: open
   # --- Hérités du backlog production 2026-07-18 (sprint-status-production.yaml, remappés sur la numérotation 2026-07-24) ---
   - epic: 4
     action: "Scinder si besoin les stories lourdes du circuit financier (4-4 dépôt PSP, 4-7 libération/remboursement) au moment de la mise en sprint ; elles dépendent des sorties des spikes 4-1 (AR-P2) et 4-2 (AR-P1)."
