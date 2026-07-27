@@ -62,6 +62,17 @@ public class GlobalExceptionHandler {
      * hand replaces Spring's own handling entirely, so anything
      * {@code DefaultHandlerExceptionResolver} used to add — {@code Allow} on a 405,
      * {@code Accept} on a 415 — is simply lost unless we add it back here.
+     *
+     * <p><b>Le {@code Content-Type} est épinglé pour TOUTES les branches</b> (revue de
+     * suivi 1.10), et pas seulement pour le 406 qui l'avait introduit. Sans type concret,
+     * l'écriture de l'enveloppe repasse par la négociation de contenu : un appelant qui
+     * envoie un {@code Accept} excluant JSON — un client mal configuré, un proxy, une
+     * sonde — recevrait alors une réponse <em>nue</em>, sans {@code code}, donc inclassable
+     * par AD-10, sur n'importe laquelle des branches. Le raisonnement écrit pour le 406
+     * valait déjà pour ses quinze voisines ; il n'y avait aucune raison de le réserver à
+     * une seule. Un type concret court-circuite la négociation dans
+     * {@code AbstractMessageConverterMethodProcessor}, et il est exact : le corps est
+     * toujours cette {@code Map} sérialisée en JSON.
      */
     private ResponseEntity<Map<String, Object>> body(HttpStatus status, ErrorCode code, String message,
                                                      HttpHeaders headers) {
@@ -70,6 +81,7 @@ public class GlobalExceptionHandler {
         if (headers != null) {
             builder.headers(headers);
         }
+        builder.contentType(MediaType.APPLICATION_JSON);
         return builder.body(Map.of(
                 "timestamp", Instant.now().toString(),
                 "status", status.value(),
@@ -302,16 +314,15 @@ public class GlobalExceptionHandler {
         // En-tête `Accept` insatisfiable : 406, et non le 500 qu'un filet générique
         // rendait.
         //
-        // Le Content-Type est fixé EXPLICITEMENT à application/json, et c'est
-        // indispensable ici : sans lui, l'écriture de cette réponse repasserait par la
-        // négociation de contenu, échouerait sur le même `Accept`, et le client
-        // recevrait un 406 nu — sans `code`, donc inclassable par AD-10, ce que la
-        // branche existe justement pour éviter. Un Content-Type concret court-circuite
-        // la négociation dans AbstractMessageConverterMethodProcessor.
+        // C'est la branche où l'épinglage du Content-Type par body() est vital et non
+        // seulement prudent : sans type concret, l'écriture de cette réponse repasserait
+        // par la négociation de contenu, échouerait sur le même `Accept` qui a causé le
+        // 406, et le client recevrait une réponse nue — sans `code`, donc inclassable par
+        // AD-10, ce que la branche existe justement pour éviter. Depuis la revue de suivi
+        // l'épinglage vaut pour toutes les branches, pour la même raison : un `Accept`
+        // hostile n'est pas réservé aux 406.
         LOG.debug("No representation acceptable to the client", ex);
-        HttpHeaders headers = new HttpHeaders();
-        headers.setContentType(MediaType.APPLICATION_JSON);
-        return body(HttpStatus.NOT_ACCEPTABLE, ErrorCode.INVALID_REQUEST, "Not acceptable", headers);
+        return body(HttpStatus.NOT_ACCEPTABLE, ErrorCode.INVALID_REQUEST, "Not acceptable");
     }
 
     /** {@code null}-safe emptiness test: both Spring getters above are {@code @Nullable}. */

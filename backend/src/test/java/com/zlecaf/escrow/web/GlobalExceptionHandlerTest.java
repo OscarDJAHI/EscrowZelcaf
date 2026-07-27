@@ -31,6 +31,7 @@ import static org.hamcrest.Matchers.not;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -388,5 +389,23 @@ class GlobalExceptionHandlerTest {
                 .andExpect(status().isNotAcceptable())
                 .andExpect(jsonPath("$.code").value("INVALID_REQUEST"))
                 .andExpect(jsonPath("$.message").value("Not acceptable"));
+    }
+
+    @Test
+    @DisplayName("Un `Accept` hostile ne denude AUCUNE branche, pas seulement le 406")
+    void hostileAcceptLeavesEveryBranchCoded() throws Exception {
+        // Le test ci-dessus ne garde que la branche 406. Or l'epinglage du Content-Type
+        // vit dans body(), donc il vaut pour les seize branches — et rien ne le prouvait :
+        // le remettre sur le seul 406, comme il l'etait avant la revue de suivi, laisse
+        // la suite verte tout en rouvrant le trou partout ailleurs. Un `Accept` hostile
+        // n'est pas reserve aux 406 : un proxy, une sonde, un client mal configure en
+        // envoie un sur n'importe quelle route, et recevrait alors un refus NU — sans
+        // `code`, donc inclassable par AD-10, ce que toute la story vise a empecher.
+        toThrow.set(ApiExceptions.transactionNotFound());
+        mvc.perform(get("/boom").accept(MediaType.APPLICATION_XML))
+                .andExpect(status().isNotFound())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.code").value("TRANSACTION_NOT_FOUND"))
+                .andExpect(jsonPath("$.message").value("Transaction not found"));
     }
 }

@@ -5,8 +5,8 @@ created: '2026-07-26'
 status: 'done'
 baseline_revision: 'd74709ddfe839a96d8f2f2ebbe606068fdb78d6a'
 final_revision: 'b25e2a6492bf047b4099b112150c20c980ed28d7'
-review_loop_iteration: 0
-followup_review_recommended: true
+review_loop_iteration: 1
+followup_review_recommended: false
 context:
   - '{project-root}/_bmad-output/project-context.md'
   - '{project-root}/_bmad-output/implementation-artifacts/epic-1-context.md'
@@ -213,3 +213,44 @@ Exécutée par moi-même, pas seulement rapportée par les agents :
 - **Un balayage ne laisse aucune trace.** Le refus uniforme n'écrit ni audit ni journal — et le test l'asservit, à raison : une trace écrite pour un cas et pas pour l'autre serait le même oracle décalé d'un canal. `AuthRateLimitFilter` ne couvre que les trois routes d'authentification, donc rien ne borne le débit sur la surface escrow. L'oracle de contenu est fermé, la détection ne l'est pas. Contrainte notée au ledger : toute journalisation future des refus devra être **symétrique**.
 - **`GET /api/v1/webhooks/subscriptions` liste les abonnements de toutes les sociétés** à tout utilisateur authentifié (`findAll()` sans garde). Préexistant, hors périmètre de cette story, sévérité haute, porté au ledger.
 - **Identifiants denses et monotones** (`GenerationType.IDENTITY`) : masquer l'existence laisse toute partie lire le compteur global sur son propre identifiant et garde l'espace de sondage balayable.
+
+## Follow-up Review Result
+
+Status: done
+
+### Comment cette revue s'est réellement déroulée
+
+Elle a été **interrompue par l'infrastructure, pas conclue par un verdict** — il faut le lire avant les patchs, sinon leur portée est mal comprise. Les trois cycles de revue autorisés par `max_review_cycles` ont tous expiré sans rendre de résultat :
+
+| Cycle | Fin | Cause |
+| --- | --- | --- |
+| `review-1` | 00:18 | A produit ses patchs, puis a calé sans terminer ; timeout mur à 180 min |
+| `review-2` | 06:39 | Timeout mur, aucun fichier touché |
+| `review-3` | 08:08 | `API Error: Connection closed mid-response` pendant le fan-out des relecteurs, puis arrêt manuel du run |
+
+Les patchs ci-dessous sont donc l'œuvre de `review-1`, **restés non commités et non vérifiés** : la session est morte avant sa propre étape de validation, laissant le dépôt avec la spec repassée en `in-review` et trois fichiers modifiés. La clôture qui suit est manuelle et sa vérification a été **réexécutée de zéro**, pas héritée.
+
+### Les deux patchs, et ce qu'ils corrigeaient vraiment
+
+**1. `Content-Type` épinglé sur les seize branches, plus seulement sur le 406.** L'épinglage vivait dans la branche 406, où il avait été découvert ; le raisonnement valait pourtant à l'identique pour ses voisines. Il remonte dans `body()`. Vérifié par mutation, et le résultat est plus grave que prévu : sans épinglage, un `404` demandé avec `Accept: application/xml` ne rend pas une enveloppe nue — **l'exception s'échappe entièrement du handler** (`Servlet Request processing failed`), l'écriture de la réponse d'erreur échouant à son tour sur la négociation de contenu. Un proxy, une sonde ou un client mal configuré ne recevait donc aucun `code`, sur n'importe quelle route.
+
+**2. `AntiEnumerationConventionTest` reconnaît par expression régulière, plus par sous-chaîne.** Deux contournements silencieux étaient ouverts, tous deux vérifiés par mutation : un nom qualifié (`new ApiExceptions.NotFoundException(`) n'était pas même compté, et l'inspection s'arrêtant à la ligne physique du `new`, il suffisait que l'appel passe à la ligne — ce qu'un formateur à 120 colonnes fait spontanément — pour que le message et ses `+` échappent. Le patch ajoute aussi la détection de `String.format` / `.formatted` / `MessageFormat` / `.concat`, et **clé la liste blanche sur le chemin relatif** plutôt que sur le nom de fichier simple, deux homonymes dans deux paquets fusionnant sinon leurs compteurs.
+
+### Ce que la revue n'a pas eu le temps de faire, et qui a été ajouté ici
+
+**Le garde-fou de sa propre généralisation.** Le patch 1 élargit une propriété à seize branches alors qu'un seul test — celui du 406 — la gardait. Remettre l'épinglage sur le seul 406 laissait donc la suite verte tout en rouvrant le trou partout ailleurs. `GlobalExceptionHandlerTest.hostileAcceptLeavesEveryBranchCoded` ferme l'écart sur une branche applicative (404 + `Accept: application/xml`), et sa valeur probante a été établie dans les deux sens : vert avec l'épinglage, rouge sans.
+
+### Vérification
+
+Réexécutée intégralement, pas reprise des sessions mortes :
+
+- `cd backend && ./mvnw test` → **477 tests, 0 échec, 0 erreur, 0 ignoré** sur 52 classes. Le +1 est le test ajouté ci-dessus ; les 476 de la livraison initiale sont inchangés.
+- Mutation « nom qualifié + appel multiligne + concaténation » injectée dans `EscrowController` → les **deux** tests de convention passent au rouge, chacun sur son axe (site hors liste blanche, message interpolé). Mutation retirée.
+- Mutation « épinglage retiré de `body()` » → `hostileAcceptLeavesEveryBranchCoded` et `mediaTypeNotAcceptableIs406` passent au rouge. Mutation retirée.
+- Frontend non touché par ces patchs : aucun fichier `frontend/` dans le diff, suite laissée à son état de la livraison initiale (241 tests).
+
+### Risques résiduels
+
+Inchangés par rapport à la livraison initiale — canal temporel et contention de verrou, absence de trace sur un balayage, `GET /api/v1/webhooks/subscriptions` non gardé, identifiants denses et monotones. Aucun n'est touché par ces patchs, tous restent au ledger.
+
+Un point s'y ajoute, de nature procédurale : **la story n'a jamais reçu de verdict de revue complet**. Les deux relecteurs adverses de la livraison initiale ont bien rendu leur rapport (0 intent_gap, 0 bad_spec, 15 patches, 7 reports, 4 rejets) ; la revue de *suivi*, elle, s'est arrêtée sur une panne d'infrastructure après avoir trouvé deux défauts réels. Rien ne dit qu'elle n'en aurait pas trouvé d'autres.
