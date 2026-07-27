@@ -208,6 +208,23 @@ action_items:
   - epic: 1
     action: "Balayer le ledger deferred-work.md : 11 entrées ouvertes jamais triées + 3 décisions en attente (spikes 4-1/4-2/3-1, email partenaire bancaire). À faire AVANT d'ouvrir l'Epic 2."
     owner: "Oscard"
+    status: done
+    note: "2026-07-27 : fait — rapport deferred-work-sweep-2026-07-27.md. Le compte annoncé était FAUX (59 ouvertes, pas 10) : schisme de format, les sections production étant des puces sans champ status, donc invisibles au grep — y compris les 17 reports POC. Ledger normalisé (92 entrées portent désormais un statut, 55 ouvertes après triage). 6 entrées périmées closes après vérification contre le code (4 résolues par la Story 1.9, 1 par la revue de suivi 1.7, 1 mitigée). Défaut trouvé et corrigé pendant le balayage : EvidenceServiceTest.java contenait 5 octets NUL (litteral GIF en octets bruts) — 1200 lignes de test INVISIBLES a grep, meme defaut que AuthView.vue en 1.9. Partition : 6 bundles + 7 decisions humaines."
+  - epic: 11
+    action: "Bundle QUALITÉ-CI (Story 11-1) AVANT l'Epic 2 : ESLint absent, garde d'encodage/NUL en CI, classe de base Testcontainers, couplage de la suite front, et AUCUN test de composant alors que @vue/test-utils est installé depuis la 4.1 — or la Story 2-2 livre une bibliothèque de composants. Poser la barrière avant d'écrire le code qu'elle doit tenir."
+    owner: "Oscard"
+    status: open
+  - epic: 2
+    action: "Bundle SESSION-PARTAGÉE (9 entrées) en tête d'Epic 2 : déconnexion non propagée aux onglets, index d'expiration Workbox, logoutUser sans timeout, courses de lecture A vers B, verrou de rejeu. Même surface que celle que l'epic réécrit."
+    owner: "Oscard"
+    status: open
+  - epic: 1
+    action: "DÉCISION D1 — oracle d'énumération d'e-mails sur POST /api/v1/escrow : « No seller registered with that email » (400) se distingue d'une création réussie, donc le fichier des utilisateurs est énumérable. Même classe de défaut que tout l'Epic 1, sur une autre surface. À trancher pendant que le contexte anti-énumération est frais."
+    owner: "Oscard"
+    status: open
+  - epic: 1
+    action: "DÉCISION D2 — comptes ADMIN auto-attribués AVANT la Story 1.1 : ni révoqués ni audités. Le correctif ferme la porte, il ne rattrape pas ceux qui sont déjà entrés. Migration de données à décider."
+    owner: "Oscard"
     status: open
   - epic: 1
     action: "Auditer les endpoints qui court-circuitent la couche service : un contrôleur qui parle directement au repository n'hérite d'aucune garde (AD-3 et consorts vivent côté service). WebhookController était le cas ; rien ne dit qu'il était le seul."

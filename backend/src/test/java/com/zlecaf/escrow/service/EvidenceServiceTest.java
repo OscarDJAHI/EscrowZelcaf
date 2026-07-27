@@ -1207,7 +1207,13 @@ class EvidenceServiceTest {
         AuthPrincipal actor = new AuthPrincipal(buyer.getId(), buyer.getEmail(), Role.BUYER);
 
         // Magic bytes GIF87a, extension et Content-Type mensongers.
-        byte[] gif = "GIF87a     ,".getBytes(StandardCharsets.US_ASCII);
+        // Ecrit en tableau d'octets et NON en litteral de chaine : la forme precedente
+        // portait les octets de controle BRUTS (0x00 compris), ce qui rendait ce fichier
+        // binaire aux yeux de git et INVISIBLE a grep (code de sortie 1, aucune ligne) —
+        // exactement le defaut trouve sur AuthView.vue a la 2e revue de suivi de la Story
+        // 1.9. Un fichier de test que grep ne voit pas echappe en silence a toutes les
+        // greps de verification des stories, y compris celles qui pretendent le couvrir.
+        byte[] gif = {'G', 'I', 'F', '8', '7', 'a', 0x01, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, ','};
         MockMultipartFile file = new MockMultipartFile("files", "invoice.pdf", "application/pdf", gif);
 
         assertThatThrownBy(() -> evidenceService.deposit(actor, tx.getId(), List.of(file), null, null))
