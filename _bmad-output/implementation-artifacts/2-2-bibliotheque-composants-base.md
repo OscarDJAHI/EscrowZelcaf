@@ -4,7 +4,7 @@ baseline_commit: 00ee49f88f9aaadb36359a2a295e8be207bfde3c
 
 # Story 2.2: Bibliothèque de composants de base réutilisables
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -109,6 +109,18 @@ so that chaque story d'écran à venir assemble des composants éprouvés au lie
 - **L'exclusion de la galerie** dans la garde anti-chaînes est une égalité de chemin exacte, pas un motif de répertoire : aucune prose ne s'y glisse.
 - AC1 à AC5 vérifiées satisfaites, valeurs recoupées avec le frontmatter de `DESIGN.md`.
 
+
+## Clôture
+
+**Close le 2026-07-28.** 353 tests frontend (305 au départ), lint propre, build vert, exclusion de la galerie prouvée sous deux attaques, AC1 à AC5 vérifiées par un auditeur indépendant.
+
+**Deux campagnes de revue, un enseignement net sur le choix du modèle.** La première, sur haiku : une couche sur trois a rendu, dix appels d'outils, muette sur les quatre surfaces d'attaque désignées. La seconde, sur sonnet : deux couches sur deux, 55 et 67 appels, trois défauts réels dont deux qu'aucune relecture n'aurait vus. La différence ne tient pas à la chance mais à la nature des défauts — ils demandaient d'EXÉCUTER : construire un bundle, muter un fichier, relire la feuille de style produite. La passe haiku a néanmoins trouvé la famille des `try/catch` qui gardaient contre rien, ce qui n'était pas rien.
+
+**Deux gardes que j'avais écrites se sont révélées fausses** — le contrôle d'exclusion du build (sentinelle dans un commentaire, supprimée par la minification) et la garde d'élévation (aveugle à la propriété CSS). Dans les deux cas, seule la mutation l'a montré ; les deux passent maintenant leur propre attaque.
+
+**Décision restée ouverte, à trancher en 2-3 :** l'ambiguïté d'espacement héritée de 2-1 (la rampe de `DESIGN.md` diverge de Tailwind à partir de 5). Aucun composant de cette story n'a eu besoin de 24/32/48 px ; la 2-3 manipule des gouttières et tranchera sur des cas réels.
+
+**Point à remonter au design :** `DESIGN.md` définit `primary-hover` mais aucun `danger-hover`. Le survol de la variante danger passe donc par l'opacité, faute de token. À arbitrer si un vrai `danger-hover` est souhaité.
 
 ## Dev Notes
 
