@@ -3,6 +3,7 @@ import { createPinia, setActivePinia } from 'pinia'
 import { createRouter, createWebHistory } from 'vue-router'
 import { mount, flushPromises } from '@vue/test-utils'
 import RecoveryView from '@/views/RecoveryView.vue'
+import { createEscrowI18n } from '@/i18n'
 import * as escrowApi from '@/api/escrow'
 import { useAuthStore } from '@/stores/auth'
 import { useEscrowStore } from '@/stores/escrow'
@@ -57,7 +58,7 @@ function file(name = 'photo.jpg', type = 'image/jpeg', size = 2 * 1024 * 1024) {
 function mountView(pinia, entryId = ENTRY_ID) {
   return mount(RecoveryView, {
     props: { entryId },
-    global: { plugins: [pinia], stubs: { RouterLink: true } },
+    global: { plugins: [pinia, createEscrowI18n('en')], stubs: { RouterLink: true } },
   })
 }
 
@@ -460,7 +461,7 @@ describe('RecoveryView — nothing is deleted without two deliberate steps', () 
     const push = vi.spyOn(router, 'push').mockResolvedValue(undefined)
     const wrapper = mount(RecoveryView, {
       props: { entryId: ENTRY_ID },
-      global: { plugins: [pinia, router], stubs: { RouterLink: true } },
+      global: { plugins: [pinia, router, createEscrowI18n('en')], stubs: { RouterLink: true } },
     })
     await flushPromises()
 
@@ -512,7 +513,7 @@ describe('RecoveryView — a failed deletion keeps the entry', () => {
     const push = vi.spyOn(router, 'push').mockResolvedValue(undefined)
     const wrapper = mount(RecoveryView, {
       props: { entryId: ENTRY_ID },
-      global: { plugins: [pinia, router], stubs: { RouterLink: true } },
+      global: { plugins: [pinia, router, createEscrowI18n('en')], stubs: { RouterLink: true } },
     })
     await flushPromises()
 

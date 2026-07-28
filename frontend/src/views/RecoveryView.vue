@@ -1,4 +1,5 @@
 <script setup>
+import { useI18n } from 'vue-i18n'
 import { computed, onMounted, ref, watch } from 'vue'
 import { RouterLink, useRouter } from 'vue-router'
 import { storeToRefs } from 'pinia'
@@ -10,6 +11,8 @@ import { describeFailure } from '@/utils/replayFailure'
 import { describeAction, ownsEntry, resolveRealState } from '@/utils/frozenEntry'
 import { saveBlob } from '@/utils/download'
 import { formatBytes } from '@/utils/evidence'
+
+const { t } = useI18n()
 
 /**
  * Where a frozen entry finally becomes actionable: its files are handed back,
@@ -204,15 +207,15 @@ async function acknowledge() {
     confirming.value = false
     error.value = err?.message
       ? `The entry could not be deleted: ${err.message}`
-      : 'The entry could not be deleted. Your files are still on this device.'
+      : t('recovery.deleteFailed')
   }
 }
 </script>
 
 <template>
   <div class="mx-auto w-full max-w-3xl flex-1 px-4 py-6">
-    <button class="mb-4 text-sm text-brand-700 hover:underline" @click="router.push('/')">
-      ← Back to dashboard
+    <button class="mb-4 text-sm text-primary hover:underline" @click="router.push('/')">
+      {{ $t('common.back') }}
     </button>
 
     <!-- Storage refused, and `init()` has already given up quietly: say so, and
@@ -221,17 +224,15 @@ async function acknowledge() {
       v-if="hydrationFailed"
       class="rounded-2xl border border-red-200 bg-red-50 p-5 text-sm text-red-800 shadow-sm"
     >
-      <p class="font-semibold">This device's storage could not be read.</p>
+      <p class="font-semibold">{{ $t('recovery.storageUnreadable') }}</p>
       <p class="mt-1">
-        Your queued files have not been lost — they are still stored on this device, but the
-        browser refused access to them. This can happen in private browsing or when storage is
-        blocked.
+        {{ $t('recovery.storageBlocked') }}
       </p>
       <button
         class="mt-3 rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white shadow hover:bg-red-700"
         @click="hydrate"
       >
-        Try again
+        {{ $t('common.tryAgain') }}
       </button>
     </div>
 
@@ -239,7 +240,7 @@ async function acknowledge() {
          well exist. Reachable on a deep link / reload — `main.js:17` calls
          `init()` without awaiting it. -->
     <div v-else-if="!hydrated" class="py-16 text-center text-sm text-gray-400">
-      Loading your queued files…
+      {{ $t('recovery.loading') }}
     </div>
 
     <!-- Absent, or someone else's: the same screen and the same words for both.
@@ -248,21 +249,20 @@ async function acknowledge() {
       v-else-if="!entry"
       class="rounded-xl border border-dashed border-gray-300 py-16 text-center text-sm text-gray-400"
     >
-      <p>Nothing to recover.</p>
-      <p class="mt-1">This entry does not exist, or has already been dealt with.</p>
-      <RouterLink to="/" class="mt-3 inline-block font-medium text-brand-700 hover:underline">
-        Back to dashboard
+      <p>{{ $t('recovery.nothingToRecover') }}</p>
+      <p class="mt-1">{{ $t('recovery.entryGone') }}</p>
+      <RouterLink to="/" class="mt-3 inline-block font-medium text-primary hover:underline">
+        {{ $t('common.backPlain') }}
       </RouterLink>
     </div>
 
     <template v-else>
       <div class="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
         <h1 class="text-xl font-bold text-gray-900">
-          {{ files.length > 0 ? 'Recover your files' : 'Review this entry' }}
+          {{ files.length > 0 ? $t('recovery.recoverFiles') : $t('recovery.reviewEntry') }}
         </h1>
         <p class="mt-1 text-sm text-gray-500">
-          {{ describeAction(entry.meta) }} — this action was refused by the server and will not be
-          retried.
+          {{ describeAction(entry.meta) }} {{ $t('recovery.refusedSuffix') }}
         </p>
 
         <div class="mt-4 rounded-lg bg-red-50 p-3 text-sm text-red-800">
@@ -272,7 +272,7 @@ async function acknowledge() {
 
         <div class="mt-4 text-sm text-gray-600">
           <span v-if="realState.kind === 'badge'" class="flex items-center gap-1.5">
-            <span>Current state:</span>
+            <span>{{ $t('common.currentState') }}</span>
             <StateBadge :state="realState.state" />
           </span>
           <!-- A link, not a badge: nothing loaded here has provably seen the
@@ -280,12 +280,12 @@ async function acknowledge() {
           <RouterLink
             v-else-if="realState.kind === 'link'"
             :to="`/escrow/${realState.id}`"
-            class="font-medium text-brand-700 underline"
+            class="font-medium text-primary underline"
           >
-            Check transaction #{{ realState.id }}
+            {{ $t('sync.checkTransaction', { id: realState.id }) }}
           </RouterLink>
           <span v-else-if="realState.kind === 'never-created'">
-            This transaction was never created.
+            {{ $t('sync.neverCreated') }}
           </span>
         </div>
       </div>
@@ -293,10 +293,10 @@ async function acknowledge() {
       <!-- Only where there are files. A frozen SEND_EVENT has none, ever. -->
       <div v-if="files.length > 0" class="mt-6 rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
         <h2 class="mb-1 text-sm font-semibold text-gray-900">
-          Your attached file(s), kept on this device
+          {{ $t('recovery.filesKept') }}
         </h2>
         <p class="mb-4 text-xs text-gray-500">
-          They were never sent. Download them before acknowledging this entry.
+          {{ $t('recovery.neverSent') }}
         </p>
         <ul class="space-y-2">
           <li
@@ -309,30 +309,28 @@ async function acknowledge() {
             </span>
             <button
               type="button"
-              class="rounded-lg bg-brand-600 px-3 py-1.5 text-xs font-semibold text-white shadow hover:bg-brand-700"
+              class="rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-white shadow hover:bg-primary-hover"
               @click="download(item)"
             >
-              Download
+              {{ $t('common.download') }}
             </button>
           </li>
         </ul>
       </div>
 
       <div class="mt-6 rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
-        <h2 class="text-sm font-semibold text-gray-900">Done with this entry?</h2>
+        <h2 class="text-sm font-semibold text-gray-900">{{ $t('recovery.doneWithEntry') }}</h2>
         <p class="mt-1 text-xs text-gray-500">
-          Acknowledging removes it from this device and stops the warning banner.
+          {{ $t('recovery.acknowledgeExplain') }}
         </p>
 
         <!-- The second step names what is lost. "Are you sure?" informs nobody. -->
         <p v-if="confirming" class="mt-3 rounded-lg bg-red-50 p-3 text-sm text-red-800">
           <template v-if="files.length > 0">
-            This will permanently delete the {{ files.length }} file(s) above from this device.
-            They are stored nowhere else and cannot be recovered afterwards. Download them first if
-            you still need them.
+            {{ $t('recovery.deleteWarningWithFiles', { count: files.length }) }}
           </template>
           <template v-else>
-            This will permanently remove this entry from this device.
+            {{ $t('recovery.deleteWarningPlain') }}
           </template>
         </p>
 
@@ -342,7 +340,7 @@ async function acknowledge() {
             class="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white shadow hover:bg-red-700"
             @click="acknowledge"
           >
-            {{ confirming ? 'Yes, delete permanently' : 'Acknowledge and delete' }}
+            {{ confirming ? $t('recovery.confirmDelete') : $t('recovery.acknowledgeAndDelete') }}
           </button>
           <!-- The disarm. Without it the arming would outlive the user's
                attention and the two-step would be a delay, not a protection. -->
@@ -352,7 +350,7 @@ async function acknowledge() {
             class="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50"
             @click="confirming = false"
           >
-            Cancel
+            {{ $t('common.cancel') }}
           </button>
         </div>
 

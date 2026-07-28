@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import { mount } from '@vue/test-utils'
 import SyncFailureNotice from '@/components/SyncFailureNotice.vue'
+import { createEscrowI18n } from '@/i18n'
 import { useAuthStore } from '@/stores/auth'
 import { useOfflineQueueStore } from '@/stores/offlineQueue'
 
@@ -45,7 +46,7 @@ function frozen({ id, type, transactionId = '7', code = 'DISPUTE_ALREADY_RESOLVE
 }
 
 function mountNotice(pinia) {
-  return mount(SyncFailureNotice, { global: { plugins: [pinia], stubs: { RouterLink: true } } })
+  return mount(SyncFailureNotice, { global: { plugins: [pinia, createEscrowI18n('en')], stubs: { RouterLink: true } } })
 }
 
 /**
@@ -59,7 +60,7 @@ function mountNotice(pinia) {
 function mountWithLinkText(pinia) {
   return mount(SyncFailureNotice, {
     global: {
-      plugins: [pinia],
+      plugins: [pinia, createEscrowI18n('en')],
       stubs: { RouterLink: { props: ['to'], template: '<a :href="to"><slot /></a>' } },
     },
   })

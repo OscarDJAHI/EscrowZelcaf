@@ -17,7 +17,7 @@ function formatDate(timestamp) {
 
 <template>
   <ol class="space-y-4">
-    <li v-if="sortedLogs.length === 0" class="text-sm text-gray-500">No audit history yet.</li>
+    <li v-if="sortedLogs.length === 0" class="text-sm text-gray-500">{{ $t('audit.empty') }}</li>
     <li v-for="log in sortedLogs" :key="log.id" class="flex gap-3">
       <span
         class="mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full"

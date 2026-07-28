@@ -1,4 +1,5 @@
 <script setup>
+import { useI18n } from 'vue-i18n'
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
@@ -12,6 +13,8 @@ import EvidenceDeposit from '@/components/EvidenceDeposit.vue'
 import EvidenceList from '@/components/EvidenceList.vue'
 import OpenDisputeForm from '@/components/OpenDisputeForm.vue'
 import { canOpenDispute, getAllowedEventsForTransaction } from '@/utils/stateMachine'
+
+const { t } = useI18n()
 
 const DEPOSIT_STATES = ['FUNDS_LOCKED', 'SHIPPED', 'DISPUTED']
 
@@ -60,7 +63,7 @@ function buttonClasses(event) {
   if (event === 'OPEN_DISPUTE') return 'bg-red-600 hover:bg-red-700'
   if (event === 'RESOLVE_REFUND') return 'bg-purple-600 hover:bg-purple-700'
   if (event === 'RESOLVE_RELEASE' || event === 'DELIVERY_CONFIRMED') return 'bg-green-600 hover:bg-green-700'
-  return 'bg-brand-600 hover:bg-brand-700'
+  return 'bg-primary hover:bg-primary-hover'
 }
 
 function load() {
@@ -80,7 +83,7 @@ async function trigger(event) {
       await load()
     }
   } catch (err) {
-    actionError.value = err.response?.data?.message || 'Action failed. Please try again.'
+    actionError.value = err.response?.data?.message || t('transaction.actionFailed')
   } finally {
     sendingEvent.value = null
   }
@@ -116,12 +119,12 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="mx-auto w-full max-w-3xl flex-1 px-4 py-6">
-    <button class="mb-4 text-sm text-brand-700 hover:underline" @click="router.push('/')">
-      ← Back to dashboard
+    <button class="mb-4 text-sm text-primary hover:underline" @click="router.push('/')">
+      {{ $t('transaction.back') }}
     </button>
 
     <div v-if="escrowStore.loading && !transaction" class="py-16 text-center text-sm text-gray-400">
-      Loading transaction…
+      {{ $t('transaction.loading') }}
     </div>
     <div v-else-if="escrowStore.error" class="rounded-lg bg-red-50 p-4 text-sm text-red-700">
       {{ escrowStore.error }}
@@ -131,9 +134,9 @@ onBeforeUnmount(() => {
       <div class="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
         <div class="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <p class="text-xs uppercase tracking-wide text-gray-400">Transaction #{{ transaction.id }}</p>
+            <p class="text-xs uppercase tracking-wide text-gray-400">{{ $t('transaction.reference', { id: transaction.id }) }}</p>
             <h1 class="text-2xl font-bold text-gray-900">{{ formattedAmount }}</h1>
-            <p class="text-sm text-gray-500">Counterparty: {{ counterparty }}</p>
+            <p class="text-sm text-gray-500">{{ $t('transaction.counterparty', { email: counterparty }) }}</p>
           </div>
           <StateBadge :state="transaction.state" />
         </div>
@@ -150,16 +153,14 @@ onBeforeUnmount(() => {
           v-if="transaction._queuedEvent"
           class="mt-4 rounded-lg bg-orange-50 px-3 py-2 text-sm text-orange-700"
         >
-          "{{ transaction._queuedEvent }}" is queued offline and will be sent automatically once
-          you're back online.
+          {{ $t('transaction.queuedEvent', { event: transaction._queuedEvent }) }}
         </div>
 
         <div
           v-if="transaction._queuedDispute"
           class="mt-4 rounded-lg bg-orange-50 px-3 py-2 text-sm text-orange-700"
         >
-          This dispute and its evidence files are queued offline and will be sent automatically
-          once you're back online.
+          {{ $t('transaction.queuedDispute') }}
         </div>
 
         <div
@@ -174,7 +175,7 @@ onBeforeUnmount(() => {
             :class="buttonClasses(action.event)"
             @click="trigger(action.event)"
           >
-            {{ sendingEvent === action.event ? 'Sending…' : action.label }}
+            {{ sendingEvent === action.event ? $t('common.sending') : action.label }}
           </button>
           <button
             v-if="canOpen"
@@ -182,11 +183,11 @@ onBeforeUnmount(() => {
             class="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white shadow hover:bg-red-700"
             @click="showDisputeForm = !showDisputeForm"
           >
-            Open dispute
+            {{ $t('transaction.openDispute') }}
           </button>
         </div>
         <p v-else class="mt-6 border-t border-gray-100 pt-4 text-sm text-gray-400">
-          No actions available for your role at this stage.
+          {{ $t('transaction.noActions') }}
         </p>
 
         <div v-if="canOpen && showDisputeForm" class="mt-4 rounded-xl border border-red-100 bg-red-50/40 p-4">
@@ -201,12 +202,12 @@ onBeforeUnmount(() => {
       </div>
 
       <div class="mt-6 rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
-        <h2 class="mb-4 text-sm font-semibold text-gray-900">Audit history</h2>
+        <h2 class="mb-4 text-sm font-semibold text-gray-900">{{ $t('transaction.auditHistory') }}</h2>
         <AuditTimeline :logs="auditLogs" />
       </div>
 
       <div class="mt-6 rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
-        <h2 class="mb-4 text-sm font-semibold text-gray-900">Evidence</h2>
+        <h2 class="mb-4 text-sm font-semibold text-gray-900">{{ $t('transaction.evidence') }}</h2>
         <div v-if="canDeposit" class="mb-6 border-b border-gray-100 pb-6">
           <EvidenceDeposit :transaction-id="id" @uploaded="loadEvidence" />
         </div>

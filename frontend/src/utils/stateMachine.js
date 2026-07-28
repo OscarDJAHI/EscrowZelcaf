@@ -8,39 +8,58 @@ export const MAIN_FLOW_STATES = ['INITIATED', 'FUNDS_LOCKED', 'SHIPPED', 'RELEAS
 export const BRANCH_STATES = ['DISPUTED', 'REFUNDED']
 export const ALL_STATES = [...MAIN_FLOW_STATES, ...BRANCH_STATES]
 
-// Tailwind utility classes per state, used for badges, stepper dots, and timelines.
-export const STATE_COLORS = {
-  INITIATED: {
-    badge: 'bg-gray-200 text-gray-700',
-    dot: 'bg-gray-400',
-    ring: 'ring-gray-300',
-  },
-  FUNDS_LOCKED: {
-    badge: 'bg-blue-100 text-blue-700',
-    dot: 'bg-blue-500',
-    ring: 'ring-blue-300',
-  },
-  SHIPPED: {
-    badge: 'bg-amber-100 text-amber-700',
-    dot: 'bg-amber-500',
-    ring: 'ring-amber-300',
-  },
-  RELEASED: {
-    badge: 'bg-green-100 text-green-700',
-    dot: 'bg-green-500',
-    ring: 'ring-green-300',
-  },
-  DISPUTED: {
-    badge: 'bg-red-100 text-red-700',
-    dot: 'bg-red-500',
-    ring: 'ring-red-300',
-  },
-  REFUNDED: {
-    badge: 'bg-purple-100 text-purple-700',
-    dot: 'bg-purple-500',
-    ring: 'ring-purple-300',
-  },
+/**
+ * Mapping état → FAMILLE SÉMANTIQUE. Source unique du code couleur du cycle de vie,
+ * pour l'app cliente comme pour le back-office (DESIGN.md). Un écran ne redéfinit
+ * jamais une couleur d'état : il lit ici.
+ *
+ * <p>Deux valeurs ont été CORRIGÉES à la Story 2.1, et ce sont des changements de
+ * comportement visibles :
+ * - `INITIATED` était gris (neutre), donc indistinguable d'une transaction annulée.
+ *   C'est une ATTENTE qui appelle une action : `warning`.
+ * - `SHIPPED` était ambre, couleur réservée à l'attente. C'est un AVANCEMENT du flux
+ *   principal : `info`, comme `FUNDS_LOCKED`.
+ *
+ * <p>`EXPIRED` rejoindra `neutral` quand l'Epic 5 introduira l'expiration (AD-19/AD-22) ;
+ * l'état n'existe pas encore dans cette machine, on ne le devine pas ici.
+ */
+export const STATE_TOKENS = {
+  INITIATED: 'warning',
+  FUNDS_LOCKED: 'info',
+  SHIPPED: 'info',
+  RELEASED: 'success',
+  DISPUTED: 'danger',
+  REFUNDED: 'neutral',
 }
+
+/**
+ * Classes utilitaires par famille sémantique.
+ *
+ * <p>Les chaînes sont écrites en TOUTES LETTRES et non composées (`bg-${token}-surface`) :
+ * Tailwind extrait les classes par analyse statique des sources et ne verrait jamais une
+ * classe construite à l'exécution — la feuille de style sortirait sans elles et le rendu
+ * serait muet, sans la moindre erreur.
+ */
+const TOKEN_CLASSES = {
+  warning: { badge: 'bg-warning-surface text-warning', dot: 'bg-warning', ring: 'ring-warning' },
+  info: { badge: 'bg-info-surface text-info', dot: 'bg-info', ring: 'ring-info' },
+  success: { badge: 'bg-success-surface text-success', dot: 'bg-success', ring: 'ring-success' },
+  danger: { badge: 'bg-danger-surface text-danger', dot: 'bg-danger', ring: 'ring-danger' },
+  neutral: {
+    badge: 'bg-neutral-surface text-neutral-state',
+    dot: 'bg-neutral-state',
+    ring: 'ring-neutral-state',
+  },
+  offline: { badge: 'bg-offline-surface text-offline', dot: 'bg-offline', ring: 'ring-offline' },
+}
+
+/** Classes par état, DÉRIVÉES du mapping sémantique — jamais une seconde table à maintenir. */
+export const STATE_COLORS = Object.fromEntries(
+  Object.entries(STATE_TOKENS).map(([state, token]) => [state, TOKEN_CLASSES[token]]),
+)
+
+/** Famille sémantique du hors-ligne, hors machine à états (bannière, file de synchro). */
+export const OFFLINE_CLASSES = TOKEN_CLASSES.offline
 
 export const EVENT_LABELS = {
   PAY_FUNDS: 'Pay funds',

@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import { mount } from '@vue/test-utils'
 import SyncFailureNotice from '@/components/SyncFailureNotice.vue'
+import { createEscrowI18n } from '@/i18n'
 import * as escrowApi from '@/api/escrow'
 import { useAuthStore } from '@/stores/auth'
 import { useEscrowStore } from '@/stores/escrow'
@@ -56,7 +57,7 @@ function frozen({ type = 'OPEN_DISPUTE', transactionId = '7', userId = USER.id, 
 
 /** Mounts against a real Pinia — `@pinia/testing` is not installed and must not be. */
 function mountNotice(pinia) {
-  return mount(SyncFailureNotice, { global: { plugins: [pinia], stubs: { RouterLink: true } } })
+  return mount(SyncFailureNotice, { global: { plugins: [pinia, createEscrowI18n('en')], stubs: { RouterLink: true } } })
 }
 
 /**

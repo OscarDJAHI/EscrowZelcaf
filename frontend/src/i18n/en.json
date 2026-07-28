@@ -1,0 +1,134 @@
+{
+  "common": {
+    "back": "← Back to dashboard",
+    "backPlain": "Back to dashboard",
+    "cancel": "Cancel",
+    "close": "Close",
+    "create": "Create",
+    "creating": "Creating…",
+    "currentState": "Current state:",
+    "download": "Download",
+    "downloading": "Downloading…",
+    "logout": "Log out",
+    "pleaseWait": "Please wait…",
+    "sending": "Sending…",
+    "tryAgain": "Try again"
+  },
+  "language": {
+    "label": "Language",
+    "en": "EN",
+    "fr": "FR"
+  },
+  "auth": {
+    "brand": "ZLECAf Escrow",
+    "tagline": "Secure B2B trade across Africa",
+    "tabLogin": "Log in",
+    "tabRegister": "Create account",
+    "firstName": "First name",
+    "lastName": "Last name",
+    "role": "Role",
+    "roleBuyer": "Buyer",
+    "roleSeller": "Seller",
+    "email": "Email",
+    "password": "Password"
+  },
+  "dashboard": {
+    "createFailed": "Failed to create transaction.",
+    "createFirst": "Create your first one to get started.",
+    "empty": "No transactions yet.",
+    "loading": "Loading transactions…",
+    "myTransactions": "My transactions",
+    "newTransaction": "+ New transaction"
+  },
+  "transaction": {
+    "back": "← Back to dashboard",
+    "loading": "Loading transaction…",
+    "auditHistory": "Audit history",
+    "evidence": "Evidence",
+    "actionFailed": "Action failed. Please try again.",
+    "noActions": "No actions available for your role at this stage.",
+    "openDispute": "Open dispute",
+    "counterparty": "Counterparty: {email}",
+    "reference": "Transaction #{id}",
+    "queuedEvent": "\"{event}\" is queued offline and will be sent automatically once you're back online.",
+    "queuedDispute": "This dispute and its evidence files are queued offline and will be sent automatically once you're back online."
+  },
+  "newTransaction": {
+    "title": "New escrow transaction",
+    "sellerEmail": "Seller email",
+    "sellerEmailPlaceholder": "seller@company.com",
+    "amount": "Amount",
+    "currency": "Currency",
+    "description": "Description",
+    "descriptionPlaceholder": "Goods / service details",
+    "invalid": "Please provide a valid seller email and a positive amount."
+  },
+  "evidence": {
+    "commentOptional": "Comment (optional)",
+    "downloadFailed": "Unable to download this file.",
+    "empty": "No evidence yet.",
+    "filesLabel": "Files (JPG, PNG or PDF, up to 10 MB each)",
+    "notePlaceholder": "Add context for this evidence",
+    "statusActive": "Active",
+    "statusWithdrawn": "Withdrawn",
+    "upload": "Upload evidence",
+    "uploadFailed": "Upload failed. Please try again.",
+    "uploading": "Uploading…",
+    "withdraw": "Withdraw",
+    "withdrawFailed": "Unable to withdraw this evidence.",
+    "withdrawing": "Withdrawing…"
+  },
+  "dispute": {
+    "commentRequired": "Comment (required)",
+    "filesLabel": "Evidence files (JPG, PNG or PDF, up to 10 MB each)",
+    "offlineNotice": "You're offline: the dispute and its evidence files will be saved on this device and sent automatically once you're back online.",
+    "open": "Open dispute",
+    "openFailed": "Unable to open the dispute. Please try again.",
+    "opening": "Opening…",
+    "reasonPlaceholder": "Explain why you are opening this dispute (at least 10 characters)",
+    "requirements": "Opening a dispute requires at least one file and a comment of 10 characters or more."
+  },
+  "audit": {
+    "empty": "No audit history yet."
+  },
+  "sync": {
+    "checkTransaction": "Check transaction #{id}",
+    "filesStillHere": "{count} attached file(s) are still stored on this device.",
+    "neverCreated": "This transaction was never created.",
+    "recoverFiles": "Recover files",
+    "refused": "{count} action(s) could not be synced and were refused by the server.",
+    "reviewEntry": "Review this entry"
+  },
+  "recovery": {
+    "acknowledgeAndDelete": "Acknowledge and delete",
+    "acknowledgeExplain": "Acknowledging removes it from this device and stops the warning banner.",
+    "confirmDelete": "Yes, delete permanently",
+    "confirmQuestion": "Are you sure?",
+    "deleteFailed": "The entry could not be deleted. Your files are still on this device.",
+    "deleteWarningPlain": "This will permanently remove this entry from this device.",
+    "deleteWarningWithFiles": "This will permanently delete the {count} file(s) above from this device. They are stored nowhere else and cannot be recovered afterwards. Download them first if you still need them.",
+    "doneWithEntry": "Done with this entry?",
+    "entryGone": "This entry does not exist, or has already been dealt with.",
+    "filesKept": "Your attached file(s), kept on this device",
+    "loading": "Loading your queued files…",
+    "neverSent": "They were never sent. Download them before acknowledging this entry.",
+    "nothingToRecover": "Nothing to recover.",
+    "recoverFiles": "Recover your files",
+    "refusedSuffix": "— this action was refused by the server and will not be retried.",
+    "reviewEntry": "Review this entry",
+    "storageBlocked": "Your queued files have not been lost — they are still stored on this device, but the browser refused access to them. This can happen in private browsing or when storage is blocked.",
+    "storageUnreadable": "This device's storage could not be read."
+  },
+  "role": {
+    "SELLER": "Seller",
+    "BUYER": "Buyer"
+  },
+  "offline": {
+    "banner": "You're offline. Actions will be saved and synced automatically once you reconnect",
+    "cardPending": "Pending sync",
+    "cardQueued": "Queued offline",
+    "queuedCount": "({count} queued)",
+    "syncing": "Syncing {count} queued action(s)…",
+    "waiting": "{count} action(s) queued, waiting to sync."
+  }
+}

@@ -1,6 +1,10 @@
+---
+baseline_commit: 24157c7df6957e505535a6a0bf8744572efb1fea
+---
+
 # Story 2.1: Fondation UI — tokens de design et i18n EN/FR par clés
 
-Status: ready-for-dev
+Status: review
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -41,44 +45,44 @@ so that tous les écrans à venir partagent un langage visuel et textuel unique,
 
 ## Tasks / Subtasks
 
-- [ ] **T1 — Lire avant d'écrire** (préalable à tout, AC: 1,2,3)
-  - [ ] Lire `frontend/src/style.css` en entier : il porte aujourd'hui une palette **teal** (`--color-brand-500: #14b8a6`) via `@theme` Tailwind 4. Elle est **incompatible** avec l'identité ratifiée (navy + vert `#047857`) et doit être remplacée, pas complétée.
-  - [ ] Lire `frontend/src/utils/stateMachine.js` (`STATE_COLORS`) : le mapping existe déjà et **contredit** la spec sur deux états (voir « Divergences » ci-dessous).
-  - [ ] Lire `frontend/src/components/StateBadge.vue` : consomme `STATE_COLORS[state].badge` et rend le libellé par `state.replaceAll('_',' ')` — chaîne machine affichée à l'utilisateur.
-  - [ ] Lister les chaînes visibles de `src/views/*.vue` et `src/components/*.vue` (concentration : `AuthView` 9, `NewTransactionModal` 8, `RecoveryView` 5).
+- [x] **T1 — Lire avant d'écrire** (préalable à tout, AC: 1,2,3)
+  - [x] Lire `frontend/src/style.css` en entier : il porte aujourd'hui une palette **teal** (`--color-brand-500: #14b8a6`) via `@theme` Tailwind 4. Elle est **incompatible** avec l'identité ratifiée (navy + vert `#047857`) et doit être remplacée, pas complétée.
+  - [x] Lire `frontend/src/utils/stateMachine.js` (`STATE_COLORS`) : le mapping existe déjà et **contredit** la spec sur deux états (voir « Divergences » ci-dessous).
+  - [x] Lire `frontend/src/components/StateBadge.vue` : consomme `STATE_COLORS[state].badge` et rend le libellé par `state.replaceAll('_',' ')` — chaîne machine affichée à l'utilisateur.
+  - [x] Lister les chaînes visibles de `src/views/*.vue` et `src/components/*.vue` (concentration : `AuthView` 9, `NewTransactionModal` 8, `RecoveryView` 5).
 
-- [ ] **T2 — Poser les tokens CSS** (AC: 1)
-  - [ ] Déclarer TOUTES les valeurs du frontmatter de `DESIGN.md` en custom properties globales : couleurs (marque, surfaces, texte, sémantique, montants signés), rampe Inter, espacements base 4, rayons.
-  - [ ] Charger la police **Inter** (couverture latin étendu FR/EN requise).
-  - [ ] Fournir un utilitaire `tabular-nums` (`font-variant-numeric: tabular-nums`) applicable à tout montant/solde.
-  - [ ] Régler l'élévation : cartes bordées sans ombre ; ombre uniquement pour surfaces flottantes.
-  - [ ] Décider et **documenter** l'articulation tokens ↔ Tailwind 4 (`@theme`) : les tokens sont le contrat, Tailwind le véhicule. Ne pas créer deux sources de vérité.
+- [x] **T2 — Poser les tokens CSS** (AC: 1)
+  - [x] Déclarer TOUTES les valeurs du frontmatter de `DESIGN.md` en custom properties globales : couleurs (marque, surfaces, texte, sémantique, montants signés), rampe Inter, espacements base 4, rayons.
+  - [x] Charger la police **Inter** (couverture latin étendu FR/EN requise).
+  - [x] Fournir un utilitaire `tabular-nums` (`font-variant-numeric: tabular-nums`) applicable à tout montant/solde.
+  - [x] Régler l'élévation : cartes bordées sans ombre ; ombre uniquement pour surfaces flottantes.
+  - [x] Décider et **documenter** l'articulation tokens ↔ Tailwind 4 (`@theme`) : les tokens sont le contrat, Tailwind le véhicule. Ne pas créer deux sources de vérité.
 
-- [ ] **T3 — Centraliser le mapping état→token** (AC: 2)
-  - [ ] **Étendre `STATE_COLORS`, ne pas créer un module concurrent.** Le retargeter sur les tokens et **corriger les deux divergences** (INITIATED, SHIPPED).
-  - [ ] Vérifier tous les consommateurs actuels après changement (`StateBadge.vue`, et tout autre import de `STATE_COLORS`).
-  - [ ] Écrire la garde des interdits (lint ou test) : pas de dégradé, pas de navy en couleur d'état, `#50DF77` absent du dépôt.
+- [x] **T3 — Centraliser le mapping état→token** (AC: 2)
+  - [x] **Étendre `STATE_COLORS`, ne pas créer un module concurrent.** Le retargeter sur les tokens et **corriger les deux divergences** (INITIATED, SHIPPED).
+  - [x] Vérifier tous les consommateurs actuels après changement (`StateBadge.vue`, et tout autre import de `STATE_COLORS`).
+  - [x] Écrire la garde des interdits (lint ou test) : pas de dégradé, pas de navy en couleur d'état, `#50DF77` absent du dépôt.
 
-- [ ] **T4 — Infrastructure i18n** (AC: 3)
-  - [ ] Installer `vue-i18n@11.4.8` (dernière stable Vue 3 au 2026-07-28).
-  - [ ] Catalogues EN et FR par clés, **anglais par défaut**, formats de date/nombre localisés.
-  - [ ] Sélecteur « EN / FR » en libellés **texte** — jamais de drapeaux (règle explicite de `DESIGN.md`).
-  - [ ] Persister le choix et le restaurer à la session suivante. **Attention** : la clé de stockage doit survivre à `endSession()` — voir « Interaction avec la Story 1.9 ».
+- [x] **T4 — Infrastructure i18n** (AC: 3)
+  - [x] Installer `vue-i18n@11.4.8` (dernière stable Vue 3 au 2026-07-28).
+  - [x] Catalogues EN et FR par clés, **anglais par défaut**, formats de date/nombre localisés.
+  - [x] Sélecteur « EN / FR » en libellés **texte** — jamais de drapeaux (règle explicite de `DESIGN.md`).
+  - [x] Persister le choix et le restaurer à la session suivante. **Attention** : la clé de stockage doit survivre à `endSession()` — voir « Interaction avec la Story 1.9 ».
 
-- [ ] **T5 — Migrer les chaînes existantes** (AC: 3)
-  - [ ] Migrer toutes les vues et composants existants vers des clés, `AuthView` comprise (nommément citée par l'AC).
-  - [ ] Traduire chaque clé en EN **et** FR.
+- [x] **T5 — Migrer les chaînes existantes** (AC: 3)
+  - [x] Migrer toutes les vues et composants existants vers des clés, `AuthView` comprise (nommément citée par l'AC).
+  - [x] Traduire chaque clé en EN **et** FR.
 
-- [ ] **T6 — Garde « clé manquante »** (AC: 4)
-  - [ ] Détection en développement ET sous Vitest, **bloquante en CI**.
-  - [ ] Garde anti-régression : aucune chaîne littérale nouvelle dans les composants migrés.
-  - [ ] **Prouver par mutation** : retirer une clé FR → la CI rougit ; la remettre → verte. Consigner le résultat.
+- [x] **T6 — Garde « clé manquante »** (AC: 4)
+  - [x] Détection en développement ET sous Vitest, **bloquante en CI**.
+  - [x] Garde anti-régression : aucune chaîne littérale nouvelle dans les composants migrés.
+  - [x] **Prouver par mutation** : retirer une clé FR → la CI rougit ; la remettre → verte. Consigner le résultat.
 
-- [ ] **T7 — Tests** (AC: 1,2,3,4)
-  - [ ] Test de composant sur le sélecteur de langue (harnais `@vue/test-utils` opérationnel, gabarit `SyncFailureNotice.spec.js`).
-  - [ ] Test du mapping état→token, y compris les deux états corrigés.
-  - [ ] Suite complète verte : **241 tests frontend** au départ, aucun ne doit rougir.
-  - [ ] `npm run lint` propre (`--max-warnings 0`).
+- [x] **T7 — Tests** (AC: 1,2,3,4)
+  - [x] Test de composant sur le sélecteur de langue (harnais `@vue/test-utils` opérationnel, gabarit `SyncFailureNotice.spec.js`).
+  - [x] Test du mapping état→token, y compris les deux états corrigés.
+  - [x] Suite complète verte : **241 tests frontend** au départ, aucun ne doit rougir.
+  - [x] `npm run lint` propre (`--max-warnings 0`).
 
 ## Dev Notes
 
@@ -178,8 +182,59 @@ Barrières posées la veille, qui s'appliquent à cette story : `npm run lint --
 
 ### Agent Model Used
 
+claude-opus-5 (dev-story, session interactive du 2026-07-28)
+
 ### Debug Log References
+
+- Cycle rouge-vert sur T3 : `stateTokens.spec.js` écrit AVANT le mapping → 7 échecs, dont `expected undefined to deeply equal { INITIATED: 'warning', … }`. Vert après implémentation.
+- Cycle rouge-vert sur T6 : parité des catalogues verte, puis MUTATION (`auth.password` retirée de `fr.json`) → échec nommant la clé exacte. Restaurée, vert.
+- `LanguageSwitcher` : le test « bascule la langue au clic » a échoué sur la première implémentation et a révélé un défaut de conception réel — `setLocale()` mutait le SINGLETON du module, pas l'instance i18n injectée. Remplacé par `applyLocale(localeRef, code)`. Le défaut était invisible en relecture.
+- `noHardcodedStrings.spec.js` a d'abord rapporté des faux positifs (`0" class="…`) : mon découpage cassait sur les `>` internes aux attributs (`v-if="files.length > 0"`). Parseur corrigé — neutralisation des valeurs d'attributs avant découpage.
 
 ### Completion Notes List
 
+**T1–T3 — Tokens et mapping d'état.**
+- `style.css` : palette teal du POC (`#14b8a6`) SUPPRIMÉE et remplacée par les tokens ratifiés (navy `#101E5A` + vert `#047857`), transcrits exactement du frontmatter de `DESIGN.md` — couleurs, rampe Inter, rayons, ombre flottante unique.
+- Conséquence non prévue par la story et traitée : **46 références orphelines** aux tokens teal supprimés dans 7 fichiers (`bg-brand-600`, `ring-brand-500`…). Sans remap, le rendu serait devenu muet sans la moindre erreur. Remappées vers `bg-primary` / `hover:bg-primary-hover` / `text-primary` / `focus:*-focus-ring`.
+- **Dégradé décoratif supprimé** dans `AuthView` (`bg-gradient-to-b from-brand-50 to-white` → `bg-surface-page`) : interdit par `DESIGN.md`, et la garde AC2 le prouve désormais.
+- `STATE_TOKENS` introduit comme mapping SÉMANTIQUE assertable ; `STATE_COLORS` en est DÉRIVÉ, sans table parallèle. Les deux corrections annoncées sont livrées et testées : `INITIATED` gris → **warning**, `SHIPPED` ambre → **info**.
+- Classes écrites en toutes lettres et non composées : Tailwind extrait par analyse statique et n'aurait jamais vu `bg-${token}-surface`.
+
+**T4–T6 — i18n.**
+- `vue-i18n@11.4.8`, catalogues EN/FR, anglais par défaut, sélecteur « EN / FR » en libellés texte (aucun drapeau, asservi par test).
+- **Décision tranchée (la story la demandait) :** la langue est une préférence d'APPAREIL, pas une donnée de session. `endSession()` retire des clés nommées et ne fait pas de `clear()` — `escrow_locale` survit donc, ce qui est voulu. Documenté dans `src/i18n/index.js` avec un avertissement explicite à l'intention de la Story 2.7.
+- **14 fichiers migrés, 0 chaîne en dur restante**, prouvé par une garde qui lit les gabarits.
+
+**Écarts assumés, à arbitrer en revue.**
+1. **Échelle d'espacement** : la rampe de `DESIGN.md` (5=24, 6=32, 7=48 px) diverge de Tailwind (20/24/28) à partir de 5. Écraser l'échelle Tailwind aurait décalé en silence l'espacement de tous les écrans livrés. Les tokens sont donc exposés sous des noms propres (`--space-*`) et la rampe Tailwind reste intacte, avec la table de correspondance en commentaire. **C'est une lecture de l'AC1, pas la seule possible.**
+2. **Dépendance ajoutée hors story** : `@fontsource-variable/inter`, approuvée explicitement par Oscard en cours de dev (auto-hébergée : la PWA doit fonctionner hors ligne, la CSP de la Story 1.4 n'admet pas d'origine tierce).
+3. **`EXPIRED` non mappé** : l'AC cite « REFUNDED/expirée=neutral », mais l'état n'existe pas encore dans la machine (AD-19/AD-22, Epic 5). Ne pas le deviner ; un test garantit qu'aucun état CONNU n'est sans couleur.
+
+**Vérification finale.** 264 tests frontend (241 de base + 23 nouveaux), 15 fichiers de suite, 0 échec. `npm run lint` propre (`--max-warnings 0`). `npm run build` OK. Garde d'encodage verte sur 1901 fichiers. Aucune suite backend touchée.
+
 ### File List
+
+**Nouveaux**
+- `frontend/src/i18n/index.js`
+- `frontend/src/i18n/en.json`
+- `frontend/src/i18n/fr.json`
+- `frontend/src/i18n/__tests__/catalogues.spec.js`
+- `frontend/src/i18n/__tests__/noHardcodedStrings.spec.js`
+- `frontend/src/components/LanguageSwitcher.vue`
+- `frontend/src/components/__tests__/LanguageSwitcher.spec.js`
+- `frontend/src/utils/__tests__/stateTokens.spec.js`
+
+**Modifiés**
+- `frontend/package.json`, `frontend/package-lock.json` (vue-i18n 11.4.8, @fontsource-variable/inter 5.3.0)
+- `frontend/src/style.css` (tokens ; palette teal supprimée)
+- `frontend/src/main.js` (plugin i18n, attribut `lang`)
+- `frontend/src/App.vue` (sélecteur de langue hors routeur)
+- `frontend/src/utils/stateMachine.js` (`STATE_TOKENS`, `STATE_COLORS` dérivé, `OFFLINE_CLASSES`)
+- `frontend/src/views/` : `AuthView.vue`, `DashboardView.vue`, `TransactionDetailView.vue`, `RecoveryView.vue`
+- `frontend/src/components/` : `AuditTimeline.vue`, `EvidenceDeposit.vue`, `EvidenceList.vue`, `NewTransactionModal.vue`, `OnlineBanner.vue`, `OpenDisputeForm.vue`, `SyncFailureNotice.vue`, `TransactionCard.vue`
+- Suites adaptées au plugin i18n : `views/__tests__/authRedirect.spec.js`, `views/__tests__/RecoveryView.spec.js`, `components/__tests__/SyncFailureNotice.spec.js`, `components/__tests__/SyncFailureNotice.recovery.spec.js`
+- `_bmad-output/implementation-artifacts/sprint-status.yaml`
+
+## Change Log
+
+- 2026-07-28 — Story 2.1 implémentée (baseline `24157c7`). Tokens de design ratifiés posés et palette POC supprimée, mapping état→token sémantique corrigé sur deux états, infrastructure i18n EN/FR par clés avec garde de parité bloquante, 14 fichiers migrés sans chaîne en dur restante. 264 tests verts, lint propre, build OK.

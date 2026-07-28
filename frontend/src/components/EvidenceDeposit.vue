@@ -1,7 +1,10 @@
 <script setup>
+import { useI18n } from 'vue-i18n'
 import { computed, ref } from 'vue'
 import { useEvidenceStore } from '@/stores/evidence'
 import { formatBytes, validateFile } from '@/utils/evidence'
+
+const { t } = useI18n()
 
 const props = defineProps({
   transactionId: { type: [String, Number], required: true },
@@ -58,7 +61,7 @@ async function handleSubmit() {
     resetForm()
     emit('uploaded')
   } catch (err) {
-    serverError.value = err.response?.data?.message || 'Upload failed. Please try again.'
+    serverError.value = err.response?.data?.message || t('evidence.uploadFailed')
   }
 }
 </script>
@@ -67,7 +70,7 @@ async function handleSubmit() {
   <form class="space-y-4" @submit.prevent="handleSubmit">
     <div>
       <label class="block text-sm font-medium text-gray-700" for="evidence-files">
-        Files (JPG, PNG or PDF, up to 10 MB each)
+        {{ $t('evidence.filesLabel') }}
       </label>
       <input
         id="evidence-files"
@@ -75,7 +78,7 @@ async function handleSubmit() {
         type="file"
         accept=".jpg,.jpeg,.png,.pdf"
         multiple
-        class="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
+        class="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-focus-ring focus:outline-none focus:ring-1 focus:ring-focus-ring"
         @change="onFilesSelected"
       />
     </div>
@@ -92,14 +95,14 @@ async function handleSubmit() {
 
     <div>
       <label class="block text-sm font-medium text-gray-700" for="evidence-comment">
-        Comment (optional)
+        {{ $t('evidence.commentOptional') }}
       </label>
       <textarea
         id="evidence-comment"
         v-model="comment"
         rows="2"
-        placeholder="Add context for this evidence"
-        class="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
+        :placeholder="$t('evidence.notePlaceholder')"
+        class="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-focus-ring focus:outline-none focus:ring-1 focus:ring-focus-ring"
       />
     </div>
 
@@ -111,9 +114,9 @@ async function handleSubmit() {
       <button
         type="submit"
         :disabled="!canSubmit"
-        class="rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700 disabled:opacity-60"
+        class="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-white hover:bg-primary-hover disabled:opacity-60"
       >
-        {{ uploading ? 'Uploading…' : 'Upload evidence' }}
+        {{ uploading ? t('evidence.uploading') : t('evidence.upload') }}
       </button>
     </div>
   </form>

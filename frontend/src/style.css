@@ -1,11 +1,152 @@
 @import 'tailwindcss';
 
+/* Inter auto-hébergée (police variable : une seule ressource pour toutes les graisses).
+   Auto-hébergée et non servie par un CDN : la PWA doit fonctionner hors ligne (AD-27),
+   la CSP durcie en Story 1.4 n'admet pas d'origine tierce, et aucune IP d'utilisateur
+   ne doit fuiter vers un tiers au chargement d'une page. Le sous-ensemble latin-ext est
+   requis par le français. */
+@import '@fontsource-variable/inter';
+
+/* ============================================================================
+   TOKENS DE DESIGN — contrat unique de la plateforme
+   ============================================================================
+   Source d'autorité : le frontmatter de
+   `_bmad-output/planning-artifacts/ux-designs/ux-Escrow_claude-2026-07-24/DESIGN.md`.
+   Les valeurs ci-dessous en sont la transcription EXACTE. Toute divergence doit être
+   corrigée ici, jamais compensée dans un composant.
+
+   Ce bloc `@theme` est le véhicule Tailwind 4 : chaque `--color-x` y génère les
+   utilitaires `bg-x`, `text-x`, `border-x`, `ring-x`. Les tokens sont le contrat,
+   Tailwind la commodité — il n'existe pas deux sources de vérité.
+
+   ⚠️ La palette « brand » teal (#14b8a6) qui vivait ici jusqu'à la Story 2.1 était un
+   reliquat du POC, sans rapport avec l'identité ratifiée (navy + vert engagement).
+   Elle a été SUPPRIMÉE, pas complétée : la laisser aurait permis à douze epics de
+   continuer à s'en servir.
+   ============================================================================ */
+
 @theme {
-  --color-brand-50: #f0fdfa;
-  --color-brand-100: #ccfbf1;
-  --color-brand-500: #14b8a6;
-  --color-brand-600: #0d9488;
-  --color-brand-700: #0f766e;
+  /* --- Marque ------------------------------------------------------------- */
+  /* Le navy porte le chrome applicatif (navigation, carte wallet, pied de page).
+     JAMAIS une couleur d'état : la sémantique appartient au bloc « états » ci-dessous. */
+  --color-brand-navy: #101e5a;
+  --color-brand-navy-soft: #1b2c7a;
+
+  /* Vert ENGAGEMENT (fonds sécurisés, action validée), pas un vert « croissance ».
+     Contraste ≥ 4,5:1 avec du texte blanc — c'est la raison pour laquelle le vert clair
+     de la référence EscrowLab est explicitement rejeté par DESIGN.md.
+     (Son code hexadécimal n'est PAS écrit ici : `stateTokens.spec.js` interdit sa présence
+     dans les sources sans exception de commentaire, et une garde sans exception est une
+     garde qu'on ne peut pas contourner par mégarde.) */
+  --color-primary: #047857;
+  --color-primary-foreground: #ffffff;
+  --color-primary-hover: #065f46;
+
+  /* --- Surfaces & texte --------------------------------------------------- */
+  --color-surface-page: #f6f7fb;
+  --color-surface-card: #ffffff;
+  --color-surface-inverse: #101e5a;
+  --color-text-strong: #111827;
+  --color-text-body: #374151;
+  --color-text-muted: #6b7280;
+  --color-text-on-inverse: #f3f4f6;
+  --color-border: #e5e7eb;
+  --color-border-strong: #9ca3af;
+  --color-focus-ring: #2563eb;
+
+  /* --- Sémantique d'état -------------------------------------------------- */
+  /* Code couleur STABLE dans toute l'app ET le back-office. Le mapping
+     état → famille sémantique vit dans `src/utils/stateMachine.js` (STATE_TOKENS),
+     jamais redéfini écran par écran. */
+  --color-success: #047857;
+  --color-success-surface: #ecfdf5;
+  --color-warning: #b45309;
+  --color-warning-surface: #fffbeb;
+  --color-danger: #b91c1c;
+  --color-danger-surface: #fef2f2;
+  --color-info: #1d4ed8;
+  --color-info-surface: #eff6ff;
+  --color-neutral-state: #4b5563;
+  --color-neutral-surface: #f3f4f6;
+  --color-offline: #92400e;
+  --color-offline-surface: #fef3c7;
+
+  /* --- Montants signés (grand livre) -------------------------------------- */
+  /* Le SIGNE et le LIBELLÉ portent l'information, jamais la couleur seule
+     (accessibilité — un daltonien doit lire un débit sans percevoir le rouge). */
+  --color-amount-credit: #047857;
+  --color-amount-debit: #b91c1c;
+
+  /* --- Typographie -------------------------------------------------------- */
+  --font-sans: 'Inter Variable', 'Inter', ui-sans-serif, system-ui, sans-serif;
+
+  --text-display: 28px;
+  --text-display--line-height: 1.2;
+  --text-display--font-weight: 700;
+  --text-display--letter-spacing: -0.01em;
+
+  --text-heading: 20px;
+  --text-heading--line-height: 1.3;
+  --text-heading--font-weight: 600;
+
+  --text-body: 15px;
+  --text-body--line-height: 1.5;
+  --text-body--font-weight: 400;
+
+  --text-label: 13px;
+  --text-label--line-height: 1.4;
+  --text-label--font-weight: 500;
+
+  --text-caption: 12px;
+  --text-caption--line-height: 1.4;
+  --text-caption--font-weight: 400;
+
+  --text-amount: 15px;
+  --text-amount--line-height: 1.4;
+  --text-amount--font-weight: 600;
+
+  --text-amount-hero: 32px;
+  --text-amount-hero--line-height: 1.1;
+  --text-amount-hero--font-weight: 700;
+
+  /* --- Rayons ------------------------------------------------------------- */
+  /* md pour champs et boutons, lg pour cartes et modales, full RÉSERVÉ aux badges
+     d'état et avatars. Ni angles durs, ni rondeurs consumer. */
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-full: 9999px;
+
+  /* --- Élévation ---------------------------------------------------------- */
+  /* Une seule ombre existe, et elle est réservée aux surfaces FLOTTANTES (menus,
+     toasts, modales). Les cartes au repos sont bordées, jamais ombrées : la
+     hiérarchie vient du contraste surface-page / surface-card. */
+  --shadow-floating: 0 1px 3px rgb(0 0 0 / 0.1);
+}
+
+/* ============================================================================
+   ÉCHELLE D'ESPACEMENT
+   ============================================================================
+   DESIGN.md définit une rampe base 4 : 1=4 2=8 3=12 4=16 5=24 6=32 7=48 px.
+   Elle COÏNCIDE avec l'échelle Tailwind pour 1 à 4, puis DIVERGE : Tailwind rend
+   `5`=20px, `6`=24px, `7`=28px.
+
+   Écraser l'échelle numérique de Tailwind aurait décalé en silence l'espacement de
+   tous les écrans déjà livrés (le POC utilise `p-5`, `gap-6`…). Les tokens de design
+   sont donc exposés sous des noms PROPRES, et la rampe Tailwind reste intacte.
+   Correspondance pour qui écrit du neuf : design 5 = `6` Tailwind, design 6 = `8`,
+   design 7 = `12`.
+   ============================================================================ */
+:root {
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-7: 48px;
+  --space-gutter: 16px;
+  --space-gutter-desktop: 24px;
 }
 
 html,
@@ -16,4 +157,15 @@ body,
 
 body {
   -webkit-tap-highlight-color: transparent;
+  font-family: var(--font-sans);
+  background-color: var(--color-surface-page);
+  color: var(--color-text-body);
+}
+
+/* Chiffres tabulaires OBLIGATOIRES sur tout montant, solde et tableau financier :
+   sans eux, les colonnes de chiffres ne s'alignent pas et un relevé devient illisible.
+   Utilitaire nommé plutôt que règle sur une balise : il s'applique aussi bien à un
+   solde qu'à une cellule de tableau ou à un libellé de bouton portant un montant. */
+.tabular-amount {
+  font-variant-numeric: tabular-nums;
 }

@@ -1,8 +1,11 @@
 <script setup>
+import { useI18n } from 'vue-i18n'
 import { computed, ref } from 'vue'
 import { useAuthStore } from '@/stores/auth'
 import { useEvidenceStore } from '@/stores/evidence'
 import { formatBytes, uploaderLabel } from '@/utils/evidence'
+
+const { t } = useI18n()
 
 const props = defineProps({
   transactionId: { type: [String, Number], required: true },
@@ -57,7 +60,7 @@ function statusClasses(status) {
 }
 
 function statusLabel(status) {
-  return status === 'WITHDRAWN' ? 'Withdrawn' : 'Active'
+  return status === 'WITHDRAWN' ? t('evidence.statusWithdrawn') : t('evidence.statusActive')
 }
 
 async function download(item) {
@@ -66,7 +69,7 @@ async function download(item) {
   try {
     await evidenceStore.downloadFile(props.transactionId, item)
   } catch (err) {
-    downloadError.value = await errorMessage(err, 'Unable to download this file.')
+    downloadError.value = await errorMessage(err, t('evidence.downloadFailed'))
   } finally {
     downloadingId.value = null
   }
@@ -78,7 +81,7 @@ async function withdraw(item) {
   try {
     await evidenceStore.withdrawEvidence(props.transactionId, item.id)
   } catch (err) {
-    withdrawError.value = await errorMessage(err, 'Unable to withdraw this evidence.')
+    withdrawError.value = await errorMessage(err, t('evidence.withdrawFailed'))
   } finally {
     withdrawingId.value = null
   }
@@ -95,7 +98,7 @@ async function withdraw(item) {
       v-if="!evidenceStore.loading && items.length === 0"
       class="text-sm text-gray-400"
     >
-      No evidence yet.
+      {{ $t('evidence.empty') }}
     </p>
 
     <ul v-else class="space-y-3">
@@ -132,7 +135,7 @@ async function withdraw(item) {
             class="rounded-lg border border-red-300 px-3 py-1.5 text-sm font-medium text-red-700 hover:bg-red-50 disabled:opacity-60"
             @click="withdraw(item)"
           >
-            {{ withdrawingId === item.id ? 'Withdrawing…' : 'Withdraw' }}
+            {{ withdrawingId === item.id ? t('evidence.withdrawing') : t('evidence.withdraw') }}
           </button>
           <button
             type="button"
@@ -140,7 +143,7 @@ async function withdraw(item) {
             class="rounded-lg border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-60"
             @click="download(item)"
           >
-            {{ downloadingId === item.id ? 'Downloading…' : 'Download' }}
+            {{ downloadingId === item.id ? t('common.downloading') : t('common.download') }}
           </button>
         </div>
       </li>

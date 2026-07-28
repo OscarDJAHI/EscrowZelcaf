@@ -1,4 +1,5 @@
 <script setup>
+import { useI18n } from 'vue-i18n'
 import { computed } from 'vue'
 import { RouterLink } from 'vue-router'
 import { storeToRefs } from 'pinia'
@@ -8,6 +9,8 @@ import { useEscrowStore } from '@/stores/escrow'
 import { useOfflineQueueStore } from '@/stores/offlineQueue'
 import { describeFailure } from '@/utils/replayFailure'
 import { describeAction, ownsEntry, resolveRealState } from '@/utils/frozenEntry'
+
+const { t } = useI18n()
 
 /**
  * The first surface on which a definitively rejected queued action exists. A
@@ -82,7 +85,7 @@ const entries = computed(() => {
     class="w-full border-b border-red-200 bg-red-50 px-4 py-3 text-red-900"
   >
     <p class="text-xs font-semibold sm:text-sm">
-      {{ entries.length }} action(s) could not be synced and were refused by the server.
+      {{ $t('sync.refused', { count: entries.length }) }}
     </p>
 
     <ul class="mt-2 space-y-2">
@@ -93,16 +96,16 @@ const entries = computed(() => {
         <span v-if="entry.detail" class="block text-red-700">{{ entry.detail }}</span>
 
         <span v-if="entry.state.kind === 'badge'" class="mt-1 flex items-center gap-1.5">
-          <span>Current state:</span>
+          <span>{{ $t('common.currentState') }}</span>
           <StateBadge :state="entry.state.state" />
         </span>
         <span v-else-if="entry.state.kind === 'link'" class="mt-1 block">
           <RouterLink :to="`/escrow/${entry.state.id}`" class="font-medium underline">
-            Check transaction #{{ entry.state.id }}
+            {{ $t('sync.checkTransaction', { id: entry.state.id }) }}
           </RouterLink>
         </span>
         <span v-else-if="entry.state.kind === 'never-created'" class="mt-1 block text-red-700">
-          This transaction was never created.
+          {{ $t('sync.neverCreated') }}
         </span>
 
         <!-- Only OPEN_DISPUTE queues binaries (`escrow.js:155`); telling a
@@ -110,7 +113,7 @@ const entries = computed(() => {
              This block says that the files are kept, and nothing more: the way
              out is below, and does not belong to it. -->
         <span v-if="entry.fileCount > 0" class="mt-1 block text-red-700">
-          {{ entry.fileCount }} attached file(s) are still stored on this device.
+          {{ $t('sync.filesStillHere', { count: entry.fileCount }) }}
         </span>
 
         <!-- Every frozen entry, with or without a file. The recovery screen is
@@ -125,7 +128,7 @@ const entries = computed(() => {
              entry. -->
         <span class="mt-1 block">
           <RouterLink :to="`/recovery/${entry.id}`" class="font-medium underline">
-            {{ entry.fileCount > 0 ? 'Recover files' : 'Review this entry' }}
+            {{ entry.fileCount > 0 ? t('sync.recoverFiles') : t('sync.reviewEntry') }}
           </RouterLink>
         </span>
       </li>

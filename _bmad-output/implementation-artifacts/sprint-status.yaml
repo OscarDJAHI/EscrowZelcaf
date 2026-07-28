@@ -97,7 +97,7 @@ development_status:
 
   # Epic 2 — Onboarding & comptes d'entreprise (2-1..2-3 = fondation UI, dérogation "As a développeur" assumée)
   epic-2: in-progress # ouvert le 2026-07-28 par la création de la Story 2-1
-  2-1-fondation-ui-tokens-design-i18n: ready-for-dev # story créée 2026-07-28 (create-story)
+  2-1-fondation-ui-tokens-design-i18n: review # dev livré 2026-07-28 : 264 tests frontend, lint propre, 0 chaîne en dur
   2-2-bibliotheque-composants-base: backlog
   2-3-layout-trois-espaces-navigation: backlog
   # ORDRE D'EXÉCUTION : 2-7 se place ICI, juste après 2-3 (numérotée 2.7 pour ne pas

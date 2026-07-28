@@ -1,8 +1,11 @@
 <script setup>
+import { useI18n } from 'vue-i18n'
 import { computed, ref } from 'vue'
 import { useEscrowStore } from '@/stores/escrow'
 import { useOfflineQueueStore } from '@/stores/offlineQueue'
 import { formatBytes, validateFile } from '@/utils/evidence'
+
+const { t } = useI18n()
 
 const props = defineProps({
   transactionId: { type: [String, Number], required: true },
@@ -54,7 +57,7 @@ async function handleSubmit() {
     emit('opened')
   } catch (err) {
     // Keep the form intact so the user can retry; show the server message.
-    serverError.value = err.response?.data?.message || 'Unable to open the dispute. Please try again.'
+    serverError.value = err.response?.data?.message || t('dispute.openFailed')
   } finally {
     submitting.value = false
   }
@@ -65,14 +68,14 @@ async function handleSubmit() {
   <form class="space-y-4" @submit.prevent="handleSubmit">
     <div>
       <label class="block text-sm font-medium text-gray-700" for="dispute-files">
-        Evidence files (JPG, PNG or PDF, up to 10 MB each)
+        {{ $t('dispute.filesLabel') }}
       </label>
       <input
         id="dispute-files"
         type="file"
         accept=".jpg,.jpeg,.png,.pdf"
         multiple
-        class="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
+        class="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-focus-ring focus:outline-none focus:ring-1 focus:ring-focus-ring"
         @change="onFilesSelected"
       />
     </div>
@@ -89,24 +92,23 @@ async function handleSubmit() {
 
     <div>
       <label class="block text-sm font-medium text-gray-700" for="dispute-comment">
-        Comment (required)
+        {{ $t('dispute.commentRequired') }}
       </label>
       <textarea
         id="dispute-comment"
         v-model="comment"
         rows="3"
-        placeholder="Explain why you are opening this dispute (at least 10 characters)"
-        class="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
+        :placeholder="$t('dispute.reasonPlaceholder')"
+        class="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-focus-ring focus:outline-none focus:ring-1 focus:ring-focus-ring"
       />
     </div>
 
     <p class="text-xs text-gray-500">
-      Opening a dispute requires at least one file and a comment of 10 characters or more.
+      {{ $t('dispute.requirements') }}
     </p>
 
     <p v-if="!offlineQueue.isOnline" class="rounded-lg bg-orange-50 px-3 py-2 text-sm text-orange-700">
-      You're offline: the dispute and its evidence files will be saved on this device and sent
-      automatically once you're back online.
+      {{ $t('dispute.offlineNotice') }}
     </p>
 
     <p v-if="validationError || serverError" class="text-sm text-red-600">
@@ -119,14 +121,14 @@ async function handleSubmit() {
         class="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
         @click="emit('cancel')"
       >
-        Cancel
+        {{ $t('common.cancel') }}
       </button>
       <button
         type="submit"
         :disabled="!canSubmit"
         class="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-60"
       >
-        {{ submitting ? 'Opening…' : 'Open dispute' }}
+        {{ submitting ? t('dispute.opening') : t('dispute.open') }}
       </button>
     </div>
   </form>

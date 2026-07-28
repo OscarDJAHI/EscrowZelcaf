@@ -1,7 +1,10 @@
 <script setup>
+import { useI18n } from 'vue-i18n'
 import { computed } from 'vue'
 import { useAuthStore } from '@/stores/auth'
 import StateBadge from './StateBadge.vue'
+
+const { t } = useI18n()
 
 const props = defineProps({
   transaction: { type: Object, required: true },
@@ -17,7 +20,7 @@ const counterparty = computed(() => {
 })
 
 const counterpartyRoleLabel = computed(() =>
-  props.transaction._queuedOffline || isBuyerSide.value ? 'Seller' : 'Buyer',
+  props.transaction._queuedOffline || isBuyerSide.value ? t('auth.roleSeller') : 'Buyer',
 )
 
 const formattedAmount = computed(() => {
@@ -50,14 +53,14 @@ const formattedAmount = computed(() => {
           v-else
           class="inline-flex shrink-0 items-center rounded-full bg-orange-100 px-2.5 py-1 text-xs font-semibold text-orange-700"
         >
-          Queued offline
+          {{ $t('offline.cardQueued') }}
         </span>
         <!-- The badge above shows the optimistic DISPUTED: say it isn't confirmed yet. -->
         <span
           v-if="transaction._queuedDispute"
           class="inline-flex shrink-0 items-center rounded-full bg-orange-100 px-2.5 py-1 text-xs font-semibold text-orange-700"
         >
-          Pending sync
+          {{ $t('offline.cardPending') }}
         </span>
       </div>
     </div>

@@ -4,6 +4,7 @@ import { createRouter, createWebHistory } from 'vue-router'
 import { flushPromises, mount } from '@vue/test-utils'
 import AuthView from '@/views/AuthView.vue'
 import { useAuthStore } from '@/stores/auth'
+import { createEscrowI18n } from '@/i18n'
 
 /**
  * UX-DR32 has two halves and they fail in opposite directions. The guard must
@@ -87,7 +88,11 @@ describe('AuthView resumes only a target it can vouch for', () => {
     vi.spyOn(auth, 'login').mockResolvedValue(true)
     const replace = vi.spyOn(router, 'replace').mockResolvedValue(undefined)
 
-    const wrapper = mount(AuthView, { global: { plugins: [pinia, router] } })
+    // Instance i18n NEUVE par montage, jamais le singleton applicatif : la langue est
+    // un état mutable global, et un test qui la basculerait contaminerait les suivants.
+    const wrapper = mount(AuthView, {
+      global: { plugins: [pinia, router, createEscrowI18n('en')] },
+    })
     await wrapper.get('form').trigger('submit')
     await flushPromises()
 

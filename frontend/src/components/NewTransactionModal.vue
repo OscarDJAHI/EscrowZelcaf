@@ -1,5 +1,8 @@
 <script setup>
+import { useI18n } from 'vue-i18n'
 import { reactive, ref } from 'vue'
+
+const { t } = useI18n()
 
 // Pas de `const props =` : les deux props ne sont lues que par le gabarit, où
 // elles sont dans la portée sans liaison. Nommer le résultat laissait une
@@ -26,7 +29,7 @@ function handleSubmit() {
   localError.value = ''
   const amount = Number(form.amount)
   if (!form.sellerEmail || !amount || amount <= 0) {
-    localError.value = 'Please provide a valid seller email and a positive amount.'
+    localError.value = t('newTransaction.invalid')
     return
   }
   emit('submit', {
@@ -45,11 +48,11 @@ function handleSubmit() {
   >
     <div class="w-full max-w-md rounded-t-2xl bg-white p-6 shadow-xl sm:rounded-2xl">
       <div class="mb-4 flex items-center justify-between">
-        <h2 class="text-lg font-semibold text-gray-900">New escrow transaction</h2>
+        <h2 class="text-lg font-semibold text-gray-900">{{ $t('newTransaction.title') }}</h2>
         <button
           type="button"
           class="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
-          aria-label="Close"
+          :aria-label="$t('common.close')"
           @click="emit('close')"
         >
           ✕
@@ -58,20 +61,20 @@ function handleSubmit() {
 
       <form class="space-y-4" @submit.prevent="handleSubmit">
         <div>
-          <label class="block text-sm font-medium text-gray-700" for="sellerEmail">Seller email</label>
+          <label class="block text-sm font-medium text-gray-700" for="sellerEmail">{{ $t('newTransaction.sellerEmail') }}</label>
           <input
             id="sellerEmail"
             v-model="form.sellerEmail"
             type="email"
             required
-            placeholder="seller@company.com"
-            class="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
+            :placeholder="$t('newTransaction.sellerEmailPlaceholder')"
+            class="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-focus-ring focus:outline-none focus:ring-1 focus:ring-focus-ring"
           />
         </div>
 
         <div class="grid grid-cols-2 gap-3">
           <div>
-            <label class="block text-sm font-medium text-gray-700" for="amount">Amount</label>
+            <label class="block text-sm font-medium text-gray-700" for="amount">{{ $t('newTransaction.amount') }}</label>
             <input
               id="amount"
               v-model="form.amount"
@@ -79,15 +82,15 @@ function handleSubmit() {
               min="0"
               step="0.01"
               required
-              class="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
+              class="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-focus-ring focus:outline-none focus:ring-1 focus:ring-focus-ring"
             />
           </div>
           <div>
-            <label class="block text-sm font-medium text-gray-700" for="currency">Currency</label>
+            <label class="block text-sm font-medium text-gray-700" for="currency">{{ $t('newTransaction.currency') }}</label>
             <select
               id="currency"
               v-model="form.currency"
-              class="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
+              class="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-focus-ring focus:outline-none focus:ring-1 focus:ring-focus-ring"
             >
               <option v-for="currency in currencies" :key="currency" :value="currency">
                 {{ currency }}
@@ -97,13 +100,13 @@ function handleSubmit() {
         </div>
 
         <div>
-          <label class="block text-sm font-medium text-gray-700" for="description">Description</label>
+          <label class="block text-sm font-medium text-gray-700" for="description">{{ $t('newTransaction.description') }}</label>
           <textarea
             id="description"
             v-model="form.description"
             rows="3"
-            placeholder="Goods / service details"
-            class="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
+            :placeholder="$t('newTransaction.descriptionPlaceholder')"
+            class="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-focus-ring focus:outline-none focus:ring-1 focus:ring-focus-ring"
           />
         </div>
 
@@ -117,14 +120,14 @@ function handleSubmit() {
             class="flex-1 rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
             @click="emit('close')"
           >
-            Cancel
+            {{ $t('common.cancel') }}
           </button>
           <button
             type="submit"
             :disabled="submitting"
-            class="flex-1 rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-60"
+            class="flex-1 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary-hover disabled:opacity-60"
           >
-            {{ submitting ? 'Creating…' : 'Create' }}
+            {{ submitting ? $t('common.creating') : $t('common.create') }}
           </button>
         </div>
       </form>

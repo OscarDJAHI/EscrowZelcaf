@@ -79,34 +79,34 @@ async function handleSubmit() {
 </script>
 
 <template>
-  <div class="flex flex-1 items-center justify-center bg-gradient-to-b from-brand-50 to-white px-4 py-10">
+  <div class="flex flex-1 items-center justify-center bg-surface-page px-4 py-10">
     <div class="w-full max-w-md rounded-2xl bg-white p-8 shadow-lg">
       <div class="mb-6 text-center">
         <div
-          class="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-xl bg-brand-600 text-xl font-bold text-white"
+          class="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-xl bg-primary text-xl font-bold text-white"
         >
           Z
         </div>
-        <h1 class="text-2xl font-bold text-gray-900">ZLECAf Escrow</h1>
-        <p class="mt-1 text-sm text-gray-500">Secure B2B trade across Africa</p>
+        <h1 class="text-2xl font-bold text-gray-900">{{ $t('auth.brand') }}</h1>
+        <p class="mt-1 text-sm text-gray-500">{{ $t('auth.tagline') }}</p>
       </div>
 
       <div class="mb-6 flex rounded-lg bg-gray-100 p-1 text-sm font-medium">
         <button
           type="button"
           class="flex-1 rounded-md py-2 transition"
-          :class="mode === 'login' ? 'bg-white text-brand-700 shadow' : 'text-gray-500'"
+          :class="mode === 'login' ? 'bg-white text-primary shadow' : 'text-gray-500'"
           @click="setMode('login')"
         >
-          Login
+          {{ $t('auth.tabLogin') }}
         </button>
         <button
           type="button"
           class="flex-1 rounded-md py-2 transition"
-          :class="mode === 'register' ? 'bg-white text-brand-700 shadow' : 'text-gray-500'"
+          :class="mode === 'register' ? 'bg-white text-primary shadow' : 'text-gray-500'"
           @click="setMode('register')"
         >
-          Register
+          {{ $t('auth.tabRegister') }}
         </button>
       </div>
 
@@ -114,55 +114,55 @@ async function handleSubmit() {
         <template v-if="mode === 'register'">
           <div class="grid grid-cols-2 gap-3">
             <div>
-              <label class="block text-sm font-medium text-gray-700" for="firstName">First name</label>
+              <label class="block text-sm font-medium text-gray-700" for="firstName">{{ $t('auth.firstName') }}</label>
               <input
                 id="firstName"
                 v-model="form.firstName"
                 required
-                class="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
+                class="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-focus-ring focus:outline-none focus:ring-1 focus:ring-focus-ring"
               />
             </div>
             <div>
-              <label class="block text-sm font-medium text-gray-700" for="lastName">Last name</label>
+              <label class="block text-sm font-medium text-gray-700" for="lastName">{{ $t('auth.lastName') }}</label>
               <input
                 id="lastName"
                 v-model="form.lastName"
                 required
-                class="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
+                class="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-focus-ring focus:outline-none focus:ring-1 focus:ring-focus-ring"
               />
             </div>
           </div>
           <div>
-            <label class="block text-sm font-medium text-gray-700" for="role">Role</label>
+            <label class="block text-sm font-medium text-gray-700" for="role">{{ $t('auth.role') }}</label>
             <select
               id="role"
               v-model="form.role"
-              class="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
+              class="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-focus-ring focus:outline-none focus:ring-1 focus:ring-focus-ring"
             >
-              <option value="BUYER">Buyer</option>
-              <option value="SELLER">Seller</option>
+              <option value="BUYER">{{ $t('auth.roleBuyer') }}</option>
+              <option value="SELLER">{{ $t('auth.roleSeller') }}</option>
             </select>
           </div>
         </template>
 
         <div>
-          <label class="block text-sm font-medium text-gray-700" for="email">Email</label>
+          <label class="block text-sm font-medium text-gray-700" for="email">{{ $t('auth.email') }}</label>
           <input
             id="email"
             v-model="form.email"
             type="email"
             required
-            class="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
+            class="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-focus-ring focus:outline-none focus:ring-1 focus:ring-focus-ring"
           />
         </div>
         <div>
-          <label class="block text-sm font-medium text-gray-700" for="password">Password</label>
+          <label class="block text-sm font-medium text-gray-700" for="password">{{ $t('auth.password') }}</label>
           <input
             id="password"
             v-model="form.password"
             type="password"
             required
-            class="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
+            class="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-focus-ring focus:outline-none focus:ring-1 focus:ring-focus-ring"
           />
         </div>
 
@@ -171,9 +171,15 @@ async function handleSubmit() {
         <button
           type="submit"
           :disabled="submitting"
-          class="w-full rounded-lg bg-brand-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-brand-700 disabled:opacity-60"
+          class="w-full rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-primary-hover disabled:opacity-60"
         >
-          {{ submitting ? 'Please wait…' : mode === 'login' ? 'Log in' : 'Create account' }}
+          {{
+            submitting
+              ? $t('common.pleaseWait')
+              : mode === 'login'
+                ? $t('auth.tabLogin')
+                : $t('auth.tabRegister')
+          }}
         </button>
       </form>
     </div>

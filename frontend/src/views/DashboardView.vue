@@ -1,4 +1,5 @@
 <script setup>
+import { useI18n } from 'vue-i18n'
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
@@ -6,6 +7,8 @@ import { useEscrowStore } from '@/stores/escrow'
 import { endSession } from '@/stores/session'
 import TransactionCard from '@/components/TransactionCard.vue'
 import NewTransactionModal from '@/components/NewTransactionModal.vue'
+
+const { t } = useI18n()
 
 const auth = useAuthStore()
 const escrowStore = useEscrowStore()
@@ -36,7 +39,7 @@ async function handleCreate(payload) {
     await escrowStore.createNewTransaction(payload)
     showModal.value = false
   } catch (err) {
-    createError.value = err.response?.data?.message || 'Failed to create transaction.'
+    createError.value = err.response?.data?.message || t('dashboard.createFailed')
   } finally {
     creating.value = false
   }
@@ -78,7 +81,7 @@ async function logout() {
   <div class="mx-auto w-full max-w-3xl flex-1 px-4 py-6">
     <div class="mb-6 flex items-start justify-between gap-3">
       <div>
-        <h1 class="text-xl font-bold text-gray-900">My transactions</h1>
+        <h1 class="text-xl font-bold text-gray-900">{{ $t('dashboard.myTransactions') }}</h1>
         <p class="text-sm text-gray-500">
           {{ auth.user?.email }} ·
           <span class="font-medium">{{ auth.role }}</span>
@@ -87,22 +90,22 @@ async function logout() {
       <div class="flex shrink-0 items-center gap-2">
         <button
           v-if="isBuyer"
-          class="rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white shadow hover:bg-brand-700"
+          class="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-white shadow hover:bg-primary-hover"
           @click="showModal = true"
         >
-          + New transaction
+          {{ $t('dashboard.newTransaction') }}
         </button>
         <button
           class="rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50"
           @click="logout"
         >
-          Log out
+          {{ $t('common.logout') }}
         </button>
       </div>
     </div>
 
     <div v-if="escrowStore.loading" class="py-16 text-center text-sm text-gray-400">
-      Loading transactions…
+      {{ $t('dashboard.loading') }}
     </div>
     <div v-else-if="escrowStore.error" class="rounded-lg bg-red-50 p-4 text-sm text-red-700">
       {{ escrowStore.error }}
@@ -111,8 +114,8 @@ async function logout() {
       v-else-if="escrowStore.transactions.length === 0"
       class="rounded-xl border border-dashed border-gray-300 py-16 text-center text-sm text-gray-400"
     >
-      No transactions yet.
-      <span v-if="isBuyer">Create your first one to get started.</span>
+      {{ $t('dashboard.empty') }}
+      <span v-if="isBuyer">{{ $t('dashboard.createFirst') }}</span>
     </div>
     <div v-else class="grid grid-cols-1 gap-4 sm:grid-cols-2">
       <TransactionCard v-for="tx in escrowStore.transactions" :key="tx.id" :transaction="tx" />
