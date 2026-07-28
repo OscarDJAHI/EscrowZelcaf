@@ -189,7 +189,7 @@ claude-opus-5 (dev-story, session interactive du 2026-07-28)
 
 **Écart assumé.** L'ambiguïté d'espacement laissée ouverte en 2.1 n'a pas été tranchée : les composants livrés utilisent l'échelle Tailwind avec la correspondance documentée, aucun n'a eu besoin de 24/32/48 px. La question se reposera à la Story 2.3 (layout), qui manipule des gouttières — c'est là qu'elle se tranchera utilement.
 
-**Vérification** — 342 tests frontend (305 au départ, +37), 25 fichiers de suite, lint propre, build OK, exclusion vérifiée, encodage vert sur 1917 fichiers.
+**Vérification** — 350 tests frontend (305 au départ, +45), 25 fichiers de suite, lint propre, build OK, exclusion vérifiée, encodage vert sur 1917 fichiers.
 
 ### File List
 
@@ -212,4 +212,4 @@ claude-opus-5 (dev-story, session interactive du 2026-07-28)
 
 ## Change Log
 
-- 2026-07-28 — Story 2.2 implémentée (baseline `00ee49f`). Bibliothèque de composants sur les tokens de 2.1, dette d'élévation soldée, galerie de démonstration avec exclusion du build prouvée par mutation. 342 tests, lint propre, build OK.
+- 2026-07-28 — Story 2.2 implémentée (baseline `00ee49f`). Bibliothèque de composants sur les tokens de 2.1, dette d'élévation soldée, galerie de démonstration avec exclusion du build prouvée par mutation. 350 tests, lint propre, build OK.
