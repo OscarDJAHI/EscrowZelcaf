@@ -1,5 +1,5 @@
 # generated: 2026-07-24
-# last_updated: 2026-07-27 (rétrospective Epic 1 — epic-1 done, 8 action items enregistrés)
+# last_updated: 2026-07-28 (rétrospective Epic 1 — epic-1 done, 8 action items enregistrés)
 # project: Escrow_claude (Production)
 # project_key: NOKEY
 # tracking_system: file-system
@@ -74,7 +74,7 @@
 # Epics 6-7-8 → Epics 9-10 → Epic 11 en continu (11-9 avant production).
 
 generated: 2026-07-24
-last_updated: "2026-07-28 (Stories 2-1 et 2-2 closes ; Story 2-3 créée ready-for-dev — Story 2-1 créée, ready-for-dev. Blocages d'ouverture de l'Epic 2 TOUS soldés : bundle QUALITÉ-CI livré, D1/D2/D4 tranchées, ex-bundle SESSION-PARTAGÉE trié et rerouté, story 2-7 créée. Garde D2 livrée avec preuve par mutation. 487 tests backend / 241 frontend)"
+last_updated: "2026-07-28 (Stories 2-1, 2-2 et 2-3 closes done ; Story 2-3 revue 3 couches + 3 correctifs prouves par mutation, dette AC5 Lighthouse portee au ledger. Story 2-4 creee ready-for-dev avec 3 blocages documentes. 487 tests backend / 422 frontend)"
 project: Escrow_claude (Production)
 project_key: NOKEY
 tracking_system: file-system
@@ -105,7 +105,7 @@ development_status:
   # 2026-07-28 ; ferme la faille avant que 2-4/2-5/2-6 n'empilent des parcours
   # authentifiés, et le bouton de déconnexion a déjà sa place définitive après 2-3.
   2-7-politique-session-appareil-partage: backlog # porte D4 + ses 4 satellites (ex-bundle SESSION-PARTAGÉE)
-  2-4-inscription-otp-consentement-entreprise: backlog
+  2-4-inscription-otp-consentement-entreprise: ready-for-dev # 3 blocages documentes : transport e-mail (8.1), rupture contrat register, notion gestionnaire (2.5)
   2-5-multi-utilisateur-roles-invitations: backlog
   2-6-securite-compte-reset-2fa-totp: backlog
   epic-2-retrospective: optional
