@@ -135,6 +135,20 @@ L'Edge Case Hunter est allé au bout. **Ses constats les plus sérieux sont des 
 **Reste dû :** rejouer les deux couches tombées (Blind Hunter, Acceptance Auditor) sur le diff cumulé.
 
 
+### Review Findings — 3e passe (2026-07-28)
+
+Blind Hunter et Acceptance Auditor rejoués sur `02f230d..HEAD` après le retour du réseau. Le Blind Hunter a rendu. **Il a trouvé une régression que j'avais moi-même créée en la corrigeant.**
+
+- [x] [Review][Patch] HAUT — `StateBadge` n'avait JAMAIS reçu le correctif que la 2e passe déclarait appliqué « partout ». Cause : pendant la preuve par mutation des gardes, `StateBadge.vue` a été muté puis restauré par `git checkout --` — ce qui a emporté AUSSI le câblage vers `stateLabel`, posé quelques minutes plus tôt et pas encore commité. **La suite est restée verte parce qu'aucun test de `StateBadge` n'existait**, alors que c'est le composant d'état le plus réutilisé du dépôt (`TransactionCard`, `TransactionDetailView`, `RecoveryView`, `SyncFailureNotice`). `state.EXPIRED` serait parti en production sur chaque liste de transactions dès l'Epic 5. Recâblé, et `StateBadge.spec.js` écrit — 5 tests, dont un qui ne dépend d'aucun état précis (« ne rend jamais le préfixe `state.` »). Prouvé par mutation : le retour à l'appel direct fait rougir 2 tests sur 5.
+  **Leçon de méthode, applicable au-delà de cette story :** ne jamais restaurer par `git checkout --` un fichier porteur de travail non commité. Les mutations suivantes sauvegardent le contenu en mémoire et le réécrivent à l'identique.
+- [x] [Review][Patch] MOYEN — La garde anti-prose ignorait les littéraux backtick CONTENANT une interpolation [`noHardcodedStrings.spec.js`] — le motif excluait `$`, si bien que `` `The entry could not be deleted: ${err.message}` `` (`RecoveryView.vue:209`, fichier pourtant listé comme migré) restait invisible. Motif élargi ; littéral migré vers `recovery.deleteFailedWithReason`. Deux valeurs de protocole (`Bearer ${token}`) désormais nommées une par une dans les exceptions.
+- [x] [Review][Patch] BAS — Compte de tests périmé dans les artefacts de suivi (« 275 » là où l'exécution en donnait 285). Corrigé, et c'est exactement le genre d'affirmation non vérifiée que ce processus prétend traquer.
+
+**Confirmés par exécution, pas par lecture :** la résilience au stockage inaccessible (mutation refaite par le relecteur), le caractère réellement bloquant de `PENDING_MIGRATION` (entrée retirée → suite rouge nommant les dix chaînes), le bornage du gabarit sur `</template>`, l'absence de consommateur orphelin après les renommages d'exports, et le fait que les trois assertions réalignées de `SyncFailureNotice.spec.js` ne sont pas devenues tautologiques.
+
+**Reste dû :** l'Acceptance Auditor de cette 3e passe n'a pas encore rendu. Et le relecteur signale n'avoir aucun test de composant sur `TransactionDetailView` ni `OnlineBanner` : les correctifs AC3 et la distinction hors-ligne y reposent sur la relecture, pas sur une assertion.
+
+
 ## Dev Notes
 
 ### ⚠️ Divergences constatées entre le code actuel et la spec — à corriger, pas à conserver
@@ -298,7 +312,7 @@ claude-opus-5 (dev-story, session interactive du 2026-07-28)
   - **P6..P14** `'Buyer'`, `hover:border-brand-300`, bannière hors-ligne lisant enfin `OFFLINE_CLASSES` (qui était du code mort), rôle brut du tableau de bord, « By », `--radius` par défaut, `letter-spacing` du montant, validation de l'argument de `createEscrowI18n`.
   - **P10 reporté** — six modules purs, correctif identique mais touchant la garde anti-dérive de `FAILURE_LABELS`. Dette énumérée fichier par fichier dans `PENDING_MIGRATION`.
   - **Bug introduit puis attrapé pendant cette passe** : un commentaire glissé entre `return` et l'expression a déclenché l'insertion automatique de point-virgule, rendant le calcul du montant mort. Build vert, suite verte — c'est le nouveau test du montant qui l'a révélé, et il porte désormais ce cas en commentaire.
-  - Vérification : **275 tests** (241 au départ, +34), lint propre, build OK.
+  - Vérification : **290 tests** (241 au départ, +34), lint propre, build OK.
 
 ## Change Log
 

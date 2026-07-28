@@ -206,7 +206,7 @@ async function acknowledge() {
     // loss this epic exists to prevent, inverted.
     confirming.value = false
     error.value = err?.message
-      ? `The entry could not be deleted: ${err.message}`
+      ? t('recovery.deleteFailedWithReason', { reason: err.message })
       : t('recovery.deleteFailed')
   }
 }

@@ -118,7 +118,8 @@
     "refusedSuffix": "— cette action a été refusée par le serveur et ne sera pas réessayée.",
     "reviewEntry": "Examiner cette entrée",
     "storageBlocked": "Vos fichiers en attente ne sont pas perdus : ils sont toujours sur cet appareil, mais le navigateur en a refusé l'accès. Cela peut arriver en navigation privée ou lorsque le stockage est bloqué.",
-    "storageUnreadable": "Le stockage de cet appareil n'a pas pu être lu."
+    "storageUnreadable": "Le stockage de cet appareil n'a pas pu être lu.",
+    "deleteFailedWithReason": "L'entrée n'a pas pu être supprimée : {reason}"
   },
   "role": {
     "SELLER": "Vendeur",

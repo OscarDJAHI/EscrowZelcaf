@@ -150,6 +150,10 @@ const PROSE_ALLOWED = new Set([
   'Inter Variable', // nom de police, ne se traduit pas
   'Intl', // identifiant d'API
   'Content-Type', // en-tête HTTP : valeur de protocole, jamais affichée
+  // Schéma d'autorisation HTTP. Nommé une fois par forme d'interpolation plutôt que
+  // dilué dans le motif : une exception qu'on doit écrire à la main se voit en revue.
+  'Bearer ${token}',
+  'Bearer ${currentToken}',
 ])
 
 /**
@@ -202,10 +206,12 @@ describe('Aucune chaîne en prose dans le code, hors catalogues', () => {
     ).filter((rel) => !PENDING_MIGRATION.has(rel))
     for (const rel of files) {
       const code = scriptSource(readFileSync(resolve(SRC, rel), 'utf8'), rel)
-      // Les backticks comptent : ce dépôt en est plein, et un littéral en prose écrit
-      // `comme ceci` passait la garde en silence — ce qui vidait de son sens la
-      // correction censée voir les chaînes vivant dans un `.js` (constat de revue).
-      const literals = [...code.matchAll(/'([^'\\\n]{2,})'|"([^"\\\n]{2,})"|`([^`\\$\n]{2,})`/g)]
+      // Les backticks comptent, INTERPOLATIONS COMPRISES. Une première correction avait
+      // exclu `$` du motif, si bien qu'un littéral en prose du genre
+      // `The entry could not be deleted: ${err.message}` — motif on ne peut plus banal
+      // pour composer un message d'erreur — restait invisible. Un littéral commençant
+      // par `${` ne ressemble pas à de la prose et n'est donc pas signalé.
+      const literals = [...code.matchAll(/'([^'\\\n]{2,})'|"([^"\\\n]{2,})"|`([^`\\\n]{2,})`/g)]
         .map((m) => m[1] ?? m[2] ?? m[3])
         .filter((v) => /^\p{Lu}\p{Ll}/u.test(v))
         .filter((v) => !PROSE_ALLOWED.has(v))

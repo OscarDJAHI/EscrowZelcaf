@@ -118,7 +118,8 @@
     "refusedSuffix": "— this action was refused by the server and will not be retried.",
     "reviewEntry": "Review this entry",
     "storageBlocked": "Your queued files have not been lost — they are still stored on this device, but the browser refused access to them. This can happen in private browsing or when storage is blocked.",
-    "storageUnreadable": "This device's storage could not be read."
+    "storageUnreadable": "This device's storage could not be read.",
+    "deleteFailedWithReason": "The entry could not be deleted: {reason}"
   },
   "role": {
     "SELLER": "Seller",
