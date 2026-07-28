@@ -42,8 +42,8 @@ const formattedAmount = computed(() => {
   <component
     :is="transaction._queuedOffline ? 'div' : 'router-link'"
     :to="transaction._queuedOffline ? undefined : `/escrow/${transaction.id}`"
-    class="block rounded-xl border border-gray-200 bg-white p-4 shadow-sm transition"
-    :class="transaction._queuedOffline ? 'opacity-70' : 'hover:border-primary hover:shadow-md'"
+    class="block rounded-xl border border-gray-200 bg-white p-4 transition"
+    :class="transaction._queuedOffline ? 'opacity-70' : 'hover:border-primary'"
   >
     <div class="flex items-start justify-between gap-2">
       <div class="min-w-0">

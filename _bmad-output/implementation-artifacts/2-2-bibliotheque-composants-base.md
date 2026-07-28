@@ -1,6 +1,10 @@
+---
+baseline_commit: 00ee49f88f9aaadb36359a2a295e8be207bfde3c
+---
+
 # Story 2.2: Bibliothèque de composants de base réutilisables
 
-Status: ready-for-dev
+Status: review
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -46,41 +50,41 @@ so that chaque story d'écran à venir assemble des composants éprouvés au lie
 
 ## Tasks / Subtasks
 
-- [ ] **T1 — Lire avant d'écrire** (préalable, AC: 1,2,3)
-  - [ ] `frontend/src/style.css` : inventaire des tokens réellement disponibles (couleurs, `--text-*`, `--radius*`, `--shadow-floating`, `--space-*`, utilitaire `.tabular-amount`).
-  - [ ] `frontend/src/components/StateBadge.vue` **et son test** : le badge de l'AC3 EXISTE DÉJÀ et est couvert. Ne pas le recréer.
-  - [ ] `frontend/src/utils/stateMachine.js` : `STATE_TOKENS`, `STATE_COLORS`, `OFFLINE_CLASSES`, `SYNCING_CLASSES`.
-  - [ ] `frontend/src/i18n/labels.js` : la règle de dégradation (clé connue → traduction, sinon forme lisible, jamais de clé brute, jamais de levée).
-  - [ ] `frontend/src/i18n/__tests__/noHardcodedStrings.spec.js` : ce que les gardes interdisent, pour ne pas écrire du code qui rougira.
+- [x] **T1 — Lire avant d'écrire** (préalable, AC: 1,2,3)
+  - [x] `frontend/src/style.css` : inventaire des tokens réellement disponibles (couleurs, `--text-*`, `--radius*`, `--shadow-floating`, `--space-*`, utilitaire `.tabular-amount`).
+  - [x] `frontend/src/components/StateBadge.vue` **et son test** : le badge de l'AC3 EXISTE DÉJÀ et est couvert. Ne pas le recréer.
+  - [x] `frontend/src/utils/stateMachine.js` : `STATE_TOKENS`, `STATE_COLORS`, `OFFLINE_CLASSES`, `SYNCING_CLASSES`.
+  - [x] `frontend/src/i18n/labels.js` : la règle de dégradation (clé connue → traduction, sinon forme lisible, jamais de clé brute, jamais de levée).
+  - [x] `frontend/src/i18n/__tests__/noHardcodedStrings.spec.js` : ce que les gardes interdisent, pour ne pas écrire du code qui rougira.
 
-- [ ] **T2 — Bouton** (AC: 1)
-  - [ ] Quatre variantes : primary, danger, secondary, ghost. Hauteur minimale 44 px sur toutes.
-  - [ ] Libellé par clé i18n ; prop de libellé porteur de montant (ex. « Financer — 12 500,00 USD »), montant formaté selon la langue ACTIVE et en chiffres tabulaires.
-  - [ ] État désactivé et état « en cours » distincts, avec libellé.
+- [x] **T2 — Bouton** (AC: 1)
+  - [x] Quatre variantes : primary, danger, secondary, ghost. Hauteur minimale 44 px sur toutes.
+  - [x] Libellé par clé i18n ; prop de libellé porteur de montant (ex. « Financer — 12 500,00 USD »), montant formaté selon la langue ACTIVE et en chiffres tabulaires.
+  - [x] État désactivé et état « en cours » distincts, avec libellé.
 
-- [ ] **T3 — Cartes** (AC: 2)
-  - [ ] Carte standard : `surface-card`, bordure, rayon `lg`, padding 16, **aucune ombre au repos**.
-  - [ ] Carte wallet : props uniquement (`balance`, `currency`, `updatedAt`, `offline`, `canDeposit`, `canWithdraw`) — aucun store, aucun appel réseau.
-  - [ ] Variante hors-ligne : dernière valeur + horodatage « données au… », actions désactivées, famille `offline`.
+- [x] **T3 — Cartes** (AC: 2)
+  - [x] Carte standard : `surface-card`, bordure, rayon `lg`, padding 16, **aucune ombre au repos**.
+  - [x] Carte wallet : props uniquement (`balance`, `currency`, `updatedAt`, `offline`, `canDeposit`, `canWithdraw`) — aucun store, aucun appel réseau.
+  - [x] Variante hors-ligne : dernière valeur + horodatage « données au… », actions désactivées, famille `offline`.
 
-- [ ] **T4 — Badge d'état** (AC: 3)
-  - [ ] **Vérifier et compléter `StateBadge` existant**, ne pas en créer un second. Compléter son test si des variantes manquent.
+- [x] **T4 — Badge d'état** (AC: 3)
+  - [x] **Vérifier et compléter `StateBadge` existant**, ne pas en créer un second. Compléter son test si des variantes manquent.
 
-- [ ] **T5 — Skeletons** (AC: 4)
-  - [ ] Skeletons calqués sur la carte standard, la carte wallet et la ligne de liste.
-  - [ ] Documenter et appliquer la règle « pas de spinner plein écran après la première peinture ».
+- [x] **T5 — Skeletons** (AC: 4)
+  - [x] Skeletons calqués sur la carte standard, la carte wallet et la ligne de liste.
+  - [x] Documenter et appliquer la règle « pas de spinner plein écran après la première peinture ».
 
-- [ ] **T6 — Page de démonstration** (AC: 5)
-  - [ ] Route de développement présentant chaque composant dans toutes ses variantes et les deux langues.
-  - [ ] **Exclusion du build de production PROUVÉE par test**, pas seulement configurée — voir « Le piège de l'AC5 » ci-dessous.
+- [x] **T6 — Page de démonstration** (AC: 5)
+  - [x] Route de développement présentant chaque composant dans toutes ses variantes et les deux langues.
+  - [x] **Exclusion du build de production PROUVÉE par test**, pas seulement configurée — voir « Le piège de l'AC5 » ci-dessous.
 
-- [ ] **T7 — Dette d'élévation, reportée de la Story 2.1** (AC: 2)
-  - [ ] Retirer `shadow-sm`/`shadow-lg`/`shadow-md`/`shadow-xl` des surfaces qui ne sont ni menu, ni toast, ni modale : `TransactionCard.vue`, `TransactionDetailView.vue` (×3), `RecoveryView.vue` (×4), `AuthView.vue`, `StepperEscrow.vue`. `NewTransactionModal.vue` est une **modale** : elle a droit à l'ombre, mais via `--shadow-floating`.
-  - [ ] Garde de non-régression : un test interdit toute ombre hors `shadow-floating` sur les composants de la bibliothèque.
+- [x] **T7 — Dette d'élévation, reportée de la Story 2.1** (AC: 2)
+  - [x] Retirer `shadow-sm`/`shadow-lg`/`shadow-md`/`shadow-xl` des surfaces qui ne sont ni menu, ni toast, ni modale : `TransactionCard.vue`, `TransactionDetailView.vue` (×3), `RecoveryView.vue` (×4), `AuthView.vue`, `StepperEscrow.vue`. `NewTransactionModal.vue` est une **modale** : elle a droit à l'ombre, mais via `--shadow-floating`.
+  - [x] Garde de non-régression : un test interdit toute ombre hors `shadow-floating` sur les composants de la bibliothèque.
 
-- [ ] **T8 — Tests** (AC: 1,2,3,4)
-  - [ ] Un test de composant par composant livré, **dans les deux langues** (l'AC l'exige explicitement).
-  - [ ] Suite complète verte : **305 tests au départ**, aucun ne doit rougir. `npm run lint` propre.
+- [x] **T8 — Tests** (AC: 1,2,3,4)
+  - [x] Un test de composant par composant livré, **dans les deux langues** (l'AC l'exige explicitement).
+  - [x] Suite complète verte : **305 tests au départ**, aucun ne doit rougir. `npm run lint` propre.
 
 ## Dev Notes
 
@@ -165,8 +169,47 @@ Pas de bibliothèque UI (PrimeVue, Naive…) : `DESIGN.md` acte des composants m
 
 ### Agent Model Used
 
+claude-opus-5 (dev-story, session interactive du 2026-07-28)
+
 ### Debug Log References
+
+- Cycles rouge-vert sur chaque composant : test écrit avant, échec constaté (`Failed to resolve import`), implémentation, vert.
+- **Le contrôle d'exclusion du build était CREUX à sa première écriture.** Mutation faite (route rendue inconditionnelle) : le build émettait bien 24 fichiers au lieu de 23 — la galerie ÉTAIT dans le bundle — et le contrôle disait « absente ». Cause : la sentinelle vivait dans un COMMENTAIRE, que la minification supprime. Le contrôle cherchait une chaîne qui ne pouvait jamais exister, donc passait toujours. Refait sur deux signaux — nom du chunk émis ET marqueur rendu dans le gabarit —, puis remis à la même mutation : code de sortie 1, chunk fautif nommé.
+- Mutations restaurées par sauvegarde EN MÉMOIRE et réécriture, jamais par `git checkout --` (leçon de la Story 2.1, où cette commande avait effacé un correctif non commité).
 
 ### Completion Notes List
 
+**Composants livrés** — `AppButton` (4 variantes, 44 px sur toutes, libellé porteur de montant formaté dans la langue active et en chiffres tabulaires, états désactivé et en cours), `AppCard` (bordée, sans ombre, devient un `<button>` quand elle est interactive — une `div` cliquable n'est ni focusable ni annoncée), `WalletCard` (présentation pure, aucun store ni réseau : le wallet relève d'AD-13 et de l'Epic 4), `AppSkeleton` (trois formes calquées, `role="status"` et libellé pour les lecteurs d'écran).
+
+**`StateBadge` n'a PAS été recréé.** L'AC3 le décrivait comme s'il fallait le créer ; il existait, câblé sur le mapping central, avec ses 5 tests. C'était l'erreur la plus probable de cette story et la note d'anti-réinvention a fait son travail.
+
+**Dette d'élévation soldée** — 19 ombres retirées de 6 fichiers ; `NewTransactionModal` conserve la sienne, mais via `--shadow-floating`, parce qu'une modale EST une surface flottante. Garde `elevation.spec.js` : aucune source n'emploie d'ombre hors `shadow-floating`, et `--shadow-floating` reste le seul token d'ombre — si quelqu'un ajoute `--shadow-card`, la règle « une seule ombre » meurt et le test le dit.
+
+**Exclusion du build prouvée, pas seulement configurée** — `npm run verify:no-demo`, câblé en CI juste après le build.
+
+**Écart assumé.** L'ambiguïté d'espacement laissée ouverte en 2.1 n'a pas été tranchée : les composants livrés utilisent l'échelle Tailwind avec la correspondance documentée, aucun n'a eu besoin de 24/32/48 px. La question se reposera à la Story 2.3 (layout), qui manipule des gouttières — c'est là qu'elle se tranchera utilement.
+
+**Vérification** — 342 tests frontend (305 au départ, +37), 25 fichiers de suite, lint propre, build OK, exclusion vérifiée, encodage vert sur 1917 fichiers.
+
 ### File List
+
+**Nouveaux**
+- `frontend/src/components/AppButton.vue` + `__tests__/AppButton.spec.js`
+- `frontend/src/components/AppCard.vue`, `frontend/src/components/WalletCard.vue` + `__tests__/Cards.spec.js`
+- `frontend/src/components/AppSkeleton.vue` + `__tests__/AppSkeleton.spec.js`
+- `frontend/src/components/__tests__/elevation.spec.js`
+- `frontend/src/views/ComponentGalleryView.vue`
+- `frontend/scripts/verify-no-demo.mjs`
+
+**Modifiés**
+- `frontend/src/router/index.js` (route de développement en spread conditionnel, import dynamique)
+- `frontend/src/i18n/labels.js` (`translateOrHumanize`), `en.json`, `fr.json` (espaces `wallet` et `demo`)
+- `frontend/package.json` (script `verify:no-demo`), `frontend/eslint.config.js` (globales Node pour `scripts/`)
+- `frontend/src/i18n/__tests__/noHardcodedStrings.spec.js` (exclusion nommée de la galerie)
+- Ombres retirées : `TransactionCard.vue`, `TransactionDetailView.vue`, `RecoveryView.vue`, `AuthView.vue`, `StepperEscrow.vue`, `DashboardView.vue` ; `NewTransactionModal.vue` passe à `shadow-floating`
+- `.github/workflows/ci.yml` (étape `verify:no-demo`)
+- `_bmad-output/implementation-artifacts/sprint-status.yaml`
+
+## Change Log
+
+- 2026-07-28 — Story 2.2 implémentée (baseline `00ee49f`). Bibliothèque de composants sur les tokens de 2.1, dette d'élévation soldée, galerie de démonstration avec exclusion du build prouvée par mutation. 342 tests, lint propre, build OK.

@@ -79,6 +79,11 @@ describe('Aucune chaîne en dur dans les gabarits', () => {
     const offenders = []
     for (const rel of globSync('{components,views}/**/*.vue', { cwd: SRC })) {
       if (rel.includes('__tests__')) continue
+      // La galerie affiche des NOMS DE COMPOSANTS (`AppButton`, `WalletCard`…) : des
+      // identifiants de code, pas de la prose, et elle ne part jamais en production
+      // (`verify:no-demo` le prouve sur le contenu de `dist/`). Exclusion nommée pour un
+      // seul fichier, pas un motif de répertoire.
+      if (rel === 'views/ComponentGalleryView.vue') continue
       const bare = bareTextNodes(readFileSync(resolve(SRC, rel), 'utf8'), rel)
       if (bare.length) offenders.push(`${rel} → ${JSON.stringify(bare)}`)
     }

@@ -222,14 +222,14 @@ async function acknowledge() {
          offer the retry nothing else would ever perform. -->
     <div
       v-if="hydrationFailed"
-      class="rounded-2xl border border-red-200 bg-red-50 p-5 text-sm text-red-800 shadow-sm"
+      class="rounded-2xl border border-red-200 bg-red-50 p-5 text-sm text-red-800"
     >
       <p class="font-semibold">{{ $t('recovery.storageUnreadable') }}</p>
       <p class="mt-1">
         {{ $t('recovery.storageBlocked') }}
       </p>
       <button
-        class="mt-3 rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white shadow hover:bg-red-700"
+        class="mt-3 rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700"
         @click="hydrate"
       >
         {{ $t('common.tryAgain') }}
@@ -257,7 +257,7 @@ async function acknowledge() {
     </div>
 
     <template v-else>
-      <div class="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
+      <div class="rounded-2xl border border-gray-200 bg-white p-5">
         <h1 class="text-xl font-bold text-gray-900">
           {{ files.length > 0 ? $t('recovery.recoverFiles') : $t('recovery.reviewEntry') }}
         </h1>
@@ -291,7 +291,7 @@ async function acknowledge() {
       </div>
 
       <!-- Only where there are files. A frozen SEND_EVENT has none, ever. -->
-      <div v-if="files.length > 0" class="mt-6 rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
+      <div v-if="files.length > 0" class="mt-6 rounded-2xl border border-gray-200 bg-white p-5">
         <h2 class="mb-1 text-sm font-semibold text-gray-900">
           {{ $t('recovery.filesKept') }}
         </h2>
@@ -309,7 +309,7 @@ async function acknowledge() {
             </span>
             <button
               type="button"
-              class="rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-white shadow hover:bg-primary-hover"
+              class="rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-white hover:bg-primary-hover"
               @click="download(item)"
             >
               {{ $t('common.download') }}
@@ -318,7 +318,7 @@ async function acknowledge() {
         </ul>
       </div>
 
-      <div class="mt-6 rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
+      <div class="mt-6 rounded-2xl border border-gray-200 bg-white p-5">
         <h2 class="text-sm font-semibold text-gray-900">{{ $t('recovery.doneWithEntry') }}</h2>
         <p class="mt-1 text-xs text-gray-500">
           {{ $t('recovery.acknowledgeExplain') }}
@@ -337,7 +337,7 @@ async function acknowledge() {
         <div class="mt-3 flex flex-wrap gap-2">
           <button
             type="button"
-            class="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white shadow hover:bg-red-700"
+            class="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700"
             @click="acknowledge"
           >
             {{ confirming ? $t('recovery.confirmDelete') : $t('recovery.acknowledgeAndDelete') }}

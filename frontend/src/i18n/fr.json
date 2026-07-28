@@ -150,5 +150,17 @@
     "OPEN_DISPUTE": "Ouvrir un litige",
     "RESOLVE_RELEASE": "Arbitrer : libérer au vendeur",
     "RESOLVE_REFUND": "Arbitrer : rembourser l’acheteur"
+  },
+  "wallet": {
+    "title": "Solde du portefeuille",
+    "segregated": "Adossé au compte cantonné",
+    "lastKnown": "Dernière valeur connue au {at}",
+    "deposit": "Déposer",
+    "withdraw": "Retirer"
+  },
+  "demo": {
+    "title": "Bibliothèque de composants",
+    "onePrimary": "Un seul bouton primaire par surface : il désigne l’action que l’écran attend. Deux primaires n’en désignent aucune.",
+    "noSpinner": "Jamais de spinner plein écran après la première peinture. Toute attente a une couleur et un libellé."
   }
 }

@@ -28,6 +28,27 @@ const routes = [
     component: () => import('@/views/RecoveryView.vue'),
     props: true,
   },
+  // Galerie de composants — DÉVELOPPEMENT UNIQUEMENT.
+  //
+  // Déclarée dans un spread conditionnel sur `import.meta.env.DEV`, que Vite remplace par
+  // `false` au build : le tableau est alors vide et l'import dynamique n'est jamais
+  // atteint, donc son chunk n'est pas émis. Un import STATIQUE en tête de fichier aurait
+  // embarqué la galerie dans le bundle malgré la condition — c'est le piège que la story
+  // signale, et c'est pourquoi l'import reste dynamique.
+  //
+  // La condition n'est pas une preuve : `npm run verify:no-demo` cherche la sentinelle
+  // ESCROW_COMPONENT_GALLERY_DEV_ONLY dans `dist/` et échoue si elle y est. Ce script
+  // tourne en CI juste après le build.
+  ...(import.meta.env.DEV
+    ? [
+        {
+          path: '/_components',
+          name: 'component-gallery',
+          component: () => import('@/views/ComponentGalleryView.vue'),
+          meta: { public: true },
+        },
+      ]
+    : []),
   {
     path: '/:pathMatch(.*)*',
     redirect: '/',

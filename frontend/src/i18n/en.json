@@ -150,5 +150,17 @@
     "OPEN_DISPUTE": "Open dispute",
     "RESOLVE_RELEASE": "Resolve: release to seller",
     "RESOLVE_REFUND": "Resolve: refund buyer"
+  },
+  "wallet": {
+    "title": "Wallet balance",
+    "segregated": "Backed by the segregated account",
+    "lastKnown": "Last known value at {at}",
+    "deposit": "Deposit",
+    "withdraw": "Withdraw"
+  },
+  "demo": {
+    "title": "Component library",
+    "onePrimary": "One primary button per surface: it designates the action the screen expects. Two primaries designate none.",
+    "noSpinner": "Never a full-screen spinner after first paint. Every wait carries a colour and a label."
   }
 }

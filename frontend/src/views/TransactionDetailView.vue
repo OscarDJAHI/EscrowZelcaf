@@ -135,7 +135,7 @@ onBeforeUnmount(() => {
     </div>
 
     <template v-else-if="transaction">
-      <div class="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
+      <div class="rounded-2xl border border-gray-200 bg-white p-5">
         <div class="flex flex-wrap items-start justify-between gap-3">
           <div>
             <p class="text-xs uppercase tracking-wide text-gray-400">{{ $t('transaction.reference', { id: transaction.id }) }}</p>
@@ -175,7 +175,7 @@ onBeforeUnmount(() => {
             v-for="action in allowedEvents"
             :key="action.event"
             :disabled="sendingEvent === action.event"
-            class="rounded-lg px-4 py-2 text-sm font-semibold text-white shadow disabled:opacity-60"
+            class="rounded-lg px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
             :class="buttonClasses(action.event)"
             @click="trigger(action.event)"
           >
@@ -184,7 +184,7 @@ onBeforeUnmount(() => {
           <button
             v-if="canOpen"
             type="button"
-            class="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white shadow hover:bg-red-700"
+            class="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700"
             @click="showDisputeForm = !showDisputeForm"
           >
             {{ $t('transaction.openDispute') }}
@@ -205,12 +205,12 @@ onBeforeUnmount(() => {
         <p v-if="actionError" class="mt-3 text-sm text-red-600">{{ actionError }}</p>
       </div>
 
-      <div class="mt-6 rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
+      <div class="mt-6 rounded-2xl border border-gray-200 bg-white p-5">
         <h2 class="mb-4 text-sm font-semibold text-gray-900">{{ $t('transaction.auditHistory') }}</h2>
         <AuditTimeline :logs="auditLogs" />
       </div>
 
-      <div class="mt-6 rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
+      <div class="mt-6 rounded-2xl border border-gray-200 bg-white p-5">
         <h2 class="mb-4 text-sm font-semibold text-gray-900">{{ $t('transaction.evidence') }}</h2>
         <div v-if="canDeposit" class="mb-6 border-b border-gray-100 pb-6">
           <EvidenceDeposit :transaction-id="id" @uploaded="loadEvidence" />

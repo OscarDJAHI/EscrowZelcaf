@@ -86,6 +86,12 @@ jobs:
       - run: npm run lint
       - run: npm run test
       - run: npm run build
+      # APRÈS le build, forcément : ce contrôle lit `dist/`. Il vérifie que la galerie de
+      # composants (route de développement) n'est dans aucun artefact de production — par
+      # son nom de chunk ET par un marqueur rendu. Une première version cherchait une
+      # chaîne vivant dans un commentaire, que la minification supprime : elle passait
+      # donc TOUJOURS, y compris quand la galerie était bel et bien dans le bundle.
+      - run: npm run verify:no-demo
 
   # Chaîne d'approvisionnement (AC2) : SBOM + scans de vulnérabilités et de
   # secrets. HORS des required status checks (statut advisory documenté au

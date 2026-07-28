@@ -47,7 +47,7 @@ function label(state) {
             class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-xs font-bold text-white ring-4 ring-white"
             :class="[
               STATE_COLORS[state]?.dot || 'bg-gray-400',
-              index === path.length - 1 ? 'scale-110 shadow-md' : '',
+              index === path.length - 1 ? 'scale-110' : '',
             ]"
           >
             {{ index + 1 }}

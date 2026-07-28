@@ -72,8 +72,8 @@ export default [
   },
 
   {
-    // Fichiers de configuration et d'amorçage : contexte Node, pas navigateur.
-    files: ['*.config.js', 'vitest.setup.js'],
+    // Fichiers de configuration, d'amorçage et scripts de vérification : contexte Node.
+    files: ['*.config.js', 'vitest.setup.js', 'scripts/**/*.mjs'],
     languageOptions: {
       globals: {
         ...globals.node,

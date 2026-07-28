@@ -46,7 +46,7 @@ function handleSubmit() {
     class="fixed inset-0 z-50 flex items-end justify-center bg-black/40 sm:items-center sm:p-4"
     @click.self="emit('close')"
   >
-    <div class="w-full max-w-md rounded-t-2xl bg-white p-6 shadow-xl sm:rounded-2xl">
+    <div class="w-full max-w-md rounded-t-2xl bg-white p-6 shadow-floating sm:rounded-2xl">
       <div class="mb-4 flex items-center justify-between">
         <h2 class="text-lg font-semibold text-gray-900">{{ $t('newTransaction.title') }}</h2>
         <button

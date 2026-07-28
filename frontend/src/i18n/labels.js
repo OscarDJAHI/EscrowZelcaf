@@ -30,6 +30,19 @@ function translateOr({ t, te }, key, fallback) {
   return key && te(key) ? t(key) : fallback
 }
 
+/**
+ * Traduit une clé quelconque, en dégradant sur sa dernière portion si elle est absente.
+ *
+ * <p>Pour les libellés LIBRES (boutons, titres) où l'appelant fournit la clé entière.
+ * Rend `create` plutôt que `common.create` quand la clé manque : le préfixe n'apprend
+ * rien à l'utilisateur, et une clé brute affichée est précisément ce que la Story 2.1 a
+ * passé trois passes de revue à éliminer.
+ */
+export function translateOrHumanize(i18n, key) {
+  if (!key) return ''
+  return translateOr(i18n, key, humanize(String(key).split('.').pop()))
+}
+
 /** Libellé d'un état du cycle de vie escrow. */
 export function stateLabel(i18n, state) {
   if (!state) return ''

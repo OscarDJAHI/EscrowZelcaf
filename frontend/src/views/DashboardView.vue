@@ -91,7 +91,7 @@ async function logout() {
       <div class="flex shrink-0 items-center gap-2">
         <button
           v-if="isBuyer"
-          class="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-white shadow hover:bg-primary-hover"
+          class="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-white hover:bg-primary-hover"
           @click="showModal = true"
         >
           {{ $t('dashboard.newTransaction') }}
