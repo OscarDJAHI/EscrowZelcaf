@@ -74,7 +74,7 @@
 # Epics 6-7-8 → Epics 9-10 → Epic 11 en continu (11-9 avant production).
 
 generated: 2026-07-24
-last_updated: "2026-07-28 (bundle QUALITÉ-CI soldé avant l'ouverture de l'Epic 2 : lint frontend, garde d'encodage, conteneur Postgres mutualisé, suite front découplée ; 2 entrées de ledger périmées rectifiées. 484 tests backend / 241 frontend, toujours verts)"
+last_updated: "2026-07-28 (blocages d'ouverture de l'Epic 2 TOUS soldés : bundle QUALITÉ-CI livré, D1/D2/D4 tranchées, ex-bundle SESSION-PARTAGÉE trié et rerouté, story 2-7 créée. Garde D2 livrée avec preuve par mutation. 487 tests backend / 241 frontend)"
 project: Escrow_claude (Production)
 project_key: NOKEY
 tracking_system: file-system
@@ -100,6 +100,11 @@ development_status:
   2-1-fondation-ui-tokens-design-i18n: backlog
   2-2-bibliotheque-composants-base: backlog
   2-3-layout-trois-espaces-navigation: backlog
+  # ORDRE D'EXÉCUTION : 2-7 se place ICI, juste après 2-3 (numérotée 2.7 pour ne pas
+  # renuméroter 2-4..2-6, dont les clés sont référencées ailleurs). Décision D4 du
+  # 2026-07-28 ; ferme la faille avant que 2-4/2-5/2-6 n'empilent des parcours
+  # authentifiés, et le bouton de déconnexion a déjà sa place définitive après 2-3.
+  2-7-politique-session-appareil-partage: backlog # porte D4 + ses 4 satellites (ex-bundle SESSION-PARTAGÉE)
   2-4-inscription-otp-consentement-entreprise: backlog
   2-5-multi-utilisateur-roles-invitations: backlog
   2-6-securite-compte-reset-2fa-totp: backlog
@@ -219,7 +224,7 @@ action_items:
     action: "Bundle SESSION-PARTAGÉE (9 entrées) en tête d'Epic 2 : déconnexion non propagée aux onglets, index d'expiration Workbox, logoutUser sans timeout, courses de lecture A vers B, verrou de rejeu. Même surface que celle que l'epic réécrit."
     owner: "Oscard"
     status: in-progress
-    note: "2026-07-28 : TRIÉ et ROUTAGE CORRIGÉ — ce n'était pas un bundle, et sa justification était fausse. Le balayage le routait « en tête d'Epic 2, même surface que celle que l'epic réécrit » ; or epics.md dit l'inverse dans le contexte brownfield de l'epic (« Les stories étendent l'existant sans le réécrire ») et aucun AC des 6 stories ne touche le cycle de vie de session — 2-6 en est la plus proche et ne couvre que la révocation au changement de mot de passe. Les 9 entrées se partitionnent en trois familles : (a) UNE DÉCISION PRODUIT, D4, qui en commande QUATRE — tant que la politique de session n'est pas fixée, la propagation inter-onglets, la sémantique du profil illisible, le timeout de logoutUser et l'époque de session ne sont pas concevables, ce sont quatre implémentations d'une politique inexistante ; (b) TROIS entrées qui appartiennent ailleurs — index d'expiration Workbox et réponse en vol recréant le cache vont à la 11-3 / revue PWA (leurs propres évidences le disaient déjà), verrou de rejeu va à l'Epic 9 (fenêtre étroite, rejeu différé jamais perdu) ; (c) UNE entrée autonome — couverture de test du bouton de déconnexion et du câblage main.js, faisable sans attendre D4, mais à écrire AVEC la story 2-3 qui déplacera ce bouton. Faits revérifiés contre le code, aucun périmé : ttl-seconds 86400, jeton en localStorage, ni BroadcastChannel ni écouteur storage, aucun AbortController sur logoutUser, aucune expiration d'inactivité. D4 TRANCHÉE le 2026-07-28 (voir l'action item dédié). RESTE À DÉCIDER : où atterrit la story qui porte D4 + ses 4 satellites — story dédiée ou extension des AC de 2-6."
+    note: "2026-07-28 : TRIÉ et ROUTAGE CORRIGÉ — ce n'était pas un bundle, et sa justification était fausse. Le balayage le routait « en tête d'Epic 2, même surface que celle que l'epic réécrit » ; or epics.md dit l'inverse dans le contexte brownfield de l'epic (« Les stories étendent l'existant sans le réécrire ») et aucun AC des 6 stories ne touche le cycle de vie de session — 2-6 en est la plus proche et ne couvre que la révocation au changement de mot de passe. Les 9 entrées se partitionnent en trois familles : (a) UNE DÉCISION PRODUIT, D4, qui en commande QUATRE — tant que la politique de session n'est pas fixée, la propagation inter-onglets, la sémantique du profil illisible, le timeout de logoutUser et l'époque de session ne sont pas concevables, ce sont quatre implémentations d'une politique inexistante ; (b) TROIS entrées qui appartiennent ailleurs — index d'expiration Workbox et réponse en vol recréant le cache vont à la 11-3 / revue PWA (leurs propres évidences le disaient déjà), verrou de rejeu va à l'Epic 9 (fenêtre étroite, rejeu différé jamais perdu) ; (c) UNE entrée autonome — couverture de test du bouton de déconnexion et du câblage main.js, faisable sans attendre D4, mais à écrire AVEC la story 2-3 qui déplacera ce bouton. Faits revérifiés contre le code, aucun périmé : ttl-seconds 86400, jeton en localStorage, ni BroadcastChannel ni écouteur storage, aucun AbortController sur logoutUser, aucune expiration d'inactivité. D4 TRANCHÉE le 2026-07-28 (voir l'action item dédié). ATTERRISSAGE DÉCIDÉ le 2026-07-28 : story DÉDIÉE 2-7 (politique de session sur appareil partagé), à exécuter juste APRÈS 2-3 — numérotée 2.7 pour ne pas renuméroter 2-4..2-6. Après 2-3 le bouton de déconnexion a sa place définitive donc son test s'écrit une fois ; et la faille se ferme avant que 2-4/2-5/2-6 n'empilent des parcours authentifiés. AC rédigés dans epics.md : sessionStorage + « rester connecté », expiration d'inactivité contrôlée AUSSI au démarrage, propagation inter-onglets, attente bornée sur logoutUser, état incohérent du profil traité explicitement, époque de session contre les courses de lecture, et couverture par mutation du bouton de déconnexion et du câblage main.js."
   - epic: 2
     action: "DÉCISION D4 — fermer l'onglet sans se déconnecter laisse la session utilisable 24 h pour la personne suivante : mode de défaillance DOMINANT de l'appareil partagé (NFR-P8), resté entier après la Story 1.9."
     owner: "Oscard"
@@ -228,11 +233,13 @@ action_items:
   - epic: 1
     action: "DÉCISION D1 — oracle d'énumération d'e-mails sur POST /api/v1/escrow : « No seller registered with that email » (400) se distingue d'une création réussie, donc le fichier des utilisateurs est énumérable. Même classe de défaut que tout l'Epic 1, sur une autre surface. À trancher pendant que le contexte anti-énumération est frais."
     owner: "Oscard"
-    status: open
+    status: done
+    note: "2026-07-28 : TRANCHÉE — contrainte dure portée sur la Story 5-1, pas de correctif sur place. Motif : l'AC de 5-1 supprime l'oracle PAR CONSTRUCTION (un email inconnu déclenche une invitation au lieu d'un refus, donc les deux branches convergent) ; patcher l'endpoint POC aujourd'hui reviendrait à inventer une réponse indistinguable, plus son test jumeau, pour un flux réécrit deux epics plus loin. Risque borné : aucune production n'existe et la 11-3 (stack production) est au backlog. Défaut confirmé en place : EscrowService.java:69. AC d'indistinguabilité + test jumeau (gabarit AntiEnumerationIntegrationTest) AJOUTÉS aux AC de 5-1 dans epics.md, avec un encadré CONTRAINTE DURE disant que si le chemin invitation était reporté ou découpé, l'oracle devrait être fermé séparément AVANT toute mise en production."
   - epic: 1
     action: "DÉCISION D2 — comptes ADMIN auto-attribués AVANT la Story 1.1 : ni révoqués ni audités. Le correctif ferme la porte, il ne rattrape pas ceux qui sont déjà entrés. Migration de données à décider."
     owner: "Oscard"
-    status: open
+    status: done
+    note: "2026-07-28 : TRANCHÉE, et la prémisse était partiellement fausse. Il n'existe AUCUNE production (README : déploiement cloud hors périmètre POC ; 11-3 au backlog), donc aucun compte légataire réel à révoquer et aucune migration de données à écrire. Le vrai risque est ailleurs et plus vicieux : AdminBootstrap:52 sortait EN SILENCE sur existsByRole(ADMIN), si bien que promouvoir une base de développement en production aurait conservé l'ADMIN auto-attribué ET supprimé l'amorçage légitime — l'amorçage croyant son travail fait. Ce n'est pas une migration, c'est une discipline de déploiement. Deux mesures retenues : (1) CRITÈRE D'ENTRÉE de la Story 11-3 — la production démarre sur une base VIDE ; (2) GARDE AU DÉMARRAGE LIVRÉE ce jour — en profil prod, AdminBootstrap refuse de démarrer si un ADMIN existe dont l'email n'est pas celui de la configuration (existsByRoleAndEmailNot). Bornée au profil prod pour ne pas gêner le développement, et conditionnée à la présence de la configuration pour qu'un exploitant retirant les identifiants après le premier démarrage ne casse pas les redémarrages suivants. 3 tests, dont la contre-épreuve du redémarrage légitime ; prouvée par mutation (garde neutralisée -> seul le test du scénario D2 rougit). DURÉE DE VIE : à revoir en Story 7-2, qui rendra un second ADMIN légitime."
   - epic: 1
     action: "Auditer les endpoints qui court-circuitent la couche service : un contrôleur qui parle directement au repository n'hérite d'aucune garde (AD-3 et consorts vivent côté service). WebhookController était le cas ; rien ne dit qu'il était le seul."
     owner: "Oscard"

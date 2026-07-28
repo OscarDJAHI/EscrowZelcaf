@@ -16,6 +16,16 @@ public interface UserRepository extends JpaRepository<User, Long> {
     boolean existsByRole(Role role);
 
     /**
+     * Existe-t-il un ADMIN AUTRE que celui que l'amorçage est configuré pour créer ?
+     *
+     * <p>Sert la garde D2 d'{@code AdminBootstrap} : en production, un ADMIN déjà présent
+     * dont l'email n'est pas celui de la configuration ne peut venir que d'une base
+     * antérieure — typiquement une base de développement promue, où le rôle était encore
+     * auto-attribuable (avant la Story 1.1).
+     */
+    boolean existsByRoleAndEmailNot(Role role, String email);
+
+    /**
      * Incrémente {@code token_version} ATOMIQUEMENT en base (revue 1.6).
      *
      * <p>Le lire-modifier-écrire d'origine ({@code setTokenVersion(get + 1)} puis
