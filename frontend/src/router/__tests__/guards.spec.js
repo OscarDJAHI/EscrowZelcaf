@@ -83,6 +83,17 @@ describe('Réponse UNIFORME — aucun oracle d’énumération (NFR-P9)', () => 
     expect((await navigate(BUYER, '/admin')).path).toBe('/admin')
     expect((await navigate(BUYER, '/nimporte-quoi')).path).toBe('/nimporte-quoi')
   })
+
+  it('conserve aussi la chaîne de requête et le fragment', async () => {
+    // Le refus les recopie (`query: to.query, hash: to.hash`) et rien ne le relisait. Les
+    // perdre distinguerait à nouveau les deux cas : une adresse inconnue garde les siens,
+    // un espace refusé les aurait effacés — même écran, URL amputée d'un côté seulement.
+    const interdit = await navigate(BUYER, '/admin?onglet=kyb#section')
+    const inexistant = await navigate(BUYER, '/inconnu?onglet=kyb#section')
+    expect(interdit.query).toEqual({ onglet: 'kyb' })
+    expect(interdit.hash).toBe('#section')
+    expect(interdit.fullPath.replace('/admin', '')).toBe(inexistant.fullPath.replace('/inconnu', ''))
+  })
 })
 
 describe('Session incohérente — jeton valide, profil sans rôle', () => {
@@ -100,6 +111,20 @@ describe('Session incohérente — jeton valide, profil sans rôle', () => {
     const route = await navigate(sansRole, '/recovery/entry-1')
     expect(route.query.redirect).toBe('/recovery/entry-1')
   })
+
+  // Un rôle emprunté à la chaîne de prototypes est une session incohérente comme une
+  // autre, et doit donc rendre la connexion ATTEIGNABLE. Avant correctif, `spaceForRole`
+  // rendait ici une fonction au lieu de `null` : la branche ci-dessus était sautée et
+  // `/auth` finissait lui-même sur l'écran de refus. L'utilisateur ne pouvait plus rien
+  // réparer — ni sa session, ni l'accès à ses fichiers de récupération.
+  it.each(['constructor', '__proto__', 'toString'])(
+    'un rôle « %s » n’enferme pas l’utilisateur hors de la connexion',
+    async (role) => {
+      const route = await navigate({ id: 8, email: 'e@corp.example', role }, '/recovery/entry-1')
+      expect(route.name).toBe('auth')
+      expect(route.query.redirect).toBe('/recovery/entry-1')
+    },
+  )
 
   // `it.each` et non une boucle : chaque navigation réinitialise les modules, un état
   // GLOBAL, donc elles ne peuvent pas s'exécuter en parallèle. Un cas par test dit cela

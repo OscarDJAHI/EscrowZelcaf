@@ -285,4 +285,68 @@ après restauration :
 
 | Date | Version | Description |
 |---|---|---|
+| 2026-07-28 | 0.2 | Revue de code (3 couches adversariales, haiku) : correctif du contrat `null` défait par la chaîne de prototypes (enfermement hors de `/auth`), landmarks `<main>` dédoublés sur les écrans « à venir », conservation de `query`/`hash` sur le refus. 422 tests. |
 | 2026-07-28 | 0.1 | Implémentation de la Story 2.3 : trois espaces, guards par rôle, réponse uniforme (NFR-P9), shells client et desktop, correction du manifeste PWA et garde `verify:pwa`, décision de gouttière. Statut → review. |
+
+## Senior Developer Review (AI)
+
+**Date :** 2026-07-28 · **Plage :** `ac0449c..1714ff5` · **Modèle des couches :** haiku (choix utilisateur)
+**Issue :** Changes Requested → **corrigées dans la foulée**
+
+### Couches exécutées
+
+| Couche | Appels d'outil | Pistes | Retenues |
+|---|---|---|---|
+| Blind Hunter | 3 | 11 | 2 |
+| Edge Case Hunter | 3 | 4 | 1 |
+| Acceptance Auditor | 39 | 3 | 2 (dont 1 en commun) |
+
+Les deux premières couches ont cité des numéros de ligne **du patch**, pas des fichiers : elles
+ont lu le diff sans le recouper avec le code. Sur leurs 15 pistes, 2 tenaient. L'Acceptance
+Auditor est la seule à avoir travaillé sur l'arbre réel, et c'est elle qui a trouvé le défaut
+d'imbrication des landmarks. Constat reconduit de la Story 2-2 : haiku produit du volume, pas
+de la vérification.
+
+### Action Items
+
+- [x] **[HAUTE] Rôle issu de la chaîne de prototypes défait le contrat `null`.**
+  `SPACE_BY_ROLE` est un objet littéral, donc héritier d'`Object.prototype` :
+  `spaceForRole('constructor')` rendait la fonction `Object`, et `?? null` ne rattrape ni une
+  fonction ni une méthode. **La couche annonçait un « contournement d'autorisation » — c'est
+  faux**, `resolveSpaceAccess` refusait déjà (aucune de ces valeurs n'égale un nom d'espace).
+  Le dégât réel est l'inverse : un **ENFERMEMENT**. `space` cessant d'être `null`, le routeur
+  sautait sa branche « session incohérente » et `/auth` finissait lui-même sur l'écran de
+  refus — plus aucun moyen de rejoindre la connexion pour réparer le profil, ni d'atteindre
+  l'écran de récupération. Corrigé par `Object.hasOwn`. *9 tests rouges sans le correctif.*
+
+- [x] **[HAUTE] Deux `<main>` imbriqués sur les quatre écrans « à venir ».**
+  `ComingSoonView` portait son propre `<main class="… p-4">` alors qu'il s'affiche DANS le
+  `<main>` du shell depuis que `App.vue` résout le layout sur `meta.space`. Landmark imbriqué
+  (illisible pour un lecteur d'écran) et gouttière empilée. Régression introduite par le
+  câblage du shell lui-même. Corrigé en retirant l'enveloppe de la vue ; `AccessDeniedView`
+  garde la sienne, servie sans shell. **La garde couvre les huit routes** et non la seule vue
+  fautive — corriger celle-ci n'aurait pas empêché la suivante. *4 tests rouges sans elle.*
+
+- [x] **[MOYENNE] `query` et `hash` recopiés sur le refus sans qu'aucune assertion ne le relise.**
+  Les perdre rouvrait l'oracle : une adresse inconnue garde les siens, un espace refusé les
+  aurait effacés — même écran, URL amputée d'un seul côté. *1 test rouge sans le correctif.*
+
+### Écartés, avec la raison
+
+- **« Défaut sur `meta.space` manquant → `?? SPACES.CLIENT` »** — correctif REFUSÉ. Ce serait
+  accorder l'espace client par défaut à toute route mal déclarée, soit exactement la fuite de
+  privilège que `space !== undefined` empêche. Le refus systématique est le comportement voulu.
+- **`/auth` sans assertion d'absence de shell** — désormais couvert : enveloppé, il rendrait
+  deux `<main>`.
+- **Métacaractères regex sur les noms de tokens** (`verify-pwa.mjs`) — les deux noms sont des
+  littéraux sans métacaractère. Théorique.
+- **`ARBITRATOR` « mine temporelle »** — c'est la décision T2 de la story, documentée dans
+  `spaces.js`, `index.js` et la vue. Pas un défaut.
+- Coût de `vi.resetModules`, `verify:pwa` présumant un build antérieur, condition `not-found`
+  « qui sent l'hésitation » : observations de style, aucun scénario de panne.
+
+### État après correction
+
+422 tests / 29 fichiers (403 avant revue, +19). `npm run lint` propre, `verify:no-demo` et
+`verify:pwa` verts. Les trois correctifs sont prouvés par mutation, conformément à la règle
+du projet.

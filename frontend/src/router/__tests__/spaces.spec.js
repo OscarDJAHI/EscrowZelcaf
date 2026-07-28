@@ -39,6 +39,32 @@ describe('spaceForRole — le routage se fonde EXCLUSIVEMENT sur le rôle (AD-21
   })
 })
 
+describe('Rôles issus de la chaîne de prototypes', () => {
+  // `SPACE_BY_ROLE` est un objet littéral : il HÉRITE d'`Object.prototype`. Une lecture
+  // par `SPACE_BY_ROLE[role]` avec `role = 'constructor'` rend donc la fonction `Object`,
+  // pas `undefined` — et `?? null` ne rattrape rien, une fonction n'étant ni l'un ni
+  // l'autre. Le contrat « rôle non reconnu → aucun espace » est alors muet.
+  //
+  // L'accès reste refusé (aucune de ces valeurs n'égale un nom d'espace), mais le dégât
+  // est ailleurs : `space` cessant d'être `null`, la branche « session incohérente » du
+  // routeur est sautée, et l'utilisateur ne peut plus atteindre `/auth` pour réparer son
+  // profil. Il est enfermé. C'est exactement ce que cette branche existe pour éviter.
+  it.each(['constructor', 'toString', 'valueOf', 'hasOwnProperty', '__proto__', 'isPrototypeOf'])(
+    'ne donne AUCUN espace au rôle « %s »',
+    (role) => {
+      expect(spaceForRole(role)).toBeNull()
+    },
+  )
+
+  it('refuse ces rôles sur les trois espaces', () => {
+    for (const role of ['constructor', '__proto__']) {
+      for (const space of Object.values(SPACES)) {
+        expect(resolveSpaceAccess(role, space), `${role} / ${space}`).toEqual({ allowed: false })
+      }
+    }
+  })
+})
+
 describe('resolveSpaceAccess — la réponse est UNIFORME (NFR-P9)', () => {
   it('laisse passer un utilisateur dans son propre espace', () => {
     expect(resolveSpaceAccess('BUYER', SPACES.CLIENT)).toEqual({ allowed: true })

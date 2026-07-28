@@ -60,6 +60,25 @@ describe('Espace client', () => {
   })
 })
 
+describe('Un seul landmark principal par écran', () => {
+  // Le shell porte le `<main>` ; une vue qui en déclare un second imbrique deux landmarks,
+  // ce qu'un lecteur d'écran ne sait pas interpréter, et empile deux gouttières. Corriger
+  // la vue fautive ne suffisait pas — la suivante aurait refait la même chose. Cette garde
+  // couvre TOUTES les routes, y compris celles qu'aucune story n'a encore écrites.
+  it.each([
+    ['/', BUYER],
+    ['/transactions', BUYER],
+    ['/wallet', BUYER],
+    ['/support', BUYER],
+    ['/profile', BUYER],
+    ['/admin', ADMIN],
+    ['/pas-une-route', BUYER],
+    ['/auth', null],
+  ])('%s ne rend qu’UN <main>', async (path, user) => {
+    expect((await open(path, user)).findAll('main')).toHaveLength(1)
+  })
+})
+
 describe('Espace back-office', () => {
   it('s’affiche avec le shell desktop et sa propre navigation', async () => {
     const wrapper = await open('/admin', ADMIN)

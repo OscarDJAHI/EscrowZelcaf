@@ -69,7 +69,18 @@ export const HOME_BY_SPACE = Object.freeze({
  * privilèges fuient.
  */
 export function spaceForRole(role) {
-  return SPACE_BY_ROLE[role] ?? null
+  // `Object.hasOwn` et non une simple lecture indexée : `SPACE_BY_ROLE` est un objet
+  // littéral, il HÉRITE donc d'`Object.prototype`. `SPACE_BY_ROLE['constructor']` rend la
+  // fonction `Object`, `SPACE_BY_ROLE['toString']` une méthode — et `?? null` ne rattrape
+  // ni l'une ni l'autre, une fonction n'étant ni `null` ni `undefined`. Le contrat annoncé
+  // juste au-dessus était donc faux pour toute une famille de valeurs.
+  //
+  // L'accès n'a jamais fuité pour autant : aucune de ces valeurs n'égale un nom d'espace,
+  // et `resolveSpaceAccess` refusait déjà. Le dégât était l'inverse d'un privilège — un
+  // ENFERMEMENT. `space` cessant d'être `null`, le routeur sautait sa branche « session
+  // incohérente » et `/auth` lui-même finissait sur l'écran de refus : plus aucun moyen
+  // de rejoindre la connexion pour réparer le profil.
+  return Object.hasOwn(SPACE_BY_ROLE, role) ? SPACE_BY_ROLE[role] : null
 }
 
 /**
