@@ -43,7 +43,16 @@ function bareTextNodes(source, rel = '?') {
   if (!opening) {
     throw new Error(`${rel} : aucune balise <template> trouvée — la garde ne peut pas lire ce fichier`)
   }
-  const template = source.slice(opening.index + opening[0].length)
+  // BORNÉ à la fermante. La première correction n'avait fait que DÉPLACER le défaut :
+  // découper de la balise ouvrante jusqu'à la fin du fichier fait entrer un bloc
+  // `<style>` — un motif de SFC parfaitement ordinaire — dans le texte « rendu », et la
+  // garde se met alors à échouer sur du CSS (constat de la 2e passe de revue).
+  const body = source.slice(opening.index + opening[0].length)
+  const closing = body.lastIndexOf('</template>')
+  if (closing < 0) {
+    throw new Error(`${rel} : balise </template> fermante absente — la garde ne peut pas borner ce fichier`)
+  }
+  const template = body.slice(0, closing)
   return (
     template
       // Les commentaires HTML ne s'affichent pas.
@@ -156,7 +165,33 @@ function scriptSource(body, rel) {
   const raw = rel.endsWith('.vue')
     ? [...body.matchAll(/<script[^>]*>([\s\S]*?)<\/script>/g)].map((m) => m[1]).join('\n')
     : body
-  return raw.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/[^\n]*/g, '$1')
+  // Le retrait des commentaires de ligne se fait en SUIVANT l'état de citation :
+  // un `replace` naïf sur `//` amputait toute ligne portant une URL protocol-relative
+  // ou n'importe quelle chaîne contenant `//`, et pouvait ainsi effacer un littéral en
+  // prose voisin — donc le cacher à la garde (constat de la 2e passe de revue).
+  return stripLineComments(raw.replace(/\/\*[\s\S]*?\*\//g, ''))
+}
+
+/** Retire les `//` de fin de ligne, en ignorant ceux situés à l'intérieur d'une chaîne. */
+function stripLineComments(code) {
+  return code
+    .split('\n')
+    .map((line) => {
+      let quote = null
+      for (let i = 0; i < line.length; i += 1) {
+        const c = line[i]
+        if (quote) {
+          if (c === '\\') i += 1
+          else if (c === quote) quote = null
+        } else if (c === "'" || c === '"' || c === '`') {
+          quote = c
+        } else if (c === '/' && line[i + 1] === '/') {
+          return line.slice(0, i)
+        }
+      }
+      return line
+    })
+    .join('\n')
 }
 
 describe('Aucune chaîne en prose dans le code, hors catalogues', () => {
@@ -167,8 +202,11 @@ describe('Aucune chaîne en prose dans le code, hors catalogues', () => {
     ).filter((rel) => !PENDING_MIGRATION.has(rel))
     for (const rel of files) {
       const code = scriptSource(readFileSync(resolve(SRC, rel), 'utf8'), rel)
-      const literals = [...code.matchAll(/'([^'\\\n]{2,})'|"([^"\\\n]{2,})"/g)]
-        .map((m) => m[1] ?? m[2])
+      // Les backticks comptent : ce dépôt en est plein, et un littéral en prose écrit
+      // `comme ceci` passait la garde en silence — ce qui vidait de son sens la
+      // correction censée voir les chaînes vivant dans un `.js` (constat de revue).
+      const literals = [...code.matchAll(/'([^'\\\n]{2,})'|"([^"\\\n]{2,})"|`([^`\\$\n]{2,})`/g)]
+        .map((m) => m[1] ?? m[2] ?? m[3])
         .filter((v) => /^\p{Lu}\p{Ll}/u.test(v))
         .filter((v) => !PROSE_ALLOWED.has(v))
       if (literals.length) offenders.push(`${rel} → ${JSON.stringify([...new Set(literals)])}`)

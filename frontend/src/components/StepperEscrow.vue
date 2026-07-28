@@ -1,6 +1,10 @@
 <script setup>
+import { stateLabel } from '@/i18n/labels'
+import { useI18n } from 'vue-i18n'
 import { computed } from 'vue'
 import { STATE_COLORS } from '@/utils/stateMachine'
+
+const { t, te } = useI18n()
 
 const props = defineProps({
   currentState: { type: String, required: true },
@@ -27,6 +31,11 @@ const path = computed(() => {
   }
   return states
 })
+
+/** Libellé d'état, avec dégradation lisible pour un état hors catalogue. */
+function label(state) {
+  return stateLabel({ t, te }, state)
+}
 </script>
 
 <template>
@@ -44,7 +53,7 @@ const path = computed(() => {
             {{ index + 1 }}
           </div>
           <span class="mt-1 text-[11px] font-medium leading-tight text-gray-600">
-            {{ $t(`state.${state}`) }}
+            {{ label(state) }}
           </span>
         </div>
         <div

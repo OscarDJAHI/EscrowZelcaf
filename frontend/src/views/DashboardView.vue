@@ -1,4 +1,5 @@
 <script setup>
+import { roleLabel } from '@/i18n/labels'
 import { useI18n } from 'vue-i18n'
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
@@ -8,7 +9,7 @@ import { endSession } from '@/stores/session'
 import TransactionCard from '@/components/TransactionCard.vue'
 import NewTransactionModal from '@/components/NewTransactionModal.vue'
 
-const { t } = useI18n()
+const { t, te } = useI18n()
 
 const auth = useAuthStore()
 const escrowStore = useEscrowStore()
@@ -84,7 +85,7 @@ async function logout() {
         <h1 class="text-xl font-bold text-gray-900">{{ $t('dashboard.myTransactions') }}</h1>
         <p class="text-sm text-gray-500">
           {{ auth.user?.email }} ·
-          <span class="font-medium">{{ auth.role ? $t(`role.${auth.role}`) : '' }}</span>
+          <span class="font-medium">{{ roleLabel({ t, te }, auth.role) }}</span>
         </p>
       </div>
       <div class="flex shrink-0 items-center gap-2">

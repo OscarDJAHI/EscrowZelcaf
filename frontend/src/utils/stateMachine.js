@@ -58,8 +58,22 @@ export const STATE_COLORS = Object.fromEntries(
   Object.entries(STATE_TOKENS).map(([state, token]) => [state, TOKEN_CLASSES[token]]),
 )
 
-/** Famille sémantique du hors-ligne, hors machine à états (bannière, file de synchro). */
+/**
+ * Familles sémantiques de la chrome hors-ligne — DEUX états, pas un.
+ *
+ * <p>Le bandeau distingue « vous êtes hors ligne » (rien ne part) de « en ligne, la file
+ * se vide » (tout part, patientez). En remplaçant le ternaire d'origine par une classe
+ * unique, la Story 2.1 avait SUPPRIMÉ cette distinction au lieu de la re-pointer vers les
+ * tokens — les deux états s'affichaient à l'identique (constat de la 2e passe de revue).
+ *
+ * <p>DESIGN.md range « hors-ligne / en file de sync » dans une même ligne de son tableau
+ * d'états, ce qui vaut pour la couleur d'un ÉLÉMENT en file. Le bandeau, lui, est de la
+ * chrome applicative et doit rester lisible d'un coup d'œil : l'attente subie garde la
+ * famille `offline`, la synchronisation en cours prend `info`, qui est la famille de
+ * l'avancement dans tout le reste de l'application.
+ */
 export const OFFLINE_CLASSES = TOKEN_CLASSES.offline
+export const SYNCING_CLASSES = TOKEN_CLASSES.info
 
 /**
  * Clés i18n des événements — PAS leurs libellés.

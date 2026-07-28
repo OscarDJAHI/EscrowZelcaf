@@ -119,6 +119,22 @@ Revue du 2026-07-28 — 3 couches adversariales sur sonnet (modèle différent d
 - Versions conformes à la spec, suite 264/264, lint propre, aucun dégradé, aucun `#50DF77`, aucun navy en couleur d'état.
 
 
+### Review Findings — 2e passe (2026-07-28)
+
+Relancée sur le diff `02f230d..d612925`. **Deux couches sur trois sont mortes en cours de route sur une panne réseau (`ENOTFOUND`) : cette passe est INCOMPLÈTE et doit être rejouée.** Ce qu'elles ont eu le temps de confirmer avant de tomber est néanmoins réel et obtenu par exécution : le test `survivesEndSession` attrape bien la mutation, et retirer une entrée de `PENDING_MIGRATION` fait bien rougir la suite en nommant les chaînes.
+
+L'Edge Case Hunter est allé au bout. **Ses constats les plus sérieux sont des régressions introduites par la passe de correction elle-même** — ce qui est précisément la raison d'être d'une seconde passe.
+
+- [x] [Review][Patch] HAUT — `$t(null)` FAISAIT LEVER le rendu [`stateMachine.js:129`, `TransactionDetailView.vue:181`] — `labelKey: EVENT_LABEL_KEYS[event] || null` puis `$t(action.labelKey)`. Vérifié : vue-i18n lève « Invalid arguments » et n'entoure pas l'appel d'un `catch`, donc l'exception traversait le rendu de la liste de boutons. L'implémentation d'ORIGINE dégradait sur le nom de l'événement : la migration i18n avait remplacé une dégradation gracieuse par un plantage. Corrigé par `src/i18n/labels.js`, règle unique pour états, rôles et événements : clé connue → traduction, tout le reste → forme lisible, jamais de clé brute, jamais de levée. 10 tests dédiés.
+- [x] [Review][Patch] MOYEN — Clés brutes affichées pour toute valeur hors catalogue [`StateBadge`, `StepperEscrow`, `AuditTimeline`, `DashboardView`] — `state.EXPIRED` (état que l'Epic 5 introduira, le commentaire du code le dit lui-même), `state.undefined` quand `nextState` est absent, `role.XYZ`. Même correctif que ci-dessus.
+- [x] [Review][Patch] MOYEN — La bannière avait PERDU la distinction hors-ligne / synchronisation [`OnlineBanner.vue:17`] — le ternaire d'origine n'a pas été re-pointé vers les tokens, il a été SUPPRIMÉ : les deux états s'affichaient à l'identique. Rétabli via deux familles nommées (`OFFLINE_CLASSES` pour l'attente subie, `SYNCING_CLASSES` = famille `info` pour l'avancement), l'écran ne choisissant toujours pas ses couleurs lui-même.
+- [x] [Review][Patch] MOYEN — Ma correction de `bareTextNodes` avait DÉPLACÉ le défaut au lieu de le fermer [`noHardcodedStrings.spec.js`] — le découpage allait de la balise ouvrante jusqu'à la fin du fichier, faisant entrer un bloc `<style>` dans le texte « rendu ». Borné à la fermante, avec échec bruyant si elle manque. Prouvé par mutation : un `<style scoped>` ajouté ne fait plus rougir.
+- [x] [Review][Patch] MOYEN — La garde anti-prose ne voyait pas les littéraux entre BACKTICKS [`noHardcodedStrings.spec.js`] — dans un dépôt qui en est plein, cela vidait de son sens la correction censée voir les chaînes vivant dans un `.js`. Prouvé par mutation : un littéral en backticks est désormais signalé.
+- [x] [Review][Patch] BAS — Le retrait des commentaires pouvait AMPUTER une chaîne contenant `//` [`noHardcodedStrings.spec.js`] — une URL protocol-relative tronquait la ligne et pouvait masquer un littéral voisin. Remplacé par un balayage qui suit l'état de citation.
+
+**Reste dû :** rejouer les deux couches tombées (Blind Hunter, Acceptance Auditor) sur le diff cumulé.
+
+
 ## Dev Notes
 
 ### ⚠️ Divergences constatées entre le code actuel et la spec — à corriger, pas à conserver

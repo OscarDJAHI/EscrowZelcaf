@@ -1,4 +1,5 @@
 <script setup>
+import { eventLabel } from '@/i18n/labels'
 import { useI18n } from 'vue-i18n'
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
@@ -14,7 +15,7 @@ import EvidenceList from '@/components/EvidenceList.vue'
 import OpenDisputeForm from '@/components/OpenDisputeForm.vue'
 import { canOpenDispute, getAllowedEventsForTransaction } from '@/utils/stateMachine'
 
-const { t, locale } = useI18n()
+const { t, locale, te } = useI18n()
 
 const DEPOSIT_STATES = ['FUNDS_LOCKED', 'SHIPPED', 'DISPUTED']
 
@@ -178,7 +179,7 @@ onBeforeUnmount(() => {
             :class="buttonClasses(action.event)"
             @click="trigger(action.event)"
           >
-            {{ sendingEvent === action.event ? $t('common.sending') : $t(action.labelKey) }}
+            {{ sendingEvent === action.event ? $t('common.sending') : eventLabel({ t, te }, action) }}
           </button>
           <button
             v-if="canOpen"

@@ -1,9 +1,10 @@
 <script setup>
+import { stateLabel } from '@/i18n/labels'
 import { useI18n } from 'vue-i18n'
 import { computed } from 'vue'
 import { STATE_COLORS } from '@/utils/stateMachine'
 
-const { locale } = useI18n()
+const { locale, t, te } = useI18n()
 
 const props = defineProps({
   logs: { type: Array, default: () => [] },
@@ -15,6 +16,11 @@ const sortedLogs = computed(() =>
 
 function formatDate(timestamp) {
   return new Date(timestamp).toLocaleString(locale.value)
+}
+
+/** Libellé d'état, avec dégradation lisible — `nextState` peut être absent. */
+function label(state) {
+  return stateLabel({ t, te }, state)
 }
 </script>
 
@@ -28,8 +34,8 @@ function formatDate(timestamp) {
       />
       <div class="flex-1 border-b border-gray-100 pb-3 last:border-none">
         <p class="text-sm font-medium text-gray-800">
-          {{ $t(`state.${log.previousState || 'NONE'}`) }} →
-          {{ $t(`state.${log.nextState}`) }}
+          {{ label(log.previousState || 'NONE') }} →
+          {{ label(log.nextState) }}
         </p>
         <p class="text-xs text-gray-500">{{ $t('audit.by', { who: log.actionBy }) }} · {{ formatDate(log.timestamp) }}</p>
       </div>
