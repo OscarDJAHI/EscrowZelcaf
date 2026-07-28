@@ -4,7 +4,7 @@ baseline_commit: ac0449c6503893d3706c4d23626067ec375b66f3
 
 # Story 2.3: Layout trois espaces et navigation responsive
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
