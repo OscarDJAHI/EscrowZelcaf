@@ -146,7 +146,12 @@ Blind Hunter et Acceptance Auditor rejoués sur `02f230d..HEAD` après le retour
 
 **Confirmés par exécution, pas par lecture :** la résilience au stockage inaccessible (mutation refaite par le relecteur), le caractère réellement bloquant de `PENDING_MIGRATION` (entrée retirée → suite rouge nommant les dix chaînes), le bornage du gabarit sur `</template>`, l'absence de consommateur orphelin après les renommages d'exports, et le fait que les trois assertions réalignées de `SyncFailureNotice.spec.js` ne sont pas devenues tautologiques.
 
-**Reste dû :** l'Acceptance Auditor de cette 3e passe n'a pas encore rendu. Et le relecteur signale n'avoir aucun test de composant sur `TransactionDetailView` ni `OnlineBanner` : les correctifs AC3 et la distinction hors-ligne y reposent sur la relecture, pas sur une assertion.
+**Trou de couverture signalé par le relecteur, COMBLÉ le 2026-07-28 :** il n'existait aucun test de composant sur `TransactionDetailView` ni `OnlineBanner` — les correctifs AC3 et la distinction hors-ligne y reposaient sur la relecture seule.
+- `OnlineBanner.spec.js` (10 tests) : conditions d'apparition, et surtout l'assertion qui aurait attrapé la régression — « hors ligne » et « synchronisation en cours » ne portent PAS les mêmes classes. Une garde interdit en outre le retour d'une couleur codée en dur au niveau de l'écran (`bg-red-100`, `bg-amber-100`…), ce qui asservit l'AC2 sur cette surface.
+- `TransactionDetailView.spec.js` (5 tests) : le montant est rendu ET formaté différemment selon la langue (AC3), les boutons d'action affichent un libellé traduit et jamais le code d'événement, et une garde large vérifie qu'aucun préfixe de clé i18n n'échappe, sur cinq états.
+- Stabilité vérifiée : 3 exécutions du fichier et 2 suites complètes, toutes identiques — ce dépôt a un antécédent d'isolation de test défaillante.
+
+**Reste dû :** l'Acceptance Auditor de la 3e passe n'a pas encore rendu.
 
 
 ## Dev Notes
@@ -312,7 +317,7 @@ claude-opus-5 (dev-story, session interactive du 2026-07-28)
   - **P6..P14** `'Buyer'`, `hover:border-brand-300`, bannière hors-ligne lisant enfin `OFFLINE_CLASSES` (qui était du code mort), rôle brut du tableau de bord, « By », `--radius` par défaut, `letter-spacing` du montant, validation de l'argument de `createEscrowI18n`.
   - **P10 reporté** — six modules purs, correctif identique mais touchant la garde anti-dérive de `FAILURE_LABELS`. Dette énumérée fichier par fichier dans `PENDING_MIGRATION`.
   - **Bug introduit puis attrapé pendant cette passe** : un commentaire glissé entre `return` et l'expression a déclenché l'insertion automatique de point-virgule, rendant le calcul du montant mort. Build vert, suite verte — c'est le nouveau test du montant qui l'a révélé, et il porte désormais ce cas en commentaire.
-  - Vérification : **290 tests** (241 au départ, +34), lint propre, build OK.
+  - Vérification : **305 tests** (241 au départ, +34), lint propre, build OK.
 
 ## Change Log
 

@@ -97,7 +97,7 @@ development_status:
 
   # Epic 2 — Onboarding & comptes d'entreprise (2-1..2-3 = fondation UI, dérogation "As a développeur" assumée)
   epic-2: in-progress # ouvert le 2026-07-28 par la création de la Story 2-1
-  2-1-fondation-ui-tokens-design-i18n: review # 2026-07-28 : revue adversariale (3 couches sur sonnet) puis 14/15 correctifs appliqués — dont 5 hauts : démarrage bloqué si localStorage lève, AC3 formats de date/nombre, boutons d'action non traduits, 4 angles morts des gardes i18n, décision escrow_locale prouvée par mutation. 1 correctif reporté en dette NOMMÉE (6 modules purs, liste PENDING_MIGRATION) + 1 report vers 2.2 (règle d'élévation). 290 tests frontend, lint propre
+  2-1-fondation-ui-tokens-design-i18n: review # 2026-07-28 : revue adversariale (3 couches sur sonnet) puis 14/15 correctifs appliqués — dont 5 hauts : démarrage bloqué si localStorage lève, AC3 formats de date/nombre, boutons d'action non traduits, 4 angles morts des gardes i18n, décision escrow_locale prouvée par mutation. 1 correctif reporté en dette NOMMÉE (6 modules purs, liste PENDING_MIGRATION) + 1 report vers 2.2 (règle d'élévation). 305 tests frontend, lint propre
   2-2-bibliotheque-composants-base: backlog
   2-3-layout-trois-espaces-navigation: backlog
   # ORDRE D'EXÉCUTION : 2-7 se place ICI, juste après 2-3 (numérotée 2.7 pour ne pas
