@@ -74,7 +74,7 @@
 # Epics 6-7-8 → Epics 9-10 → Epic 11 en continu (11-9 avant production).
 
 generated: 2026-07-24
-last_updated: "2026-07-28 (Story 2-1 CLOSE après 3 passes de revue ; NEXT = 2-2 bibliothèque de composants — Story 2-1 créée, ready-for-dev. Blocages d'ouverture de l'Epic 2 TOUS soldés : bundle QUALITÉ-CI livré, D1/D2/D4 tranchées, ex-bundle SESSION-PARTAGÉE trié et rerouté, story 2-7 créée. Garde D2 livrée avec preuve par mutation. 487 tests backend / 241 frontend)"
+last_updated: "2026-07-28 (Story 2-1 close ; Story 2-2 créée ready-for-dev — Story 2-1 créée, ready-for-dev. Blocages d'ouverture de l'Epic 2 TOUS soldés : bundle QUALITÉ-CI livré, D1/D2/D4 tranchées, ex-bundle SESSION-PARTAGÉE trié et rerouté, story 2-7 créée. Garde D2 livrée avec preuve par mutation. 487 tests backend / 241 frontend)"
 project: Escrow_claude (Production)
 project_key: NOKEY
 tracking_system: file-system
@@ -98,7 +98,7 @@ development_status:
   # Epic 2 — Onboarding & comptes d'entreprise (2-1..2-3 = fondation UI, dérogation "As a développeur" assumée)
   epic-2: in-progress # ouvert le 2026-07-28 par la création de la Story 2-1
   2-1-fondation-ui-tokens-design-i18n: done # 2026-07-28 — 3 passes de revue adversariale (sonnet), 6 commits, 305 tests frontend (241 au départ). Passe 1 : défauts du produit (démarrage bloqué si localStorage lève, AC3 non tenue, boutons non traduits, 4 angles morts des gardes). Passes 2-3 : défauts des CORRECTIFS eux-mêmes ($t(null) qui levait, distinction visuelle supprimée, correctif détruit par un git checkout -- de mon propre test de mutation, échappatoire construite par l'auditeur). Dettes tracées : PENDING_MIGRATION (6 modules) et règle d'élévation -> 2-2
-  2-2-bibliotheque-composants-base: backlog
+  2-2-bibliotheque-composants-base: ready-for-dev # story créée 2026-07-28 ; porte AUSSI la dette d'élévation reportée de 2-1 (12 ombres sur 6 fichiers)
   2-3-layout-trois-espaces-navigation: backlog
   # ORDRE D'EXÉCUTION : 2-7 se place ICI, juste après 2-3 (numérotée 2.7 pour ne pas
   # renuméroter 2-4..2-6, dont les clés sont référencées ailleurs). Décision D4 du
