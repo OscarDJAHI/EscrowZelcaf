@@ -98,9 +98,28 @@ Livrer ici la **forme minimale** : un rattachement porteur d'un statut de gestio
 
 ## Tasks / Subtasks
 
-- [ ] **T0 — Arbitrer les blocages 1 et 2** (préalable bloquant)
-  - [ ] Soumettre la voie retenue pour le transport OTP (blocage 1) et la consigner dans les notes de complétion.
-  - [ ] Confirmer le refactor de la fabrique de comptes de test (blocage 2) avant de toucher `register`.
+- [x] **T0 — Arbitrer les blocages 1 et 2** (préalable bloquant) — **TRANCHÉ le 2026-07-28 par Oscard**
+
+  **Blocage 1 → VOIE 1 : port + outbox + adaptateur de développement.**
+  Conforme à AD-22, déjà retenu ailleurs dans le backlog (« un événement de notification est
+  persisté […] les canaux de livraison arrivent en Epic 8 »). Ne préempte pas le spike 8.1,
+  qui reste seul juge du fournisseur et de la délivrabilité par corridor.
+
+  **Ce que cela veut dire, sans arrondir : aucun e-mail n'atteindra une vraie boîte dans
+  cette story.** Le parcours d'inscription est complet, asservissable de bout en bout, et sa
+  dernière marche est une ligne d'outbox plus un journal. C'est à écrire dans les notes de
+  complétion ET à porter au ledger à la clôture, comme les deux dettes de la 2.3 — un statut
+  `done` ne doit pas laisser croire que l'OTP arrive chez l'utilisateur.
+
+  **Interdiction ferme qui accompagne la décision :** les tests et le développement
+  récupèrent le code **par le port** (adaptateur de capture). Jamais par un endpoint de
+  lecture d'OTP, fût-il gardé par un profil « dev » — ce serait une porte dérobée
+  d'authentification, et `DevApiSurfaceIntegrationTest` / `ProductionApiSurfaceIntegrationTest`
+  existent précisément pour interdire ce genre de surface.
+
+  **Blocage 2 → refactor du support de test d'un bloc** (T7), avant de toucher `register`.
+  Aucune classe de test n'est rustinée individuellement pour repasser au vert : elles ont
+  besoin d'un compte **authentifié**, pas d'un `register` détourné.
 
 - [ ] **T1 — Lire avant d'écrire** (préalable)
   - [ ] `backend/.../service/AuthService.java` — `register`, `login`, `changePassword`, `revokeSessions` : ce qui existe, et la **liste blanche de rôles** qui satisfait déjà FR-P16 (ne pas la réécrire, ne pas la régresser).
