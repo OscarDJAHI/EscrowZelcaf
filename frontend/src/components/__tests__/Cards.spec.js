@@ -34,6 +34,14 @@ describe('AppCard — la surface de base', () => {
     expect(mount(AppCard, { props: { interactive: true } }).find('button').exists()).toBe(true)
   })
 
+  it('interactive : le bouton porte type="button", jamais le submit par défaut', () => {
+    // Un `<button>` sans `type` vaut `submit` en HTML. Placée dans un formulaire, une
+    // carte interactive le soumettrait au premier clic — sur un produit qui manipule de
+    // l'argent, c'est une action déclenchée par erreur.
+    const button = mount(AppCard, { props: { interactive: true } }).find('button')
+    expect(button.attributes('type')).toBe('button')
+  })
+
   it('rend son contenu', () => {
     expect(mount(AppCard, { slots: { default: 'contenu' } }).text()).toBe('contenu')
   })

@@ -39,6 +39,23 @@ describe('AppButton — variantes', () => {
     }
   })
 
+  it('chaque variante a un survol qui CHANGE quelque chose', () => {
+    // `hover:bg-danger` sur un fond déjà `bg-danger` est un survol qui ne fait rien :
+    // le bouton le plus dangereux de l'interface ne réagissait pas au pointeur. Le test
+    // de distinction entre variantes ne pouvait pas le voir — il compare les variantes
+    // entre elles, jamais le survol d'une variante à son propre repos.
+    for (const variant of ['primary', 'danger', 'secondary', 'ghost']) {
+      const classes = render({ variant }).find('button').classes()
+      const hovers = classes.filter((c) => c.startsWith('hover:'))
+      expect(hovers.length, `${variant} n'a aucun état de survol`).toBeGreaterThan(0)
+      for (const hover of hovers) {
+        expect(classes, `${variant} : ${hover} vise la même valeur qu'au repos`).not.toContain(
+          hover.replace('hover:', ''),
+        )
+      }
+    }
+  })
+
   it('ne porte aucune ombre : un bouton n’est pas une surface flottante', () => {
     for (const variant of ['primary', 'danger', 'secondary', 'ghost']) {
       expect(render({ variant }).find('button').classes().join(' '), variant).not.toMatch(

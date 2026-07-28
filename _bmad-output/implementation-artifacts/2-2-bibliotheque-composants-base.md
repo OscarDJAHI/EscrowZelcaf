@@ -86,6 +86,30 @@ so that chaque story d'écran à venir assemble des composants éprouvés au lie
   - [x] Un test de composant par composant livré, **dans les deux langues** (l'AC l'exige explicitement).
   - [x] Suite complète verte : **305 tests au départ**, aucun ne doit rougir. `npm run lint` propre.
 
+### Review Findings (2026-07-28)
+
+**Deux campagnes.** Une première sur **haiku** : une couche sur trois a rendu, les deux autres ont calé au bout de 600 s sans produire un constat. Les deux manquantes ont été **relancées sur sonnet**, qui les a menées à terme — 55 et 67 appels d'outils, mutations faites dans des `worktree` jetables, tout vérifié en exécutant.
+
+**Correctifs appliqués**
+
+- [x] [Review][Patch] HAUT — Des `try/catch` qui gardaient contre des exceptions qui ne viennent JAMAIS [`AppButton`, `WalletCard`, `AppSkeleton`] — `Intl.format(NaN)` rend « $NaN », `new Date('invalide').toLocaleString()` rend « Invalid Date », et ni l'un ni l'autre ne lève. Un solde `NaN` s'affichait donc comme un montant, sur un produit qui manipule de l'argent. `Array.from({length: Infinity})` lève, elle, une `RangeError` : le squelette faisait disparaître la surface. Remplacés par des tests de **finitude** et de **validité**, plus un plafond de 50 squelettes — un squelette est un indice d'attente, pas une liste.
+- [x] [Review][Patch] HAUT — La garde d'élévation ne voyait que des classes Tailwind [`elevation.spec.js`] — le relecteur a glissé `:style="{ boxShadow: … }"` dans `AuthView`, fichier que cette story venait de « nettoyer », et les deux tests sont restés VERTS. Une dette fermée sur une seule orthographe n'est pas fermée : elle change d'orthographe. La garde vise désormais aussi la **propriété CSS**, `style.css` excepté puisqu'il déclare le token. Reproduit après correction : la même attaque rougit et nomme le fichier.
+- [x] [Review][Patch] MOYEN — `AppCard` interactive rendait un `<button>` SANS `type` [`AppCard.vue`] — donc `submit` par défaut en HTML. Placée dans un formulaire, une carte cliquable l'aurait soumis au premier clic. Aucun écran ne l'utilise encore : rien ne l'aurait révélé avant le premier usage. `AppButton` posait correctement `type: 'button'` — l'oubli était spécifique à `AppCard`.
+- [x] [Review][Patch] MOYEN — Le survol de la variante `danger` était un no-op [`AppButton.vue`] — `hover:bg-danger` sur un fond déjà `bg-danger`. Le bouton le plus dangereux de l'interface ne réagissait pas au pointeur, et le test de distinction entre variantes ne pouvait pas le voir : il compare les variantes entre elles, jamais le survol d'une variante à son propre repos. `DESIGN.md` ne définit AUCUN `danger-hover` ; plutôt qu'inventer un token que le contrat ne porte pas, le survol passe par l'opacité. **À remonter à `DESIGN.md` si un `danger-hover` est souhaité.**
+- [x] [Review][Patch] BAS — Compte de tests périmé dans la story (342 annoncés, 350 réels) — juste à l'écriture, faux après l'ajout de 8 tests. Le motif « une case cochée n'est pas une preuve », reproduit dans le document qui l'énonce.
+- [x] [Review][Patch] BAS — `verify-no-demo` plantait sur une trace ENOENT quand `dist/` manque, et ignorait un fichier illisible. Message actionnable désormais, et un fichier illisible est traité comme SUSPECT — une garde doit pencher du côté prudent.
+
+**Confirmés par attaque, pas par lecture**
+
+- **`verify:no-demo` tient sous DEUX attaques indépendantes.** Route rendue inconditionnelle (chunk nommé émis → échec), puis import statique de la galerie dans `DashboardView` derrière une `ref` d'exécution, que Rollup ne peut pas éliminer : le code est alors fondu dans le chunk du tableau de bord (8,46 ko → 14,46 ko), **aucun fichier ne porte le nom de la galerie**, et c'est le marqueur qui l'attrape. La conception à deux signaux est validée par attaque : le nom seul aurait laissé passer.
+- **19 ombres**, comptées sur les lignes supprimées du diff par les deux relecteurs indépendamment, la substitution de la modale exclue du compte. Aucune corruption de liste de classes dans la réécriture en masse.
+- **Toutes les classes des nouveaux composants sont réellement émises** dans la feuille compilée — vérifié en construisant `dist/` et en y cherchant chacune. Le motif « écrites en toutes lettres, jamais composées » fonctionne.
+- **`WalletCard` n'a aucune dépendance** à un store, au réseau ou au stockage.
+- **Câblage CI correct** : `verify:no-demo` après `build`, sans `continue-on-error`, `working-directory` cohérent, aucun cache de `dist/` qui servirait un build périmé ; `Frontend` confirmé required check sur `main` ET `develop` via l'API GitHub.
+- **L'exclusion de la galerie** dans la garde anti-chaînes est une égalité de chemin exacte, pas un motif de répertoire : aucune prose ne s'y glisse.
+- AC1 à AC5 vérifiées satisfaites, valeurs recoupées avec le frontmatter de `DESIGN.md`.
+
+
 ## Dev Notes
 
 ### ⚠️ Anti-réinvention : le badge d'état existe déjà
@@ -189,7 +213,7 @@ claude-opus-5 (dev-story, session interactive du 2026-07-28)
 
 **Écart assumé.** L'ambiguïté d'espacement laissée ouverte en 2.1 n'a pas été tranchée : les composants livrés utilisent l'échelle Tailwind avec la correspondance documentée, aucun n'a eu besoin de 24/32/48 px. La question se reposera à la Story 2.3 (layout), qui manipule des gouttières — c'est là qu'elle se tranchera utilement.
 
-**Vérification** — 350 tests frontend (305 au départ, +45), 25 fichiers de suite, lint propre, build OK, exclusion vérifiée, encodage vert sur 1917 fichiers.
+**Vérification** — 353 tests frontend (305 au départ, +48), 25 fichiers de suite, lint propre, build OK, exclusion vérifiée, encodage vert sur 1917 fichiers.
 
 ### File List
 

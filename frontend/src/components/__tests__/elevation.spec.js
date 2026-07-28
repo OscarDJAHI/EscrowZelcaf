@@ -36,6 +36,25 @@ describe('Élévation — une seule ombre existe, et elle est réservée', () =>
     expect(offenders).toEqual([])
   })
 
+  it('aucune source ne pose une ombre par la PROPRIÉTÉ CSS', () => {
+    // La première version de cette garde ne cherchait que des classes de forme
+    // Tailwind. Un relecteur a glissé `:style="{ boxShadow: '0 1px 3px …' }"` dans
+    // AuthView — fichier que cette story venait de « nettoyer » — et les deux tests
+    // sont restés VERTS. Une dette qu'on ferme par une seule orthographe n'est pas
+    // fermée : elle change d'orthographe.
+    const offenders = []
+    for (const rel of globSync('**/*.{vue,js,css}', { cwd: SRC })) {
+      if (rel.includes('__tests__')) continue
+      const body = readFileSync(resolve(SRC, rel), 'utf8')
+      // `boxShadow` (objet de style) et `box-shadow` (CSS), sauf la déclaration du token.
+      // `style.css` DÉCLARE le token : c'est le seul endroit où la propriété a sa place.
+      if (rel === 'style.css') continue
+      const found = [...new Set([...body.matchAll(/boxShadow|box-shadow/g)].map((m) => m[0]))]
+      if (found.length) offenders.push(`${rel} → ${found.join(', ')}`)
+    }
+    expect(offenders).toEqual([])
+  })
+
   it('le token d’ombre existe et reste unique dans la feuille de tokens', () => {
     // Si quelqu'un ajoute `--shadow-card`, la règle « une seule ombre » est morte et
     // cette assertion le dit avant que douze epics ne s'en servent.

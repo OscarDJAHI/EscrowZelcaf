@@ -45,7 +45,11 @@ const { t, te, locale } = useI18n()
  */
 const VARIANTS = {
   primary: 'bg-primary text-primary-foreground hover:bg-primary-hover',
-  danger: 'bg-danger text-primary-foreground hover:bg-danger',
+  // `hover:bg-danger` sur un fond déjà `bg-danger` ne changeait RIEN : le bouton le plus
+  // dangereux de l'interface ne réagissait pas au pointeur. `DESIGN.md` définit
+  // `primary-hover` mais AUCUN `danger-hover` — plutôt qu'inventer un token que le
+  // contrat ne porte pas, le survol passe par l'opacité, qui n'engage aucune couleur.
+  danger: 'bg-danger text-primary-foreground hover:opacity-90',
   secondary: 'border border-brand-navy text-brand-navy hover:bg-surface-page',
   ghost: 'text-brand-navy hover:bg-surface-page',
 }
