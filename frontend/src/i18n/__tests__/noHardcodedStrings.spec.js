@@ -165,6 +165,31 @@ const PROSE_ALLOWED = new Set([
  * documentation est une garde qu'on finit par désactiver — et une garde désactivée ne
  * protège rien.
  */
+/**
+ * Un littéral ressemble-t-il à du texte destiné à l'utilisateur ?
+ *
+ * <p>La première heuristique ne retenait qu'un critère : majuscule suivie d'une minuscule.
+ * Un auditeur a construit le contre-exemple et l'a EXÉCUTÉ — `'upload complete'` et
+ * `'PLEASE WAIT'`, interpolés dans le gabarit par une liaison, passaient les DEUX gardes à
+ * la fois : le scan de gabarit ignore les interpolations (à raison, elles portent
+ * normalement du `$t()`), et le scan de code ne voyait ni la minuscule initiale, ni les
+ * capitales.
+ *
+ * <p>Second critère : au moins deux mots purement alphabétiques. Il attrape ces deux
+ * formes sans mordre sur les valeurs techniques, qui portent presque toujours un tiret, un
+ * point ou un slash (`bg-warning-surface text-warning`, `application/json`) et ne comptent
+ * donc pas deux mots alphabétiques.
+ */
+function looksLikeProse(value) {
+  // Diagnostic de console : `[session] …`, `[offlineQueue] …`. Exclu par RÈGLE et non par
+  // énumération — ces messages ne sont jamais rendus, et une liste nominative aurait
+  // grossi à chaque nouveau log.
+  if (/^\[[a-zA-Z][\w-]*\]/.test(value)) return false
+  if (/^\p{Lu}\p{Ll}/u.test(value)) return true
+  const words = value.split(/\s+/).filter((w) => /^\p{L}{2,}$/u.test(w))
+  return words.length >= 2
+}
+
 function scriptSource(body, rel) {
   const raw = rel.endsWith('.vue')
     ? [...body.matchAll(/<script[^>]*>([\s\S]*?)<\/script>/g)].map((m) => m[1]).join('\n')
@@ -211,9 +236,12 @@ describe('Aucune chaîne en prose dans le code, hors catalogues', () => {
       // `The entry could not be deleted: ${err.message}` — motif on ne peut plus banal
       // pour composer un message d'erreur — restait invisible. Un littéral commençant
       // par `${` ne ressemble pas à de la prose et n'est donc pas signalé.
-      const literals = [...code.matchAll(/'([^'\\\n]{2,})'|"([^"\\\n]{2,})"|`([^`\\\n]{2,})`/g)]
+      // Les séquences échappées font partie du littéral : sans elles, un apostrophe
+      // dans `user\'s` ouvrait une fausse chaîne et la garde signalait « s queued
+      // entries », un fragment qui n'existe nulle part.
+      const literals = [...code.matchAll(/'((?:[^'\\\n]|\\.){2,})'|"((?:[^"\\\n]|\\.){2,})"|`((?:[^`\\\n]|\\.){2,})`/g)]
         .map((m) => m[1] ?? m[2] ?? m[3])
-        .filter((v) => /^\p{Lu}\p{Ll}/u.test(v))
+        .filter(looksLikeProse)
         .filter((v) => !PROSE_ALLOWED.has(v))
       if (literals.length) offenders.push(`${rel} → ${JSON.stringify([...new Set(literals)])}`)
     }

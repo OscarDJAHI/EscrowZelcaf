@@ -151,7 +151,13 @@ Blind Hunter et Acceptance Auditor rejoués sur `02f230d..HEAD` après le retour
 - `TransactionDetailView.spec.js` (5 tests) : le montant est rendu ET formaté différemment selon la langue (AC3), les boutons d'action affichent un libellé traduit et jamais le code d'événement, et une garde large vérifie qu'aucun préfixe de clé i18n n'échappe, sur cinq états.
 - Stabilité vérifiée : 3 exécutions du fichier et 2 suites complètes, toutes identiques — ce dépôt a un antécédent d'isolation de test défaillante.
 
-**Reste dû :** l'Acceptance Auditor de la 3e passe n'a pas encore rendu.
+**Acceptance Auditor — rendu.** Il confirme indépendamment le défaut `StateBadge` et ajoute une remarque de procédure que je retiens : l'item est resté coché `[x]` dans la story pendant plusieurs commits alors que le code ne correspondait pas. Une case cochée n'est pas une preuve.
+
+Il a par ailleurs trouvé **une échappatoire encore ouverte**, en la CONSTRUISANT :
+
+- [x] [Review][Patch] HAUT — La garde anti-prose laissait passer un composant réellement non migré [`noHardcodedStrings.spec.js`] — l'heuristique ne retenait qu'un critère (majuscule + minuscule), si bien que `'upload complete'` (minuscule initiale) et `'PLEASE WAIT'` (capitales), interpolés dans le gabarit par une liaison, passaient les DEUX gardes à la fois : le scan de gabarit ignore les interpolations, le scan de code ne voyait ni l'une ni l'autre forme. Reproduit avec son composant sonde. Second critère ajouté — au moins deux mots purement alphabétiques — plus une exclusion PAR RÈGLE des diagnostics de console (`[session] …`), et non par énumération. Un troisième défaut a été mis au jour dans la foulée : l'extracteur de littéraux refusait les échappements, si bien qu'un apostrophe dans `user\'s` ouvrait une fausse chaîne et faisait signaler « s queued entries », fragment qui n'existe nulle part. Vérifié : la sonde est désormais signalée sur ses deux formes, et zéro faux positif sur le dépôt réel.
+
+**Vérifié par l'auditeur, par reproduction et non par lecture :** le mécanisme bloquant de l'AC4 jusqu'au niveau de la protection de branche (`Frontend (Vitest + build PWA)` est bien un required check sur `main` ET `develop`), les six entrées de `PENDING_MIGRATION` (chacune retirée séparément fait rougir la suite en nommant les vraies chaînes), la survie de `escrow_locale` à `endSession`, le bornage sur `</template>`, la détection des backticks, et l'absence de consommateur orphelin après les renommages. Les AC1, AC2 et AC4 tiennent ; l'AC3 tient désormais, après avoir été fausse dans la livraison d'origine.
 
 
 ## Dev Notes
