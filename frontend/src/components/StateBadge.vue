@@ -1,13 +1,18 @@
 <script setup>
 import { computed } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { STATE_COLORS } from '@/utils/stateMachine'
 
 const props = defineProps({
   state: { type: String, required: true },
 })
 
-const classes = computed(() => STATE_COLORS[props.state]?.badge || 'bg-gray-100 text-gray-700')
-const label = computed(() => props.state.replaceAll('_', ' '))
+const { t } = useI18n()
+
+const classes = computed(() => STATE_COLORS[props.state]?.badge || 'bg-neutral-surface text-neutral-state')
+// Libellé i18n et non `state.replaceAll('_',' ')` : cette dernière forme affichait la
+// chaîne MACHINE (`FUNDS LOCKED`) à l'utilisateur, quelle que soit la langue.
+const label = computed(() => t(`state.${props.state}`))
 </script>
 
 <template>

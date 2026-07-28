@@ -7,6 +7,7 @@ import { USER_STORAGE_KEY, useAuthStore } from '@/stores/auth'
 import { useEscrowStore } from '@/stores/escrow'
 import { useEvidenceStore } from '@/stores/evidence'
 import { useOfflineQueueStore } from '@/stores/offlineQueue'
+import { LOCALE_STORAGE_KEY } from '@/i18n'
 import {
   READ_CACHE_NAME,
   beginSession,
@@ -130,6 +131,26 @@ afterEach(() => {
 })
 
 describe('endSession — an explicit logout hands the device back', () => {
+  it('survivesEndSession : la langue choisie N’EST PAS purgée — c’est une préférence d’appareil', async () => {
+    // Décision de la Story 2.1, exigée « prouvée par test » par ses propres Dev Notes et
+    // relevée manquante en revue : la purge retire des clés NOMMÉES, donc `escrow_locale`
+    // survit par CONSTRUCTION. Ce test transforme cette construction en INTENTION : la
+    // Story 2.7 réécrira `session.js`, et si elle ajoute la langue à la purge, c'est ici
+    // que ça rougira.
+    stubCaches()
+    await seedSharedDevice()
+    signIn(ALICE)
+    localStorage.setItem(LOCALE_STORAGE_KEY, 'fr')
+
+    await endSession({ reason: 'logout' })
+
+    expect(localStorage.getItem(LOCALE_STORAGE_KEY)).toBe('fr')
+    // Contre-épreuve dans le même souffle : ce qui DOIT partir est bien parti, sinon le
+    // test ci-dessus prouverait seulement qu'aucune purge n'a eu lieu.
+    expect(localStorage.getItem(TOKEN_STORAGE_KEY)).toBeNull()
+    expect(localStorage.getItem(USER_STORAGE_KEY)).toBeNull()
+  })
+
   it('revokes, clears every store, drops only this user\'s entries and the read cache', async () => {
     const del = stubCaches()
     await seedSharedDevice()

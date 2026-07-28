@@ -1,6 +1,9 @@
 <script setup>
+import { useI18n } from 'vue-i18n'
 import { computed } from 'vue'
 import { STATE_COLORS } from '@/utils/stateMachine'
+
+const { locale } = useI18n()
 
 const props = defineProps({
   logs: { type: Array, default: () => [] },
@@ -11,7 +14,7 @@ const sortedLogs = computed(() =>
 )
 
 function formatDate(timestamp) {
-  return new Date(timestamp).toLocaleString()
+  return new Date(timestamp).toLocaleString(locale.value)
 }
 </script>
 
@@ -25,10 +28,10 @@ function formatDate(timestamp) {
       />
       <div class="flex-1 border-b border-gray-100 pb-3 last:border-none">
         <p class="text-sm font-medium text-gray-800">
-          {{ (log.previousState || 'NONE').replaceAll('_', ' ') }} →
-          {{ log.nextState.replaceAll('_', ' ') }}
+          {{ $t(`state.${log.previousState || 'NONE'}`) }} →
+          {{ $t(`state.${log.nextState}`) }}
         </p>
-        <p class="text-xs text-gray-500">By {{ log.actionBy }} · {{ formatDate(log.timestamp) }}</p>
+        <p class="text-xs text-gray-500">{{ $t('audit.by', { who: log.actionBy }) }} · {{ formatDate(log.timestamp) }}</p>
       </div>
     </li>
   </ol>

@@ -30,23 +30,44 @@ export const DEFAULT_LOCALE = 'en'
  */
 export const LOCALE_STORAGE_KEY = 'escrow_locale'
 
+/**
+ * Le stockage n'est PAS un paramètre par défaut, et c'est le cœur du correctif.
+ *
+ * <p>Écrit `readStoredLocale(storage = globalThis.localStorage)`, l'accès à la propriété
+ * est évalué AVANT le corps de la fonction, donc avant son `try`. Dans un environnement
+ * où la simple LECTURE de `localStorage` lève — Safari « bloquer tous les cookies »,
+ * iframe bac à sable, politique d'entreprise — l'exception échappait au garde-fou,
+ * remontait jusqu'au `createEscrowI18n()` de niveau module et l'application ne démarrait
+ * pas : page blanche. Le commentaire promettait l'inverse de ce que le code faisait.
+ *
+ * <p>L'accès est donc fait ICI, à l'intérieur du `try`. Prouvé par
+ * `__tests__/storageResilience.spec.js`, qui remplace `localStorage` par une propriété
+ * dont le getter lève.
+ */
+function safeStorage() {
+  return globalThis.localStorage
+}
+
 /** Langue persistée si elle est encore supportée, sinon la langue par défaut. */
-export function readStoredLocale(storage = globalThis.localStorage) {
+export function readStoredLocale(storage) {
   try {
-    const stored = storage?.getItem(LOCALE_STORAGE_KEY)
+    const target = storage ?? safeStorage()
+    const stored = target?.getItem(LOCALE_STORAGE_KEY)
     return SUPPORTED_LOCALES.includes(stored) ? stored : DEFAULT_LOCALE
   } catch {
-    // Stockage indisponible (mode privé verrouillé, quota) : la langue par défaut
-    // reste utilisable. Une préférence d'affichage ne doit jamais empêcher de démarrer.
+    // Stockage indisponible ou inaccessible : la langue par défaut reste utilisable.
+    // Une préférence d'affichage ne doit jamais empêcher de démarrer.
     return DEFAULT_LOCALE
   }
 }
 
-export function persistLocale(locale, storage = globalThis.localStorage) {
+export function persistLocale(locale, storage) {
   try {
-    storage?.setItem(LOCALE_STORAGE_KEY, locale)
+    const target = storage ?? safeStorage()
+    target?.setItem(LOCALE_STORAGE_KEY, locale)
   } catch {
-    // Idem : l'échec de persistance ne casse pas la bascule en cours de session.
+    // Idem : l'échec de persistance ne casse pas la bascule en cours de session,
+    // et ne doit surtout pas interrompre `applyLocale` avant la mise à jour de `lang`.
   }
 }
 
@@ -69,12 +90,17 @@ export function resetMissingKeys() {
 }
 
 export function createEscrowI18n(locale = readStoredLocale()) {
+  // Normalisation de l'argument, pas seulement de la valeur relue du stockage : un
+  // appelant passant une langue non supportée obtenait une instance dont `locale` valait
+  // ce code verbatim — le sélecteur n'affichait alors AUCUN bouton actif pendant que
+  // `$t` retombait silencieusement sur l'anglais (constat de revue).
+  const initial = normalizeLocale(locale)
   return createI18n({
     // Composition API : `legacy: true` exposerait `$t` via un mixin global et un
     // `this` qui n'existe pas dans `<script setup>`.
     legacy: false,
     globalInjection: true,
-    locale,
+    locale: initial,
     fallbackLocale: DEFAULT_LOCALE,
     messages: { en, fr },
     // Le repli vers l'anglais est un filet d'affichage, pas une excuse : on veut le

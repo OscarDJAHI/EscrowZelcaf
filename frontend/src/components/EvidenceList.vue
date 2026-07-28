@@ -5,7 +5,7 @@ import { useAuthStore } from '@/stores/auth'
 import { useEvidenceStore } from '@/stores/evidence'
 import { formatBytes, uploaderLabel } from '@/utils/evidence'
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 
 const props = defineProps({
   transactionId: { type: [String, Number], required: true },
@@ -47,7 +47,7 @@ async function errorMessage(err, fallback) {
 function formatTimestamp(value) {
   if (!value) return ''
   try {
-    return new Date(value).toLocaleString()
+    return new Date(value).toLocaleString(locale.value)
   } catch {
     return value
   }

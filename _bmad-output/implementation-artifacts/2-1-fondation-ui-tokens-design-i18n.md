@@ -84,6 +84,41 @@ so that tous les écrans à venir partagent un langage visuel et textuel unique,
   - [x] Suite complète verte : **241 tests frontend** au départ, aucun ne doit rougir.
   - [x] `npm run lint` propre (`--max-warnings 0`).
 
+### Review Findings
+
+Revue du 2026-07-28 — 3 couches adversariales sur sonnet (modèle différent de celui qui a implémenté), diff `24157c7..02f230d`. Aucune couche n'a échoué. Chaque constat a été relu dans le code avant notation ; le plus grave est prouvé par reproduction exécutable.
+
+**Décisions — tranchées le 2026-07-28**
+
+- [x] [Review][Patch] MOYEN — Libellés d'état bruts, tranché le 2026-07-28 : périmètre 2.1 [`StateBadge.vue:10`, `StepperEscrow.vue:47`, `AuditTimeline.vue:28-29`] — `state.replaceAll('_',' ')` rend `FUNDS LOCKED` quelle que soit la langue. Ces trois fichiers ne sont pas réécrits par 2.2 et sont vus à chaque transaction. Clés d'état à créer dans les deux catalogues.
+
+- [x] [Review][Defer] Règle d'élévation non appliquée aux composants préexistants [`TransactionCard.vue:42`, `TransactionDetailView.vue:134,204,209`, `RecoveryView.vue:225,260,294,321`, `AuthView.vue:83`] — reporté à la **Story 2.2**, décision du 2026-07-28. Motif : 2.2 livre justement les composants Carte et les posera d'emblée sans ombre ; corriger ici reviendrait à retoucher huit emplacements dont une partie sera jetée. Les tokens, eux, encodent déjà la règle (`--shadow-floating` unique et réservée).
+
+**Correctifs**
+
+- [x] [Review][Patch] HAUT — L'application ne démarre pas si l'accès à `localStorage` lève [`src/i18n/index.js:34,45`] — le paramètre par défaut `storage = globalThis.localStorage` est évalué AVANT le `try` du corps. Safari « bloquer tous les cookies », iframe bac à sable : l'exception échappe, remonte au `const i18n = createEscrowI18n()` de niveau module et la page reste blanche. Le commentaire du code promet exactement l'inverse. Reproduit en exécutable.
+- [x] [Review][Patch] HAUT — AC3 non tenue : les formats de date et de nombre ignorent la langue choisie [`TransactionCard.vue:28`, `TransactionDetailView.vue:53`, `EvidenceList.vue:50`, `AuditTimeline.vue:14`] — `Intl.NumberFormat(undefined,…)` et `toLocaleString()` sans argument suivent la langue du NAVIGATEUR. Aucun `datetimeFormats`/`numberFormats` configuré, aucun `$d`/`$n`. Basculer en FR ne change aucun montant ni aucune date. La sous-tâche T4 était cochée en revendiquant ce point.
+- [x] [Review][Patch] HAUT — Tous les boutons d'action de transaction sont en anglais sous FR [`utils/stateMachine.js:64-71` → `TransactionDetailView.vue:178`] — `EVENT_LABELS` est une table de littéraux anglais qui alimente `action.label`. Invisible aux deux gardes : la chaîne vit dans un `.js` et arrive par liaison.
+- [x] [Review][Patch] HAUT — Les gardes i18n ont quatre angles morts qui rendent leur vert trompeur [`i18n/__tests__/`] — (a) toute chaîne venant d'un `.js` ou d'un `computed` échappe au scan des gabarits ; (b) le filtre « au moins 3 lettres » laisse passer « By » ; (c) l'extraction de clés ne lit que les littéraux simples, pas `` $t(`language.${code}`) `` ; (d) `indexOf('<template>')` rend −1 sur un `<template lang="…">`, et `slice(-1)` fait alors passer le fichier ENTIER pour conforme.
+- [x] [Review][Patch] HAUT — La décision « la langue survit à `endSession()` » n'est ni commentée dans `session.js` ni prouvée par test — les Dev Notes de cette story l'exigeaient explicitement. `grep locale|i18n|escrow_locale src/stores/session.js` → 0. Aucun test n'appelle `endSession()` puis n'asserte la survie de la clé. C'est le motif « correct en code, creux en preuve » que la règle de mutation du projet existe pour attraper — et la Story 2.7 va réécrire ce fichier.
+- [x] [Review][Patch] MOYEN — Littéral `'Buyer'` non migré [`TransactionCard.vue:23`] — la branche jumelle utilise `t('auth.roleSeller')`, celle-ci non, alors que `auth.roleBuyer` existe dans les deux catalogues et n'est utilisée nulle part.
+- [x] [Review][Patch] MOYEN — Référence orpheline `hover:border-brand-300` [`TransactionCard.vue:43`] — le remap annoncé « 46 références dans 7 fichiers » listait les suffixes 50/100/500/600/700 et n'a jamais vu 300. La classe ne compile vers rien : survol silencieusement mort.
+- [x] [Review][Patch] MOYEN — `OnlineBanner` redéfinit une couleur d'état au lieu de lire le mapping central [`OnlineBanner.vue:16`] — code en dur `bg-red-100` pour l'état hors-ligne alors que DESIGN.md prescrit la famille `offline` (#92400E / #FEF3C7). `OFFLINE_CLASSES`, introduite par cette story précisément pour cela, n'a AUCUN consommateur : c'est du code mort que j'ai ajouté. Violation directe de l'AC2 « jamais redéfinie par écran ».
+- [x] [Review][Patch] MOYEN — `{{ auth.role }}` affiche l'énumération brute [`DashboardView.vue:87`] — `BUYER`/`SELLER`/`ADMIN` en dur quelle que soit la langue. Les clés `role.BUYER`/`role.SELLER` existent déjà dans les deux catalogues et ne sont référencées nulle part : elles étaient faites pour ça.
+- [x] [Review][Defer] MOYEN — REPORTÉ (dette nommée `PENDING_MIGRATION`, ledger 2026-07-28) — Chaînes anglaises dans trois modules utilitaires rendues par des composants « migrés » [`utils/evidence.js:14-58`, `utils/frozenEntry.js:21-24,84-85`, `utils/replayFailure.js:82-129`] — messages de validation de fichier, libellés de déposant, noms d'action et motifs d'échec de synchronisation. Produit un écran mixte anglais/français sur `SyncFailureNotice` et `RecoveryView`, dont le texte voisin est traduit.
+- [x] [Review][Patch] MOYEN — Token de rayon par défaut absent [`style.css:115-118`] — `--radius-sm/md/lg/full` sont posés mais pas `--radius`, si bien que l'utilitaire nu `rounded` retombe sur les 4 px de Tailwind au lieu des 8 px de DESIGN.md. Usage réel : `NewTransactionModal.vue:54`.
+- [x] [Review][Patch] BAS — Littéral « By » non migré [`AuditTimeline.vue:31`] — passe la garde parce qu'il fait deux lettres.
+- [x] [Review][Patch] BAS — `--text-amount--letter-spacing: 0` absent de la transcription [`style.css:104-106`] — sans conséquence observable (0 est le défaut CSS), mais contredit la revendication « toutes les valeurs du frontmatter ».
+- [x] [Review][Patch] BAS — `createEscrowI18n(locale)` ne valide pas son argument [`i18n/index.js:71`] — un appel avec une langue non supportée laisse le sélecteur sans bouton actif et `$t` en repli silencieux.
+
+**Points vérifiés conformes**
+
+- Les 29 tokens de COULEUR de DESIGN.md sont présents et exacts à l'octet près.
+- Le mapping `STATE_TOKENS` → `STATE_COLORS` est correctement dérivé d'une table unique ; les deux corrections revendiquées (`INITIATED`→warning, `SHIPPED`→info) sont réelles et les trois consommateurs les lisent.
+- Le mécanisme de l'AC4 est **réellement bloquant** : l'auditeur a rejoué la mutation (clé FR retirée) et obtenu 3 assertions rouges nommant la clé, sur un job CI sans `continue-on-error`.
+- Versions conformes à la spec, suite 264/264, lint propre, aucun dégradé, aucun `#50DF77`, aucun navy en couleur d'état.
+
+
 ## Dev Notes
 
 ### ⚠️ Divergences constatées entre le code actuel et la spec — à corriger, pas à conserver
@@ -234,6 +269,20 @@ claude-opus-5 (dev-story, session interactive du 2026-07-28)
 - `frontend/src/components/` : `AuditTimeline.vue`, `EvidenceDeposit.vue`, `EvidenceList.vue`, `NewTransactionModal.vue`, `OnlineBanner.vue`, `OpenDisputeForm.vue`, `SyncFailureNotice.vue`, `TransactionCard.vue`
 - Suites adaptées au plugin i18n : `views/__tests__/authRedirect.spec.js`, `views/__tests__/RecoveryView.spec.js`, `components/__tests__/SyncFailureNotice.spec.js`, `components/__tests__/SyncFailureNotice.recovery.spec.js`
 - `_bmad-output/implementation-artifacts/sprint-status.yaml`
+
+## Change Log — suite de revue
+
+- 2026-07-28 — **14 des 15 correctifs de revue appliqués**, le 15e converti en dette nommée et tracée.
+  - **P1 (haut)** `readStoredLocale`/`persistLocale` : l'accès au stockage passe à l'intérieur du `try`. L'application démarre désormais même quand la lecture de `localStorage` lève. Prouvé par `storageResilience.spec.js`, qui remplace `localStorage` par une propriété dont le getter lève.
+  - **P2 (haut)** AC3 tenue : les quatre sites de formatage suivent la langue de l'APPLICATION (`locale.value`) et non celle du navigateur. `localeFormatting.spec.js` compare les deux langues sur le même montant.
+  - **P3 (haut)** `EVENT_LABELS` → `EVENT_LABEL_KEYS` : le module pur porte des clés, la vue traduit (analogue frontend d'AD-23).
+  - **P4 (haut)** Les quatre angles morts des gardes sont fermés : balise `<template>` à attributs (échec BRUYANT au lieu d'un fichier entier ignoré), seuil abaissé à deux lettres, clés construites dynamiquement couvertes, et scan des blocs `<script>` et modules `.js` — commentaires retirés pour ne pas crier sur de la documentation.
+  - **P5 (haut)** Décision `escrow_locale` commentée dans `session.js` ET prouvée : `survivesEndSession` vérifie la survie de la langue et, dans le même souffle, que le jeton et le profil sont bien partis. Mutation faite : ajouter la langue à la purge fait rougir ce test seul.
+  - **D1** Libellés d'état i18n dans les trois composants concernés ; trois assertions de `SyncFailureNotice.spec.js` réalignées sur le libellé rendu — deux étaient négatives et seraient devenues tautologiques.
+  - **P6..P14** `'Buyer'`, `hover:border-brand-300`, bannière hors-ligne lisant enfin `OFFLINE_CLASSES` (qui était du code mort), rôle brut du tableau de bord, « By », `--radius` par défaut, `letter-spacing` du montant, validation de l'argument de `createEscrowI18n`.
+  - **P10 reporté** — six modules purs, correctif identique mais touchant la garde anti-dérive de `FAILURE_LABELS`. Dette énumérée fichier par fichier dans `PENDING_MIGRATION`.
+  - **Bug introduit puis attrapé pendant cette passe** : un commentaire glissé entre `return` et l'expression a déclenché l'insertion automatique de point-virgule, rendant le calcul du montant mort. Build vert, suite verte — c'est le nouveau test du montant qui l'a révélé, et il porte désormais ce cas en commentaire.
+  - Vérification : **275 tests** (241 au départ, +34), lint propre, build OK.
 
 ## Change Log
 

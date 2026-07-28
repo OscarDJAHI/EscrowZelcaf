@@ -14,7 +14,7 @@ import EvidenceList from '@/components/EvidenceList.vue'
 import OpenDisputeForm from '@/components/OpenDisputeForm.vue'
 import { canOpenDispute, getAllowedEventsForTransaction } from '@/utils/stateMachine'
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 
 const DEPOSIT_STATES = ['FUNDS_LOCKED', 'SHIPPED', 'DISPUTED']
 
@@ -50,7 +50,10 @@ const counterparty = computed(() => {
 const formattedAmount = computed(() => {
   if (!transaction.value) return ''
   try {
-    return new Intl.NumberFormat(undefined, {
+    // Langue de l'APPLICATION et non du navigateur : `Intl` appelé avec `undefined` suit
+    // la locale du poste, si bien que basculer l'interface en FR ne changeait ni les
+    // montants ni les dates (AC3, constat de revue).
+    return new Intl.NumberFormat(locale.value, {
       style: 'currency',
       currency: transaction.value.currency,
     }).format(transaction.value.amount)
@@ -175,7 +178,7 @@ onBeforeUnmount(() => {
             :class="buttonClasses(action.event)"
             @click="trigger(action.event)"
           >
-            {{ sendingEvent === action.event ? $t('common.sending') : action.label }}
+            {{ sendingEvent === action.event ? $t('common.sending') : $t(action.labelKey) }}
           </button>
           <button
             v-if="canOpen"

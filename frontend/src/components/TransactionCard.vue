@@ -4,7 +4,7 @@ import { computed } from 'vue'
 import { useAuthStore } from '@/stores/auth'
 import StateBadge from './StateBadge.vue'
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 
 const props = defineProps({
   transaction: { type: Object, required: true },
@@ -20,12 +20,15 @@ const counterparty = computed(() => {
 })
 
 const counterpartyRoleLabel = computed(() =>
-  props.transaction._queuedOffline || isBuyerSide.value ? t('auth.roleSeller') : 'Buyer',
+  props.transaction._queuedOffline || isBuyerSide.value ? t('auth.roleSeller') : t('auth.roleBuyer'),
 )
 
 const formattedAmount = computed(() => {
   try {
-    return new Intl.NumberFormat(undefined, {
+    // Langue de l'APPLICATION et non du navigateur : `Intl` appelé avec `undefined` suit
+    // la locale du poste, si bien que basculer l'interface en FR ne changeait ni les
+    // montants ni les dates (AC3, constat de revue).
+    return new Intl.NumberFormat(locale.value, {
       style: 'currency',
       currency: props.transaction.currency,
     }).format(props.transaction.amount)
@@ -40,7 +43,7 @@ const formattedAmount = computed(() => {
     :is="transaction._queuedOffline ? 'div' : 'router-link'"
     :to="transaction._queuedOffline ? undefined : `/escrow/${transaction.id}`"
     class="block rounded-xl border border-gray-200 bg-white p-4 shadow-sm transition"
-    :class="transaction._queuedOffline ? 'opacity-70' : 'hover:border-brand-300 hover:shadow-md'"
+    :class="transaction._queuedOffline ? 'opacity-70' : 'hover:border-primary hover:shadow-md'"
   >
     <div class="flex items-start justify-between gap-2">
       <div class="min-w-0">

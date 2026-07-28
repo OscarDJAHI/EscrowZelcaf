@@ -61,13 +61,22 @@ export const STATE_COLORS = Object.fromEntries(
 /** Famille sémantique du hors-ligne, hors machine à états (bannière, file de synchro). */
 export const OFFLINE_CLASSES = TOKEN_CLASSES.offline
 
-export const EVENT_LABELS = {
-  PAY_FUNDS: 'Pay funds',
-  SHIP_GOODS: 'Mark as shipped',
-  DELIVERY_CONFIRMED: 'Confirm delivery',
-  OPEN_DISPUTE: 'Open dispute',
-  RESOLVE_RELEASE: 'Resolve: release to seller',
-  RESOLVE_REFUND: 'Resolve: refund buyer',
+/**
+ * Clés i18n des événements — PAS leurs libellés.
+ *
+ * <p>Ce module est pur : il ne compose aucun texte destiné à l'utilisateur, exactement
+ * comme AD-23 l'exige du backend. Il portait auparavant des littéraux anglais qui
+ * arrivaient jusqu'aux boutons d'action par la propriété `label` : sous FR, tous les
+ * boutons du parcours de transaction restaient en anglais, et aucune garde ne pouvait le
+ * voir — la chaîne vivait dans un `.js` et transitait par une liaison (constat de revue).
+ */
+export const EVENT_LABEL_KEYS = {
+  PAY_FUNDS: 'event.PAY_FUNDS',
+  SHIP_GOODS: 'event.SHIP_GOODS',
+  DELIVERY_CONFIRMED: 'event.DELIVERY_CONFIRMED',
+  OPEN_DISPUTE: 'event.OPEN_DISPUTE',
+  RESOLVE_RELEASE: 'event.RESOLVE_RELEASE',
+  RESOLVE_REFUND: 'event.RESOLVE_REFUND',
 }
 
 // state -> event -> { next, roles }
@@ -117,7 +126,7 @@ export function getAllowedEvents(state, role) {
     .map(([event, definition]) => ({
       event,
       next: definition.next,
-      label: EVENT_LABELS[event] || event,
+      labelKey: EVENT_LABEL_KEYS[event] || null,
     }))
 }
 

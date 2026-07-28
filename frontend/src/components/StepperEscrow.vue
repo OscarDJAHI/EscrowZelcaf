@@ -44,7 +44,7 @@ const path = computed(() => {
             {{ index + 1 }}
           </div>
           <span class="mt-1 text-[11px] font-medium leading-tight text-gray-600">
-            {{ state.replaceAll('_', ' ') }}
+            {{ $t(`state.${state}`) }}
           </span>
         </div>
         <div

@@ -89,7 +89,8 @@
     "requirements": "Opening a dispute requires at least one file and a comment of 10 characters or more."
   },
   "audit": {
-    "empty": "No audit history yet."
+    "empty": "No audit history yet.",
+    "by": "By {who}"
   },
   "sync": {
     "checkTransaction": "Check transaction #{id}",
@@ -121,7 +122,8 @@
   },
   "role": {
     "SELLER": "Seller",
-    "BUYER": "Buyer"
+    "BUYER": "Buyer",
+    "ADMIN": "Admin"
   },
   "offline": {
     "banner": "You're offline. Actions will be saved and synced automatically once you reconnect",
@@ -130,5 +132,22 @@
     "queuedCount": "({count} queued)",
     "syncing": "Syncing {count} queued action(s)…",
     "waiting": "{count} action(s) queued, waiting to sync."
+  },
+  "state": {
+    "INITIATED": "Awaiting funding",
+    "FUNDS_LOCKED": "Funds locked",
+    "SHIPPED": "Shipped",
+    "RELEASED": "Released",
+    "DISPUTED": "Disputed",
+    "REFUNDED": "Refunded",
+    "NONE": "None"
+  },
+  "event": {
+    "PAY_FUNDS": "Pay funds",
+    "SHIP_GOODS": "Mark as shipped",
+    "DELIVERY_CONFIRMED": "Confirm delivery",
+    "OPEN_DISPUTE": "Open dispute",
+    "RESOLVE_RELEASE": "Resolve: release to seller",
+    "RESOLVE_REFUND": "Resolve: refund buyer"
   }
 }

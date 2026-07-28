@@ -84,7 +84,7 @@ async function logout() {
         <h1 class="text-xl font-bold text-gray-900">{{ $t('dashboard.myTransactions') }}</h1>
         <p class="text-sm text-gray-500">
           {{ auth.user?.email }} ·
-          <span class="font-medium">{{ auth.role }}</span>
+          <span class="font-medium">{{ auth.role ? $t(`role.${auth.role}`) : '' }}</span>
         </p>
       </div>
       <div class="flex shrink-0 items-center gap-2">

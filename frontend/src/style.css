@@ -104,6 +104,9 @@
   --text-amount: 15px;
   --text-amount--line-height: 1.4;
   --text-amount--font-weight: 600;
+  /* Présent dans le frontmatter de DESIGN.md : transcrit pour que la revendication
+     « toutes les valeurs » soit vraie, même quand la valeur est le défaut CSS. */
+  --text-amount--letter-spacing: 0;
 
   --text-amount-hero: 32px;
   --text-amount-hero--line-height: 1.1;
@@ -112,6 +115,10 @@
   /* --- Rayons ------------------------------------------------------------- */
   /* md pour champs et boutons, lg pour cartes et modales, full RÉSERVÉ aux badges
      d'état et avatars. Ni angles durs, ni rondeurs consumer. */
+  /* `--radius` est le rayon que sert l'utilitaire NU `rounded`. Sans lui, Tailwind
+     retombe sur ses 4 px par défaut alors que DESIGN.md prescrit 8 px — écart constaté
+     en revue, avec un usage réel (`NewTransactionModal.vue:54`). */
+  --radius: 8px;
   --radius-sm: 4px;
   --radius-md: 8px;
   --radius-lg: 12px;

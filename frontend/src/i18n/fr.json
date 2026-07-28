@@ -89,7 +89,8 @@
     "requirements": "Ouvrir un litige exige au moins un fichier et un commentaire d'au moins 10 caractères."
   },
   "audit": {
-    "empty": "Aucun historique d'audit pour l'instant."
+    "empty": "Aucun historique d'audit pour l'instant.",
+    "by": "Par {who}"
   },
   "sync": {
     "checkTransaction": "Vérifier la transaction n° {id}",
@@ -121,7 +122,8 @@
   },
   "role": {
     "SELLER": "Vendeur",
-    "BUYER": "Acheteur"
+    "BUYER": "Acheteur",
+    "ADMIN": "Administrateur"
   },
   "offline": {
     "banner": "Vous êtes hors ligne. Vos actions seront enregistrées et synchronisées automatiquement dès la reconnexion",
@@ -130,5 +132,22 @@
     "queuedCount": "({count} en attente)",
     "syncing": "Synchronisation de {count} action(s) en attente…",
     "waiting": "{count} action(s) en attente de synchronisation."
+  },
+  "state": {
+    "INITIATED": "En attente de financement",
+    "FUNDS_LOCKED": "Fonds bloqués",
+    "SHIPPED": "Expédiée",
+    "RELEASED": "Libérée",
+    "DISPUTED": "En litige",
+    "REFUNDED": "Remboursée",
+    "NONE": "Aucun"
+  },
+  "event": {
+    "PAY_FUNDS": "Payer les fonds",
+    "SHIP_GOODS": "Marquer comme expédiée",
+    "DELIVERY_CONFIRMED": "Confirmer la livraison",
+    "OPEN_DISPUTE": "Ouvrir un litige",
+    "RESOLVE_RELEASE": "Arbitrer : libérer au vendeur",
+    "RESOLVE_REFUND": "Arbitrer : rembourser l’acheteur"
   }
 }

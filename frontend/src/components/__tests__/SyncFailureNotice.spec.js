@@ -405,7 +405,10 @@ describe('SyncFailureNotice — a state is badged only once it has seen the reje
     const wrapper = mountNotice(pinia)
 
     expect(wrapper.findComponent({ name: 'StateBadge' }).exists()).toBe(false)
-    expect(wrapper.text()).not.toContain('DISPUTED')
+    // Libellé RENDU, pas la chaîne machine : depuis que StateBadge traduit l'état
+    // (Story 2.1), asserter l'absence de « DISPUTED » serait vide de sens — cette
+    // chaîne ne sort plus jamais, et le test passerait même si le badge s'affichait.
+    expect(wrapper.text()).not.toContain('Disputed')
     // Named, not merely counted: every frozen entry now also carries a
     // `/recovery/` link, so `find('router-link-stub').exists()` would be true
     // here even if the degradation this test is about had stopped happening.
@@ -502,7 +505,7 @@ describe('SyncFailureNotice — the fixes review found', () => {
 
     const wrapper = mountNotice(pinia)
 
-    expect(wrapper.text()).toContain('RELEASED')
+    expect(wrapper.text()).toContain('Released')
     expect(transactionLinks(wrapper)).toEqual([])
   })
 
@@ -519,7 +522,8 @@ describe('SyncFailureNotice — the fixes review found', () => {
 
       const wrapper = mountNotice(pinia)
 
-      expect(wrapper.text()).not.toContain('FUNDS LOCKED')
+      // Idem : le libellé rendu, sinon l'assertion négative devient tautologique.
+      expect(wrapper.text()).not.toContain('Funds locked')
       expect(wrapper.text()).not.toContain('Current state')
       expect(transactionLinks(wrapper)).toEqual([])
     },

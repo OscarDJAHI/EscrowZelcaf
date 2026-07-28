@@ -175,6 +175,18 @@ export async function endSession({ reason } = {}) {
     console.error('[session] could not clear the last-user marker', err)
   }
 
+  // CE QUI N'EST DÉLIBÉRÉMENT PAS PURGÉ : `escrow_locale` (Story 2.1).
+  //
+  // La langue est une préférence d'APPAREIL, pas une donnée de session. Un poste
+  // francophone qui repasserait en anglais à chaque déconnexion serait hostile, et la
+  // langue choisie ne dit rien de l'identité du partant. Cette purge retire des clés
+  // NOMMÉES et ne fait jamais de `localStorage.clear()` : la clé survit donc par
+  // construction — mais par construction n'est pas par intention, d'où ce commentaire
+  // et le test `survivesEndSession` de `__tests__/session.spec.js` qui l'asservit.
+  //
+  // ⚠️ Story 2.7 (politique de session sur appareil partagé) réécrira ce fichier :
+  // ne pas ajouter `escrow_locale` à la purge sans rouvrir la décision.
+
   try {
     // Awaited nonetheless (revue 1.6): navigating away used to abort the
     // request in flight, leaving the token accepted server-side until it
