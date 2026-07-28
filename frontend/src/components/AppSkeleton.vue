@@ -33,7 +33,22 @@ const SHAPES = {
 }
 
 const shape = computed(() => SHAPES[props.variant] ?? SHAPES.line)
-const items = computed(() => Array.from({ length: Math.max(1, props.count) }, (unused, i) => i))
+/**
+ * Compte NORMALISÉ, et chacune des trois bornes a une raison.
+ *
+ * <p>`Math.max(1, NaN)` vaut `NaN`, et `Array.from({ length: NaN })` rend un tableau vide :
+ * zéro squelette, donc aucune indication d'attente. `Array.from({ length: Infinity })`
+ * LÈVE une `RangeError` et fait disparaître la surface entière. Et un compte simplement
+ * très grand rendrait des dizaines de milliers de nœuds, figeant l'onglet — un squelette
+ * est un indice d'attente, pas une liste.
+ */
+const MAX_ITEMS = 50
+
+const items = computed(() => {
+  const requested = Number(props.count)
+  const safe = Number.isFinite(requested) ? Math.min(MAX_ITEMS, Math.max(1, Math.trunc(requested))) : 1
+  return Array.from({ length: safe }, (unused, i) => i)
+})
 </script>
 
 <template>

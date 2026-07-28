@@ -63,6 +63,23 @@ describe('WalletCard — présentation pure', () => {
   it('tolère un solde absent sans casser le rendu', () => {
     expect(() => renderWallet({ balance: null })).not.toThrow()
   })
+
+  it('un solde NaN n’affiche PAS « $NaN » à l’utilisateur', () => {
+    // Un solde est ce que l'utilisateur croit posséder : y afficher « NaN » est pire
+    // que de n'afficher rien. `Intl` ne lève pas sur NaN, le try/catch ne servait à rien.
+    expect(renderWallet({ balance: Number.NaN }).text()).not.toContain('NaN')
+  })
+
+  it('un horodatage illisible n’affiche PAS « Invalid Date »', () => {
+    // `new Date('n-importe-quoi').toLocaleString()` rend « Invalid Date » SANS lever.
+    const text = renderWallet({ offline: true, updatedAt: 'pas-une-date' }, 'en').text()
+    expect(text).not.toContain('Invalid Date')
+  })
+
+  it('sans horodatage exploitable, la mention hors-ligne disparaît proprement', () => {
+    const text = renderWallet({ offline: true, updatedAt: 'pas-une-date' }, 'en').text()
+    expect(text).not.toContain('Last known value')
+  })
 })
 
 describe('WalletCard — variante hors ligne', () => {

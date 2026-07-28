@@ -59,7 +59,10 @@ const classes = computed(() => [
 ])
 
 const formattedAmount = computed(() => {
-  if (props.amount === null || props.amount === undefined) return null
+  // `Number.isFinite` et non un simple test de nullité : `Intl.format(NaN)` ne LÈVE pas,
+  // il rend « $NaN ». Le `try/catch` ci-dessous gardait donc contre une exception qui ne
+  // vient jamais, pendant que le texte partait à l'écran (constat de revue).
+  if (!Number.isFinite(props.amount)) return null
   try {
     // Langue de l'APPLICATION : `undefined` suivrait celle du navigateur, et basculer
     // l'interface en français ne changerait alors rien au montant (leçon de la 2.1).

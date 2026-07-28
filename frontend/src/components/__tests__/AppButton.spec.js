@@ -90,6 +90,19 @@ describe('AppButton — libellé porteur de montant (confirmations financières)
     expect(wrapper.html()).toContain('tabular-amount')
   })
 
+  it('un montant NaN n’affiche RIEN plutôt que « $NaN »', () => {
+    // `Intl.NumberFormat.format(NaN)` ne LÈVE pas : il rend « $NaN ». Le `try/catch`
+    // d'origine gardait donc contre une exception qui ne vient jamais, et le texte
+    // partait à l'écran (constat de revue).
+    const text = render({ labelKey: 'common.create', amount: Number.NaN, currency: 'USD' }).text()
+    expect(text).not.toContain('NaN')
+  })
+
+  it('un montant infini n’affiche pas « ∞ »', () => {
+    const text = render({ labelKey: 'common.create', amount: Number.POSITIVE_INFINITY }).text()
+    expect(text).not.toContain('∞')
+  })
+
   it('sans montant, le libellé reste inchangé', () => {
     expect(render({ labelKey: 'common.cancel' }, 'en').text()).toBe('Cancel')
   })

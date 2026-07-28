@@ -31,7 +31,9 @@ defineEmits(['deposit', 'withdraw'])
 const { locale } = useI18n()
 
 const formattedBalance = computed(() => {
-  if (props.balance === null || props.balance === undefined) return null
+  // Un solde est ce que l'utilisateur croit posséder : y afficher « NaN » est pire que
+  // de n'afficher rien. `Intl` ne lève pas sur NaN — le test de finitude est le vrai garde.
+  if (!Number.isFinite(props.balance)) return null
   try {
     // Langue de l'APPLICATION, jamais celle du navigateur (leçon de la Story 2.1).
     return new Intl.NumberFormat(locale.value, {
@@ -45,8 +47,12 @@ const formattedBalance = computed(() => {
 
 const formattedUpdatedAt = computed(() => {
   if (!props.updatedAt) return null
+  // `new Date('n-importe-quoi').toLocaleString()` rend « Invalid Date » SANS lever : le
+  // `try/catch` seul laissait cette chaîne s'afficher. On teste la validité de la date.
+  const parsed = new Date(props.updatedAt)
+  if (Number.isNaN(parsed.getTime())) return null
   try {
-    return new Date(props.updatedAt).toLocaleString(locale.value)
+    return parsed.toLocaleString(locale.value)
   } catch {
     return null
   }

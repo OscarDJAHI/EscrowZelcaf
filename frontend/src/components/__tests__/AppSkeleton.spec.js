@@ -27,6 +27,22 @@ describe('AppSkeleton', () => {
     }
   })
 
+  it('ne PLANTE pas sur un compte infini', () => {
+    // `Array.from({ length: Infinity })` lève une RangeError : le composant disparaissait
+    // de l'écran, emportant la surface qui l'entoure (constat de revue).
+    expect(() => render({ count: Number.POSITIVE_INFINITY })).not.toThrow()
+  })
+
+  it('rend au moins un élément sur un compte NaN', () => {
+    // `Math.max(1, NaN)` vaut NaN, et `Array.from({ length: NaN })` rend [] : zéro
+    // squelette, donc aucune indication d'attente.
+    expect(render({ count: Number.NaN }).findAll('.animate-pulse').length).toBeGreaterThanOrEqual(1)
+  })
+
+  it('borne un compte absurdement grand au lieu de figer le navigateur', () => {
+    expect(render({ count: 100000 }).findAll('.animate-pulse').length).toBeLessThanOrEqual(50)
+  })
+
   it('ANNONCE l’attente aux technologies d’assistance', () => {
     // Règle de DESIGN.md : toute attente a une couleur ET un libellé. Une animation
     // muette ne dit rien à qui n'a pas accès à l'image.
