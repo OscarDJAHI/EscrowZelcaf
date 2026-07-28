@@ -4,7 +4,7 @@ baseline_commit: 24157c7df6957e505535a6a0bf8744572efb1fea
 
 # Story 2.1: Fondation UI — tokens de design et i18n EN/FR par clés
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -159,6 +159,21 @@ Il a par ailleurs trouvé **une échappatoire encore ouverte**, en la CONSTRUISA
 
 **Vérifié par l'auditeur, par reproduction et non par lecture :** le mécanisme bloquant de l'AC4 jusqu'au niveau de la protection de branche (`Frontend (Vitest + build PWA)` est bien un required check sur `main` ET `develop`), les six entrées de `PENDING_MIGRATION` (chacune retirée séparément fait rougir la suite en nommant les vraies chaînes), la survie de `escrow_locale` à `endSession`, le bornage sur `</template>`, la détection des backticks, et l'absence de consommateur orphelin après les renommages. Les AC1, AC2 et AC4 tiennent ; l'AC3 tient désormais, après avoir été fausse dans la livraison d'origine.
 
+
+## Clôture
+
+**Close le 2026-07-28 après trois passes de revue adversariale** (couches sur sonnet, modèle différent de celui qui a implémenté). 6 commits, 305 tests frontend contre 241 au départ, lint et build verts, garde d'encodage verte.
+
+Ce que les trois passes ont coûté et rapporté, parce que le chiffre importe pour calibrer les stories suivantes : **la revue a trouvé plus de défauts que l'implémentation n'en a évité**. Passe 1 sur le produit (démarrage bloqué si `localStorage` lève, AC3 non tenue, boutons non traduits, 4 angles morts des gardes). Passes 2 et 3 sur les correctifs eux-mêmes — `$t(null)` qui levait, une distinction visuelle supprimée au lieu d'être re-pointée, un correctif détruit par un `git checkout --` de ma propre expérience de mutation, et une échappatoire que l'auditeur a construite pour la prouver.
+
+**Deux dettes restent ouvertes, tracées, et chacune porte son test de non-régression :** les six modules purs de `PENDING_MIGRATION` (retirer une entrée fait rougir la suite) et la règle d'élévation, reportée à la Story 2.2 qui livre les composants Carte.
+
+**Le dernier commit (`02a055d`) n'a été relu par personne** — décision assumée : la Story 2.2 consomme les tokens immédiatement et constitue une vérification plus forte qu'une 4e passe.
+
+**Trois leçons pour la suite de l'epic**, inscrites parce qu'elles se paieront ailleurs :
+1. *Une case cochée n'est pas une preuve.* L'item `StateBadge` est resté coché plusieurs commits alors que le code ne correspondait pas.
+2. *Ne jamais restaurer par `git checkout --` un fichier porteur de travail non commité.* C'est ce qui a effacé le correctif de `StateBadge` sans que rien ne l'annonce.
+3. *Un composant sans test peut perdre son correctif en silence.* `StateBadge` est le composant d'état le plus réutilisé du dépôt et n'avait aucun test.
 
 ## Dev Notes
 
