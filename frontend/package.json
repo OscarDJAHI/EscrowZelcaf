@@ -8,6 +8,7 @@
     "dev": "vite",
     "build": "vite build",
     "verify:no-demo": "node scripts/verify-no-demo.mjs",
+    "verify:pwa": "node scripts/verify-pwa.mjs",
     "preview": "vite preview",
     "lint": "eslint . --max-warnings 0",
     "test": "vitest run"

@@ -20,7 +20,10 @@ vi.mock('@/api/escrow', () => ({
   openDispute: vi.fn(),
 }))
 
-const USER = { id: 42, email: 'alice@corp.example' }
+// `role` inclus : la réponse de connexion en fournit toujours un, et depuis la
+// Story 2.3 le routage des trois espaces s'y fonde EXCLUSIVEMENT (AD-21). Une
+// fixture sans rôle décrivait un état que le serveur n'émet jamais.
+const USER = { id: 42, email: 'alice@corp.example', role: 'BUYER' }
 
 /** Sentinels, never `new Date()`: the freshness rule is an ordering of stamps. */
 const FROZE_AT = '2026-01-01T00:05:00.000Z'

@@ -162,5 +162,35 @@
     "title": "Component library",
     "onePrimary": "One primary button per surface: it designates the action the screen expects. Two primaries designate none.",
     "noSpinner": "Never a full-screen spinner after first paint. Every wait carries a colour and a label."
+  },
+  "nav": {
+    "primary": "Main navigation",
+    "home": "Home",
+    "transactions": "Transactions",
+    "wallet": "Wallet",
+    "support": "Support",
+    "profile": "Profile",
+    "notifications": "Notifications (coming soon)",
+    "disputeQueue": "Dispute queue",
+    "decisions": "Decisions",
+    "users": "Users",
+    "kybQueue": "KYB queue",
+    "supervision": "Supervision"
+  },
+  "space": {
+    "client": "Client",
+    "arbitration": "Arbitration console",
+    "admin": "Back office"
+  },
+  "shell": {
+    "desktopOnly": "This surface is designed for desktop. On a small screen some information is not shown."
+  },
+  "comingSoon": {
+    "body": "This screen is not available yet. It will arrive in a coming release."
+  },
+  "access": {
+    "deniedTitle": "This page is not available",
+    "deniedBody": "Check the address, or go back to your home screen.",
+    "backHome": "Back to my home screen"
   }
 }

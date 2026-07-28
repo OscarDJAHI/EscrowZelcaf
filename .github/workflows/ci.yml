@@ -92,6 +92,13 @@ jobs:
       # chaîne vivant dans un commentaire, que la minification supprime : elle passait
       # donc TOUJOURS, y compris quand la galerie était bel et bien dans le bundle.
       - run: npm run verify:no-demo
+      # Également après le build : manifeste PWA, icônes (présence ET dimensions réelles,
+      # une taille déclarée n'étant pas une taille vérifiée), couleurs recopiées depuis
+      # les tokens, service worker émis avec le shell pré-caché.
+      # PORTÉE ASSUMÉE : ce n'est PAS l'audit Lighthouse que l'AC de la Story 2.3
+      # demande — ni HTTPS, ni portée à l'exécution, ni performances. C'est ce qui tient
+      # en CI sans Chromium, et cela couvre les pannes qui rendent l'app non installable.
+      - run: npm run verify:pwa
 
   # Chaîne d'approvisionnement (AC2) : SBOM + scans de vulnérabilités et de
   # secrets. HORS des required status checks (statut advisory documenté au

@@ -143,6 +143,23 @@
    sont donc exposés sous des noms PROPRES, et la rampe Tailwind reste intacte.
    Correspondance pour qui écrit du neuf : design 5 = `6` Tailwind, design 6 = `8`,
    design 7 = `12`.
+
+   ── GOUTTIÈRES : la décision, tranchée en Story 2.3 ─────────────────────────
+   Les deux tokens ci-dessous ont été DÉFINIS en 2-1 sans qu'aucun écran n'ait eu à
+   s'en servir ; 2-3 est la première story à poser des marges de page, donc le premier
+   moment où la question se pose vraiment.
+
+   Règle : toute région de contenu porte `p-4 lg:p-6` — 16 px, puis 24 px à partir de
+   1024 px. `lg:p-6` VAUT `--space-gutter-desktop`, par la correspondance ci-dessus
+   (design 5 = `6` Tailwind = 24 px).
+
+   Pourquoi des classes Tailwind et non `padding: var(--space-gutter)` : l'extraction
+   de Tailwind est statique et le responsive passe par les préfixes de breakpoint. Une
+   variable CSS obligerait à réintroduire une media query manuscrite par écran, c'est-
+   à-dire exactement la dispersion que ces tokens visaient à éviter. Les `--space-*`
+   restent la RÉFÉRENCE CHIFFRÉE — la source qui dit ce que valent 16 et 24 — et non le
+   véhicule. La bascule est à `lg` et non à `md` : entre 768 et 1024 px la navigation
+   n'est pas encore en colonne latérale, la page n'a donc pas de largeur à donner.
    ============================================================================ */
 :root {
   --space-1: 4px;

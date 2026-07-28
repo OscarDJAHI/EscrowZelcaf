@@ -162,5 +162,35 @@
     "title": "Bibliothèque de composants",
     "onePrimary": "Un seul bouton primaire par surface : il désigne l’action que l’écran attend. Deux primaires n’en désignent aucune.",
     "noSpinner": "Jamais de spinner plein écran après la première peinture. Toute attente a une couleur et un libellé."
+  },
+  "nav": {
+    "primary": "Navigation principale",
+    "home": "Accueil",
+    "transactions": "Transactions",
+    "wallet": "Portefeuille",
+    "support": "Assistance",
+    "profile": "Profil",
+    "notifications": "Notifications (à venir)",
+    "disputeQueue": "File des litiges",
+    "decisions": "Décisions",
+    "users": "Utilisateurs",
+    "kybQueue": "File KYB",
+    "supervision": "Supervision"
+  },
+  "space": {
+    "client": "Client",
+    "arbitration": "Console d'arbitrage",
+    "admin": "Back-office"
+  },
+  "shell": {
+    "desktopOnly": "Cette surface est conçue pour un écran d'ordinateur. Sur petit écran, certaines informations ne sont pas affichées."
+  },
+  "comingSoon": {
+    "body": "Cet écran n'est pas encore disponible. Il arrivera dans une prochaine livraison."
+  },
+  "access": {
+    "deniedTitle": "Cette page n'est pas disponible",
+    "deniedBody": "Vérifiez l'adresse, ou revenez à votre écran d'accueil.",
+    "backHome": "Revenir à mon accueil"
   }
 }

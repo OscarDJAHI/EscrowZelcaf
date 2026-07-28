@@ -99,7 +99,7 @@ development_status:
   epic-2: in-progress # ouvert le 2026-07-28 par la création de la Story 2-1
   2-1-fondation-ui-tokens-design-i18n: done # 2026-07-28 — 3 passes de revue adversariale (sonnet), 6 commits, 305 tests frontend (241 au départ). Passe 1 : défauts du produit (démarrage bloqué si localStorage lève, AC3 non tenue, boutons non traduits, 4 angles morts des gardes). Passes 2-3 : défauts des CORRECTIFS eux-mêmes ($t(null) qui levait, distinction visuelle supprimée, correctif détruit par un git checkout -- de mon propre test de mutation, échappatoire construite par l'auditeur). Dettes tracées : PENDING_MIGRATION (6 modules) et règle d'élévation -> 2-2
   2-2-bibliotheque-composants-base: done # 2026-07-28 — 353 tests frontend, AC1-AC5 vérifiées par audit indépendant. 2 campagnes de revue : haiku a rendu 1 couche sur 3 (mais a trouvé les try/catch gardant contre rien), sonnet 2 sur 2 (garde d'élévation aveugle au boxShadow en ligne, AppCard sans type=button donc submit, survol danger no-op). verify:no-demo tient sous 2 attaques dont l'import statique. Dette d'élévation soldée (19 ombres)
-  2-3-layout-trois-espaces-navigation: ready-for-dev # story créée 2026-07-28 ; 3 constats bloquants documentés (ARBITRATOR absent de l'enum backend, harnais d'audit PWA inexistant, theme_color encore en teal supprimé)
+  2-3-layout-trois-espaces-navigation: review # dev démarré 2026-07-28
   # ORDRE D'EXÉCUTION : 2-7 se place ICI, juste après 2-3 (numérotée 2.7 pour ne pas
   # renuméroter 2-4..2-6, dont les clés sont référencées ailleurs). Décision D4 du
   # 2026-07-28 ; ferme la faille avant que 2-4/2-5/2-6 n'empilent des parcours

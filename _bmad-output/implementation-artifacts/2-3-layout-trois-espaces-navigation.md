@@ -1,6 +1,10 @@
+---
+baseline_commit: ac0449c6503893d3706c4d23626067ec375b66f3
+---
+
 # Story 2.3: Layout trois espaces et navigation responsive
 
-Status: ready-for-dev
+Status: review
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -46,40 +50,40 @@ so that je retrouve immédiatement mes fonctions sans portail de connexion disti
 
 ## Tasks / Subtasks
 
-- [ ] **T1 — Lire avant d'écrire** (préalable)
-  - [ ] `frontend/src/router/index.js` : la garde `beforeEach` actuelle et sa logique de redirection profonde (`redirect=`), livrée en Story 1.9 et **protégée par `authRedirect.spec.js`** — ne pas la casser.
-  - [ ] `backend/src/main/java/com/zlecaf/escrow/domain/Role.java` : l'énumération RÉELLE des rôles.
-  - [ ] `frontend/vite.config.js` : configuration PWA existante (manifeste, Workbox, règle `NetworkFirst` sur `/api/`).
-  - [ ] `frontend/src/components/` : la bibliothèque livrée en 2-2, à assembler et non à réinventer.
+- [x] **T1 — Lire avant d'écrire** (préalable)
+  - [x] `frontend/src/router/index.js` : la garde `beforeEach` actuelle et sa logique de redirection profonde (`redirect=`), livrée en Story 1.9 et **protégée par `authRedirect.spec.js`** — ne pas la casser.
+  - [x] `backend/src/main/java/com/zlecaf/escrow/domain/Role.java` : l'énumération RÉELLE des rôles.
+  - [x] `frontend/vite.config.js` : configuration PWA existante (manifeste, Workbox, règle `NetworkFirst` sur `/api/`).
+  - [x] `frontend/src/components/` : la bibliothèque livrée en 2-2, à assembler et non à réinventer.
 
-- [ ] **T2 — Décision de périmètre ARBITRATOR** (AC: 1) — voir « Le conflit de l'AC1 »
-  - [ ] Livrer le shell ET le guard de la console d'arbitrage, testés avec un rôle simulé.
-  - [ ] Documenter que l'espace est **inatteignable** tant que la Story 7-2 n'octroie pas le rôle, et pourquoi ce n'est pas un défaut.
+- [x] **T2 — Décision de périmètre ARBITRATOR** (AC: 1) — voir « Le conflit de l'AC1 »
+  - [x] Livrer le shell ET le guard de la console d'arbitrage, testés avec un rôle simulé.
+  - [x] Documenter que l'espace est **inatteignable** tant que la Story 7-2 n'octroie pas le rôle, et pourquoi ce n'est pas un défaut.
 
-- [ ] **T3 — Guards de route par rôle** (AC: 1)
-  - [ ] Routage vers l'espace du rôle à la connexion.
-  - [ ] **Réponse uniforme** pour un accès à l'espace d'un autre rôle : même écran, même code, aucune différence observable entre « cet espace n'existe pas » et « il existe mais pas pour vous » (NFR-P9, gabarit `AntiEnumerationIntegrationTest` côté backend).
-  - [ ] Écran d'accès refusé i18n.
-  - [ ] **Ne pas régresser** la redirection profonde de 1.9 : `authRedirect.spec.js` doit rester vert.
+- [x] **T3 — Guards de route par rôle** (AC: 1)
+  - [x] Routage vers l'espace du rôle à la connexion.
+  - [x] **Réponse uniforme** pour un accès à l'espace d'un autre rôle : même écran, même code, aucune différence observable entre « cet espace n'existe pas » et « il existe mais pas pour vous » (NFR-P9, gabarit `AntiEnumerationIntegrationTest` côté backend).
+  - [x] Écran d'accès refusé i18n.
+  - [x] **Ne pas régresser** la redirection profonde de 1.9 : `authRedirect.spec.js` doit rester vert.
 
-- [ ] **T4 — Shell client et navigation** (AC: 2,3)
-  - [ ] 5 entrées + emplacement de la cloche (inerte, l'Epic 8 l'activera).
-  - [ ] Écrans « à venir » i18n pour les surfaces d'epics ultérieurs — aucun lien mort.
-  - [ ] Bascule onglets bas → colonne → sidebar aux breakpoints 768 / 1024, largeurs 720/960 px.
-  - [ ] Cibles ≥ 44 px et **anneau de focus visible** — le token `--color-focus-ring` existe depuis 2-1.
+- [x] **T4 — Shell client et navigation** (AC: 2,3)
+  - [x] 5 entrées + emplacement de la cloche (inerte, l'Epic 8 l'activera).
+  - [x] Écrans « à venir » i18n pour les surfaces d'epics ultérieurs — aucun lien mort.
+  - [x] Bascule onglets bas → colonne → sidebar aux breakpoints 768 / 1024, largeurs 720/960 px.
+  - [x] Cibles ≥ 44 px et **anneau de focus visible** — le token `--color-focus-ring` existe depuis 2-1.
 
-- [ ] **T5 — Shells console et back-office** (AC: 4)
-  - [ ] Sidebar fixe, tableaux max 1280 px à ≥ 768 px.
-  - [ ] Message explicite sous 768 px.
+- [x] **T5 — Shells console et back-office** (AC: 4)
+  - [x] Sidebar fixe, tableaux max 1280 px à ≥ 768 px.
+  - [x] Message explicite sous 768 px.
 
-- [ ] **T6 — PWA** (AC: 5)
-  - [ ] **Corriger `theme_color`** : le manifeste porte encore le teal `#0f766e` supprimé en 2-1.
-  - [ ] Précacher le shell (layout + navigation) et vérifier son affichage sans réseau.
-  - [ ] Audit d'installabilité automatisé — **voir « Le piège de l'AC5 » : le harnais n'existe pas.**
+- [x] **T6 — PWA** (AC: 5)
+  - [x] **Corriger `theme_color`** : le manifeste porte encore le teal `#0f766e` supprimé en 2-1.
+  - [x] Précacher le shell (layout + navigation) et vérifier son affichage sans réseau.
+  - [x] Audit d'installabilité automatisé — **voir « Le piège de l'AC5 » : le harnais n'existe pas.**
 
-- [ ] **T7 — Tests** (AC: 1,2,3,4)
-  - [ ] Tests de rendu des trois shells, guards et redirections par rôle (l'AC les exige nommément).
-  - [ ] Suite complète verte : **353 tests au départ**. `npm run lint` propre, `npm run verify:no-demo` vert.
+- [x] **T7 — Tests** (AC: 1,2,3,4)
+  - [x] Tests de rendu des trois shells, guards et redirections par rôle (l'AC les exige nommément).
+  - [x] Suite complète verte : **353 tests au départ**. `npm run lint` propre, `npm run verify:no-demo` vert.
 
 ## Dev Notes
 
@@ -178,8 +182,107 @@ Reportée deux fois. La rampe de `DESIGN.md` (5=24 px, 6=32, 7=48) diverge de Ta
 
 ### Agent Model Used
 
+claude-opus-5 (interactif, flux BMad classique)
+
 ### Debug Log References
+
+Trois défauts trouvés par les tests que la story exigeait, chacun invisible autrement :
+
+1. **Fuite d'URL sur le refus d'accès.** `return { name: 'not-found' }` semble préserver
+   l'adresse demandée. Le catch-all vaut `/:pathMatch(.*)*` : le résoudre sans paramètre
+   produit `/`. L'espace interdit renvoyait donc vers `/` pendant qu'une adresse inconnue,
+   elle, gardait la sienne — même écran, deux URL, oracle rouvert. Le test qui compare les
+   deux chemins était rouge avant correction, vert après (`params: { pathMatch: … }`).
+   L'assertion sur les seuls NOMS de route, elle, passait dans les deux cas : c'est le
+   chemin qui portait la fuite.
+
+2. **`ClientShell` n'était monté par personne.** Le composant existait, ses sept tests
+   passaient, et aucune des cinq routes de l'espace client ne le rendait : la navigation
+   n'existait qu'en test. Un shell testé isolément prouve qu'il fonctionne, pas qu'il est
+   branché. Résolu en déduisant le shell de `meta.space` dans `App.vue`, ce qui rend
+   l'oubli structurellement impossible pour les écrans à venir, et vérifié par
+   `appShell.spec.js` qui monte l'application entière avec le vrai routeur.
+
+3. **Une assertion creuse écrite par moi-même.** Le test « un seul sélecteur de langue »
+   visait un `data-testid` qui n'existe pas : `findAll` renvoyait 0, et « au plus un »
+   était satisfait par le vide. Remplacé par un compte EXACT sur le `role="group"` que le
+   composant porte réellement. Quatrième occurrence du même motif sur cet epic.
+
+**Session incohérente.** `RecoveryView.spec.js` est passé au rouge sur une fixture sans
+`role`. Plutôt que de rustiner le test, traité comme un vrai état — le ledger de la
+Story 1.9 documente un `escrow_token` qui survit à un `escrow_user` illisible. Un refus
+aurait condamné l'écran de récupération, seul endroit d'où l'utilisateur récupère des
+fichiers n'existant nulle part ailleurs. Le routeur renvoie donc vers la connexion, en
+conservant la cible, et sans que la réponse dépende de cette cible.
+
+**Vérification par mutation** (règle du projet), 10 mutations, toutes rouges puis vertes
+après restauration :
+- `verify:pwa` — couleur dérivant du nuancier, icône déclarée 512 mesurant 192, icône
+  absente du build, `display: browser` + `short_name` retiré ;
+- shells — entrée pointant vers une route inexistante, cloche perdant son `aria-disabled`,
+  message de refus nommant l'espace ;
+- `App.vue` — sélecteur de langue redevenu inconditionnel, espace client privé de shell,
+  refus enveloppé dans le shell client.
 
 ### Completion Notes List
 
+- **AC1 — ARBITRATOR livré mais inatteignable, comme prévu par T2.** Le mapping, le guard,
+  le shell et la redirection sont en place et testés avec un rôle simulé. `Role.java` ne
+  l'émet pas : l'octroi appartient à la Story 7-2 (AD-21). Ce qui manque est le porteur de
+  la clé, pas la porte. Signalé en commentaire dans `spaces.js`, `index.js` et la vue.
+- **AC5 — écart assumé et non comblé.** L'AC demande un audit Lighthouse d'installabilité.
+  Ce qui est livré est `npm run verify:pwa` : champs requis du manifeste, icônes présentes
+  ET aux dimensions RÉELLES (lecture de l'en-tête PNG — une taille déclarée n'est pas une
+  taille vérifiée), couleurs recoupées avec les tokens de `style.css`, service worker émis
+  avec `index.html` dans son pré-cache. **C'est moins que Lighthouse** : ni HTTPS, ni
+  portée du service worker à l'exécution, ni performances. En contrepartie il tourne en CI
+  sans Chromium. L'affichage hors réseau est vérifié par la présence du shell au pré-cache,
+  **pas** par un rendu navigateur réel — cet essai reste à faire.
+- **Décision d'espacement tranchée** (reportée deux fois, cette story étant la première à
+  poser des marges de page) : toute région de contenu porte `p-4 lg:p-6`, soit 16 px puis
+  24 px à partir de 1024 px, `lg:p-6` valant `--space-gutter-desktop`. Le raisonnement —
+  pourquoi des classes Tailwind plutôt que `var(--space-gutter)`, et pourquoi `lg` et non
+  `md` — est écrit dans `style.css` à côté des tokens.
+- **`theme_color` corrigé** : le manifeste portait encore le teal `#0f766e` que la Story 2.1
+  avait retiré du nuancier. Il vaut désormais `#101e5a` (`--color-brand-navy`), et
+  `background_color` `#f6f7fb` (`--color-surface-page`). Ces deux copies sont inévitables —
+  l'OS lit le manifeste avant toute feuille de style — donc `verify:pwa` échoue si elles
+  dérivent, ce qu'aucun contrôle ne faisait jusqu'ici.
+- **Anti-régression tenue** : `authRedirect.spec.js` (redirection profonde de la Story 1.9)
+  est resté vert du début à la fin.
+- **Point ouvert reconduit** : toujours aucun token `danger-hover` dans `DESIGN.md`. Cette
+  story n'a introduit aucune surface dangereuse ; l'arbitrage reste dû.
+- Suite : **403 tests / 29 fichiers** (353 au départ, soit +50). `npm run lint` propre,
+  `npm run verify:no-demo` et `npm run verify:pwa` verts, tous deux câblés en CI.
+
 ### File List
+
+**Nouveaux**
+- `frontend/src/router/spaces.js` — module pur : rôle → espace, décision d'accès uniforme, navigation des espaces desktop
+- `frontend/src/router/__tests__/spaces.spec.js`
+- `frontend/src/router/__tests__/guards.spec.js`
+- `frontend/src/layouts/ClientShell.vue`
+- `frontend/src/layouts/DesktopShell.vue`
+- `frontend/src/layouts/__tests__/shells.spec.js`
+- `frontend/src/__tests__/appShell.spec.js`
+- `frontend/src/views/AccessDeniedView.vue`
+- `frontend/src/views/ComingSoonView.vue`
+- `frontend/src/views/ArbitrationHomeView.vue`
+- `frontend/src/views/AdminHomeView.vue`
+- `frontend/scripts/verify-pwa.mjs`
+
+**Modifiés**
+- `frontend/src/App.vue` — résolution du shell depuis `meta.space`
+- `frontend/src/router/index.js` — `meta.space` par route, guards de rôle, catch-all servant l'écran de refus
+- `frontend/src/style.css` — décision de gouttière
+- `frontend/src/i18n/fr.json`, `frontend/src/i18n/en.json`
+- `frontend/vite.config.js` — `theme_color`, `background_color`, `globPatterns`
+- `frontend/package.json` — script `verify:pwa`
+- `frontend/src/views/__tests__/RecoveryView.spec.js` — fixture dotée d'un rôle
+- `.github/workflows/ci.yml` — `verify:pwa` après le build
+
+### Change Log
+
+| Date | Version | Description |
+|---|---|---|
+| 2026-07-28 | 0.1 | Implémentation de la Story 2.3 : trois espaces, guards par rôle, réponse uniforme (NFR-P9), shells client et desktop, correction du manifeste PWA et garde `verify:pwa`, décision de gouttière. Statut → review. |
