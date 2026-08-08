@@ -5,6 +5,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 import AuthView from '@/views/AuthView.vue'
 import { useAuthStore } from '@/stores/auth'
 import { createEscrowI18n } from '@/i18n'
+import type { Pinia } from 'pinia'
 
 /**
  * UX-DR32 has two halves and they fail in opposite directions. The guard must
@@ -23,7 +24,7 @@ vi.mock('@/api/escrow', () => ({
   openDispute: vi.fn(),
 }))
 
-let pinia
+let pinia: Pinia
 
 beforeEach(() => {
   localStorage.clear()

@@ -89,7 +89,17 @@ export async function purgeReadCache() {
  */
 export type EndSessionReason = 'logout' | 'expired'
 
-export async function endSession({ reason }: { reason?: EndSessionReason } = {}): Promise<void> {
+/**
+ * `reason` est typé LARGE, et c'est le comportement documenté juste en dessous : « Two
+ * reasons and no third. An unrecognised one falls through to the RETAINING branch. » Une
+ * raison inconnue n'est donc pas une erreur d'appel, c'est un cas TRAITÉ — celui qui
+ * conserve les données plutôt que de les purger sur un mot qu'on n'a pas compris.
+ * `session.spec` passe `'signout'` exprès. Restreindre à l'union aurait interdit au test
+ * d'exprimer le cas que la fonction est écrite pour absorber.
+ */
+export async function endSession({
+  reason,
+}: { reason?: EndSessionReason | (string & {}) } = {}): Promise<void> {
   const auth = useAuthStore()
   const explicit = reason === 'logout'
 

@@ -6,6 +6,9 @@ import { createEscrowI18n } from '@/i18n'
 import { useAuthStore } from '@/stores/auth'
 import { useOfflineQueueStore } from '@/stores/offlineQueue'
 import { aUser } from '@/test-support/factories'
+import type { Pinia } from 'pinia'
+import type { VueWrapper } from '@vue/test-utils'
+import type { QueueEntry, QueuedActionType } from '@/types/queue'
 
 /**
  * The way *out* of the notice — deliberately a separate file from
@@ -32,9 +35,28 @@ vi.mock('@/api/escrow', () => ({
 const USER = { id: 42, email: 'alice@corp.example' }
 const FROZE_AT = '2026-01-01T00:05:00.000Z'
 
-function frozen({ id, type, transactionId = '7', code = 'DISPUTE_ALREADY_RESOLVED', files } = {}) {
+interface FrozenOptions {
+  id?: string
+  type?: QueuedActionType
+  /** `null` = pas de cible ; distinct d'`undefined`, qui prendrait le défaut. */
+  transactionId?: string | null
+  code?: string | null
+  files?: Blob[]
+}
+
+function frozen({
+  id = 'entry-1',
+  type = 'OPEN_DISPUTE',
+  transactionId = '7',
+  code = 'DISPUTE_ALREADY_RESOLVED',
+  files,
+}: FrozenOptions = {}): QueueEntry {
   return {
     id,
+    // Ajoutés par la migration : `flush()` les produit toujours.
+    timestamp: FROZE_AT,
+    method: 'post',
+    url: `/api/v1/escrow/${transactionId ?? '7'}/dispute`,
     meta: {
       type,
       ...(transactionId === null ? {} : { transactionId }),
@@ -46,7 +68,7 @@ function frozen({ id, type, transactionId = '7', code = 'DISPUTE_ALREADY_RESOLVE
   }
 }
 
-function mountNotice(pinia) {
+function mountNotice(pinia: Pinia) {
   return mount(SyncFailureNotice, { global: { plugins: [pinia, createEscrowI18n('en')], stubs: { RouterLink: true } } })
 }
 
@@ -58,7 +80,7 @@ function mountNotice(pinia) {
  * evidence everywhere else; this stub exists only where the wording itself is
  * the claim.
  */
-function mountWithLinkText(pinia) {
+function mountWithLinkText(pinia: Pinia) {
   return mount(SyncFailureNotice, {
     global: {
       plugins: [pinia, createEscrowI18n('en')],
@@ -68,11 +90,11 @@ function mountWithLinkText(pinia) {
 }
 
 /** A stubbed RouterLink renders no slot, so the `to` attribute is the only evidence. */
-function links(wrapper) {
+function links(wrapper: VueWrapper) {
   return wrapper.findAll('router-link-stub').map((link) => link.attributes('to'))
 }
 
-let pinia
+let pinia: Pinia
 
 beforeEach(() => {
   localStorage.clear()

@@ -15,18 +15,20 @@ import apiClient, { TOKEN_STORAGE_KEY, resetSessionExpiryLatch } from '@/api/cli
  */
 
 /** Shapes the rejection axios relays: `err.response.data` is the error envelope. */
-function httpError(status, data) {
+function httpError(status: number, data: unknown) {
   return Object.assign(new Error(`Request failed with status code ${status}`), {
     response: { status, data },
   })
 }
 
 /** Makes every request fail with `error`, without touching the network. */
-function failWith(error) {
+function failWith(error: unknown) {
   apiClient.defaults.adapter = () => Promise.reject(error)
 }
 
-let expired
+// Le compteur d'événements « session expirée » : posé par un écouteur, donc jamais
+// affecté à l'endroit où il est déclaré — d'où le type explicite.
+let expired: Event[]
 
 beforeEach(() => {
   localStorage.clear()

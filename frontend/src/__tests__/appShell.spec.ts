@@ -5,6 +5,7 @@ import { createI18n } from 'vue-i18n'
 import fr from '@/i18n/fr.json'
 import en from '@/i18n/en.json'
 import { aUser } from '@/test-support/factories'
+import type { User } from '@/types/domain'
 
 /**
  * AC4 — chaque route d'espace s'affiche DANS son shell, sans que la vue ait à le savoir.
@@ -16,7 +17,7 @@ import { aUser } from '@/test-support/factories'
  */
 const i18n = createI18n({ legacy: false, locale: 'fr', fallbackLocale: 'en', messages: { fr, en } })
 
-async function open(path, user) {
+async function open(path: string, user: User | null) {
   vi.resetModules()
   setActivePinia(createPinia())
   const [{ default: router }, { default: App }, { useAuthStore }] = await Promise.all([

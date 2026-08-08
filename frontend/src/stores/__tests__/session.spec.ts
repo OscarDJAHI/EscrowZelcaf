@@ -16,6 +16,7 @@ import {
 } from '@/stores/session'
 import * as idb from '@/stores/offlineQueue.idb'
 import { aTransaction } from '@/test-support/factories'
+import type { QueueEntry } from '@/types/queue'
 
 /**
  * What Story 1.9 is worth is as much in what survives as in what goes. Every
@@ -54,14 +55,24 @@ const LAST_USER_STORAGE_KEY = 'escrow_last_user'
  * drives the URL, so "which entry was replayed" is answerable from the request
  * itself rather than from a count that could not tell whose it was.
  */
-function entry({ id, userId, frozen = false, seq = 1 }) {
+interface EntryOptions {
+  id: string
+  /** `null` = entrée sans propriétaire — le cas que Story 4.5 refuse d'attribuer. */
+  userId?: number | null
+  frozen?: boolean
+  seq?: number
+}
+
+function entry({ id, userId, frozen = false, seq = 1 }: EntryOptions): QueueEntry {
   return {
     id,
     timestamp: `2026-01-01T00:00:0${seq}.000Z`,
     seq,
     method: 'post',
     url: `/api/v1/escrow/${seq}/event`,
-    data: { event: 'SHIP' },
+    // `SHIP_GOODS` : `SHIP` n'existe dans aucune énumération. La file transporte la
+    // charge sans la lire, mais une fixture doit ressembler à ce qui y transite.
+    data: { event: 'SHIP_GOODS' },
     meta: { type: 'SEND_EVENT', transactionId: seq, ...(userId === null ? {} : { userId }) },
     ...(frozen ? { frozen: true, failure: { code: 'ILLEGAL_TRANSITION', status: 400, message: null, at: '2026-01-01T00:05:00.000Z' } } : {}),
   }
@@ -108,7 +119,7 @@ async function signInAndReplay(user) {
 }
 
 /** A signed-in session, both halves, without firing `beginSession`. */
-function signIn(user) {
+function signIn(user: User) {
   const auth = useAuthStore()
   auth.token = `${user.email}-token`
   auth.user = { ...user }

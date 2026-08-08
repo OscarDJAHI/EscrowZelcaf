@@ -10,6 +10,7 @@ import { useOfflineQueueStore } from '@/stores/offlineQueue'
 import type { QueueEntry, QueuedActionType } from '@/types/queue'
 import type { Pinia } from 'pinia'
 import { aTransaction, aUser } from '@/test-support/factories'
+import type { VueWrapper } from '@vue/test-utils'
 
 // Mocked so that "the notice emits no fetch" is an assertion and not a hope: it
 // reads the real state out of the store, and the only load action available
@@ -102,14 +103,14 @@ function mountNotice(pinia: Pinia) {
  * transaction" is still asserted exactly, and `SyncFailureNotice.recovery.spec.js`
  * holds the other half.
  */
-function transactionLinks(wrapper) {
+function transactionLinks(wrapper: VueWrapper) {
   return wrapper
     .findAll('router-link-stub')
     .map((link) => link.attributes('to'))
     .filter((to) => to?.startsWith('/escrow/'))
 }
 
-let pinia
+let pinia: Pinia
 
 beforeEach(() => {
   localStorage.clear()

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { createEscrowI18n } from '@/i18n'
 import { eventLabel, humanize, roleLabel, stateLabel } from '@/i18n/labels'
+import type { I18nLike } from '@/i18n/labels'
 
 /**
  * Constats de la 2e passe de revue : la migration vers des clés i18n avait REMPLACÉ une
@@ -19,7 +20,9 @@ import { eventLabel, humanize, roleLabel, stateLabel } from '@/i18n/labels'
 
 const i18n = createEscrowI18n('fr')
 const { t, te } = i18n.global
-const translate = { t: (k, p) => t(k, p), te: (k) => te(k) }
+// Signature volontairement minimale : `I18nLike` est ce que `labels.ts` consomme, et
+// c'est tout ce dont un test a besoin pour le piloter hors composant.
+const translate: I18nLike = { t: (k: string) => t(k), te: (k: string) => te(k) }
 
 describe('humanize — le dernier filet', () => {
   it('rend lisible une valeur machine', () => {

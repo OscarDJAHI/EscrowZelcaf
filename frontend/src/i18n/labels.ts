@@ -18,7 +18,6 @@
  * monter quoi que ce soit. `te()` (« translation exists ») est le seul moyen de distinguer
  * une clé absente d'une traduction qui vaudrait littéralement son propre nom.
  */
-import type { AllowedEvent } from '@/utils/stateMachine'
 
 /**
  * Le strict nécessaire de vue-i18n, et rien de plus.
@@ -75,7 +74,15 @@ export function roleLabel(i18n: I18nLike, role: string | null | undefined): stri
  * c'est ce `null` qui faisait lever `$t`. On dégrade sur le nom de l'événement, ce que
  * faisait l'implémentation d'origine.
  */
-export function eventLabel(i18n: I18nLike, action: AllowedEvent | null | undefined): string {
+export function eventLabel(
+  // Le MINIMUM lu, et TOUT est optionnel. Cette fonction ne regarde que la clé et le nom
+  // de l'événement, jamais l'état visé — et elle existe précisément pour ne PAS lever sur
+  // une action dégénérée : `labels.spec` lui passe `{}`, `null`, et un événement futur
+  // absent du catalogue. C'est le défaut d'origine (`$t(null)` levait « Invalid
+  // arguments ») que cette signature doit continuer d'admettre pour pouvoir le nier.
+  i18n: I18nLike,
+  action: { event?: string; labelKey?: string | null } | null | undefined,
+): string {
   if (!action) return ''
   return translateOr(i18n, action.labelKey, humanize(action.event))
 }

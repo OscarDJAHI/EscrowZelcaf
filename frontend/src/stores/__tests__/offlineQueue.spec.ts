@@ -5,6 +5,7 @@ import apiClient from '@/api/client'
 import { useAuthStore } from '@/stores/auth'
 import { useOfflineQueueStore } from '@/stores/offlineQueue'
 import * as idb from '@/stores/offlineQueue.idb'
+import type { QueuedRequest } from '@/types/queue'
 
 const LEGACY_STORAGE_KEY = 'escrow_offline_queue'
 
@@ -30,12 +31,12 @@ const USER = { id: 42, email: 'alice@corp.example' }
  * which by design nobody hydrates, replays or is shown. Left out, the tests
  * below would pass vacuously by exercising nothing.
  */
-function owned(request) {
+function owned(request: QueuedRequest): QueuedRequest {
   return { ...request, meta: { ...(request.meta ?? {}), userId: USER.id } }
 }
 
 /** Deterministic 3 MB payload — big enough that a lossy round-trip cannot hide. */
-function makeBlob(sizeBytes = 3 * 1024 * 1024, type = 'image/jpeg') {
+function makeBlob(sizeBytes = 3 * 1024 * 1024, type = 'image/jpeg'): Blob {
   const bytes = new Uint8Array(sizeBytes)
   for (let i = 0; i < sizeBytes; i += 1) bytes[i] = i % 256
   return new Blob([bytes], { type })
@@ -107,8 +108,8 @@ describe('offlineQueue — enqueue with binary', () => {
 
     const persisted = await idb.getAll()
     expect(persisted).toHaveLength(1)
-    expect(persisted[0].files[0]).toBeInstanceOf(Blob)
-    await expectSameBytes(persisted[0].files[0], blob)
+    expect(persisted[0]!.files[0]).toBeInstanceOf(Blob)
+    await expectSameBytes(persisted[0]!.files[0], blob)
   })
 
   it('rejects (and does not enqueue) when the IndexedDB write fails', async () => {
@@ -148,10 +149,10 @@ describe('offlineQueue — survives a reload', () => {
     expect(reloaded.pendingCount).toBe(1)
     const [entry] = reloaded.queue
     expect(entry.url).toBe('/api/v1/escrow/7/dispute')
-    expect(entry.data.comment).toBe('Preuve hors-ligne')
-    expect(entry.files[0]).toBeInstanceOf(Blob)
-    expect(entry.files[0].type).toBe('image/jpeg')
-    await expectSameBytes(entry.files[0], blob)
+    expect(entry.data!.comment).toBe('Preuve hors-ligne')
+    expect(entry.files![0]).toBeInstanceOf(Blob)
+    expect(entry.files![0].type).toBe('image/jpeg')
+    await expectSameBytes(entry.files![0], blob)
   })
 })
 
@@ -264,7 +265,7 @@ describe('offlineQueue — multipart replay', () => {
 
     expect(store.pendingCount).toBe(1)
     const [kept] = await idb.getAll()
-    await expectSameBytes(kept.files[0], blob)
+    await expectSameBytes(kept.files![0], blob)
   })
 })
 
@@ -398,7 +399,7 @@ describe('offlineQueue — failures on the newly-async paths', () => {
  * simulated failures are bare network errors with no `response` at all, so this
  * is the first HTTP error envelope this suite mocks.
  */
-function httpError(status, data) {
+function httpError(status: number, data: unknown) {
   return Object.assign(new Error(`Request failed with status code ${status}`), {
     response: { status, data },
   })
@@ -444,9 +445,9 @@ describe('offlineQueue — reconciling on a permanent rejection', () => {
     expect(kept.failure.status).toBe(409)
     expect(kept.failure.message).toBe('Le litige a déjà été arbitré')
     expect(kept.failure.at).toEqual(expect.any(String))
-    expect(kept.files[0]).toBeInstanceOf(Blob)
-    await expectSameBytes(kept.files[0], a)
-    await expectSameBytes(kept.files[1], b)
+    expect(kept.files![0]).toBeInstanceOf(Blob)
+    await expectSameBytes(kept.files![0], a)
+    await expectSameBytes(kept.files![1], b)
   })
 
   it('never retries a frozen entry — neither on a later flush nor after a reload', async () => {
@@ -590,7 +591,7 @@ describe('offlineQueue — transient rejections stay queued', () => {
     expect(store.pendingCount).toBe(1)
     const [kept] = await idb.getAll()
     expect(kept.frozen).toBeUndefined()
-    await expectSameBytes(kept.files[0], blob)
+    await expectSameBytes(kept.files![0], blob)
   })
 
   it('does not freeze an expired session (401): the replay is valid once re-authenticated', async () => {
