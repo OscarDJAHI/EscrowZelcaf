@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { describeAction, ownsEntry, resolveRealState } from '@/utils/frozenEntry'
+import type { RealStateInput } from '@/utils/frozenEntry'
+import type { QueueEntry, QueuedActionType } from '@/types/queue'
+import type { TransactionLike } from '@/types/domain'
 
 /**
  * The extracted criterion, locked on raw data — no store, no mount, no clock.
@@ -15,15 +18,48 @@ const FROZE_AT = '2026-01-01T00:05:00.000Z'
 const AFTER_FREEZE = '2026-01-01T00:10:00.000Z'
 const LONG_AFTER_FREEZE = '2026-01-01T00:20:00.000Z'
 
-function frozen({ type = 'OPEN_DISPUTE', transactionId = '7', code, at = FROZE_AT } = {}) {
+interface FrozenOptions {
+  type?: QueuedActionType
+  /** `null` = pas de cible ; distinct d'`undefined`, qui prendrait le défaut. */
+  transactionId?: string | null
+  code?: string | null
+  /** `null` = gel non horodaté. */
+  at?: string | null
+}
+
+/**
+ * `id`, `timestamp`, `method` et `url` sont ajoutés par la migration TypeScript.
+ *
+ * <p>Ils manquaient alors que `flush()` les produit TOUJOURS : la fabrique construisait
+ * une entrée que la file n'aurait jamais pu contenir. `resolveRealState` ne les lit pas,
+ * mais un test bâti sur une forme irréelle ne prouve rien sur la vraie.
+ */
+function frozen({ type = 'OPEN_DISPUTE', transactionId = '7', code = null, at = FROZE_AT }: FrozenOptions = {}): QueueEntry {
   return {
+    id: `entry-${type}-${transactionId ?? 'sans-cible'}`,
+    timestamp: FROZE_AT,
+    method: 'post',
+    url: `/api/v1/escrow/${transactionId ?? '7'}/dispute`,
     meta: { type, ...(transactionId === null ? {} : { transactionId }) },
-    failure: { code, at: at === null ? undefined : at },
+    failure: { code, status: 409, message: null, at: at === null ? undefined : at },
   }
 }
 
-/** Only the sources; the entry is what each test varies. */
-function sources({ transactions = [], transactionsFetchedAt = null, currentDetail = null, currentDetailFetchedAt = null } = {}) {
+type Sources = Omit<RealStateInput, 'entry'>
+
+/**
+ * Only the sources; the entry is what each test varies.
+ *
+ * <p>Le type de retour est nommé : sans lui, les défauts `[]` et `null` s'inféraient en
+ * `never[]` et `null`, et toute surcharge d'un test devenait une erreur d'affectation
+ * — le compilateur croyant que ces champs ne peuvent JAMAIS valoir autre chose.
+ */
+function sources({
+  transactions = [] as TransactionLike[],
+  transactionsFetchedAt = null,
+  currentDetail = null,
+  currentDetailFetchedAt = null,
+}: Partial<Sources> = {}): Sources {
   return { transactions, transactionsFetchedAt, currentDetail, currentDetailFetchedAt }
 }
 

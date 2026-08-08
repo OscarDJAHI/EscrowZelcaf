@@ -4,6 +4,7 @@ import { createPinia, setActivePinia } from 'pinia'
 import { createI18n } from 'vue-i18n'
 import fr from '@/i18n/fr.json'
 import en from '@/i18n/en.json'
+import { aUser } from '@/test-support/factories'
 
 /**
  * AC4 — chaque route d'espace s'affiche DANS son shell, sans que la vue ait à le savoir.
@@ -31,8 +32,8 @@ async function open(path, user) {
   return wrapper
 }
 
-const BUYER = { id: 1, email: 'a@corp.example', role: 'BUYER' }
-const ADMIN = { id: 2, email: 'b@corp.example', role: 'ADMIN' }
+const BUYER = aUser({ id: 1, email: 'a@corp.example', role: 'BUYER' })
+const ADMIN = aUser({ id: 2, email: 'b@corp.example', role: 'ADMIN' })
 
 beforeEach(() => setActivePinia(createPinia()))
 

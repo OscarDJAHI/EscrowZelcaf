@@ -5,6 +5,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 import TransactionDetailView from '@/views/TransactionDetailView.vue'
 import { useAuthStore } from '@/stores/auth'
 import { createEscrowI18n } from '@/i18n'
+import { aUser } from '@/test-support/factories'
 
 /**
  * Ce fichier existe parce que la revue a constaté qu'AUCUN test ne montait cette vue,
@@ -36,7 +37,7 @@ vi.mock('@/api/evidence', () => ({
 /** Détail servi par le mock ; réassigné par `renderDetail` avant chaque montage. */
 let detailFixture = null
 
-const BUYER = { id: 1, email: 'alice@corp.example', role: 'BUYER' }
+const BUYER = aUser({ id: 1, email: 'alice@corp.example', role: 'BUYER' })
 
 const router = createRouter({ history: createWebHistory(), routes: [{ path: '/', component: { template: '<div />' } }] })
 

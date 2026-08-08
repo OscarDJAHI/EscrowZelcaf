@@ -211,7 +211,12 @@ export const useEscrowStore = defineStore('escrow', {
      */
     async openDispute(
       id: string | number,
-      { files, comment }: { files: File[]; comment: string },
+      // `Blob[]` et non `File[]` : ce store ne lit AUCUN champ propre à `File` — il
+      // recopie les octets dans un `FormData` et dans la file, où ils repartent en clone
+      // structuré. C'est le formulaire qui manipule des `File` (il en lit le nom pour
+      // valider) ; l'imposer ici obligeait les suites à fabriquer des `File` factices
+      // pour un code qui n'en a jamais eu besoin.
+      { files, comment }: { files: Blob[]; comment: string },
     ): Promise<DisputeOpened | null> {
       const offlineQueue = useOfflineQueueStore()
 

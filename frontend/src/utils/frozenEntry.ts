@@ -99,10 +99,21 @@ export function ownsEntry(
  * `hasOwn`, like `describeFailure`: `meta` round-trips through IndexedDB, and a
  * bare lookup of `constructor` would render a function into the page — `||`
  * cannot catch it, a function being truthy.
+ *
+ * <p>Le paramètre accepte un `type` de type CHAÎNE QUELCONQUE, et non le seul
+ * `QueuedActionType`. C'est délibéré, et c'est la raison d'être du `hasOwn` ci-dessous :
+ * `meta` sort d'IndexedDB, donc d'un stockage que rien ne valide, et la suite passe
+ * exprès `constructor`, `toString` et `__proto__`. Restreindre la signature aurait
+ * interdit au test d'exprimer l'attaque contre laquelle la fonction existe — le type
+ * aurait décrit l'entrée souhaitée au lieu de l'entrée reçue.
  */
-export function describeAction(meta: QueueEntryMeta | null | undefined): string {
+export function describeAction(
+  meta: (Omit<QueueEntryMeta, 'type'> & { type?: string }) | null | undefined,
+): string {
   const type = meta?.type
-  return type != null && Object.hasOwn(ACTION_LABELS, type) ? ACTION_LABELS[type] : 'A queued action'
+  return type != null && Object.hasOwn(ACTION_LABELS, type)
+    ? ACTION_LABELS[type as QueuedActionType]
+    : 'A queued action'
 }
 
 /** True if a row carries any optimistic marker — matched by shape, so a marker added later is caught too. */

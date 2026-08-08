@@ -11,6 +11,9 @@ import { useAuthStore } from '@/stores/auth'
 import { useEscrowStore } from '@/stores/escrow'
 import { useOfflineQueueStore } from '@/stores/offlineQueue'
 import * as idb from '@/stores/offlineQueue.idb'
+import { aTransaction, aUser } from '@/test-support/factories'
+import type { DisplayTransactionDetail } from '@/stores/escrow'
+import type { EscrowState } from '@/types/domain'
 
 // `TOKEN_STORAGE_KEY` is re-exported because a whole-module factory drops
 // everything it does not name, and `stores/auth` — reached through
@@ -32,7 +35,7 @@ vi.mock('@/api/escrow', () => ({
 const payload = { sellerEmail: 'seller@example.com', amount: 1500, currency: 'XOF' }
 
 /** Deterministic payload — see `offlineQueue.spec.js`, same rationale. */
-function makeBlob(sizeBytes = 2048, type = 'image/jpeg') {
+function makeBlob(sizeBytes = 2048, type = 'image/jpeg'): Blob {
   const bytes = new Uint8Array(sizeBytes)
   for (let i = 0; i < sizeBytes; i += 1) bytes[i] = i % 256
   return new Blob([bytes], { type })
@@ -44,7 +47,7 @@ function makeBlob(sizeBytes = 2048, type = 'image/jpeg') {
  * No `toBeInstanceOf(Blob)` after a FormData round-trip — jsdom's FormData
  * re-wraps an appended Node Blob into a jsdom File.
  */
-async function expectSameBytes(actual, expected) {
+async function expectSameBytes(actual: Blob, expected: Blob) {
   expect(typeof actual?.arrayBuffer).toBe('function')
   expect(actual.size).toBe(expected.size)
   const [a, b] = [await actual.arrayBuffer(), await expected.arrayBuffer()]
@@ -52,8 +55,8 @@ async function expectSameBytes(actual, expected) {
 }
 
 /** Detail shape the dispute paths read: a transaction plus its audit logs. */
-function detailFor(id, state = 'FUNDS_LOCKED') {
-  return { transaction: { id, state }, auditLogs: [] }
+function detailFor(id: number | string, state: EscrowState = 'FUNDS_LOCKED'): DisplayTransactionDetail {
+  return { transaction: aTransaction({ id, state }), auditLogs: [] }
 }
 
 beforeEach(() => {
@@ -62,7 +65,7 @@ beforeEach(() => {
   localStorage.clear()
   setActivePinia(createPinia())
   apiClient.request.mockReset()
-  apiClient.request.mockResolvedValue({ data: {} })
+  vi.mocked(apiClient.request).mockResolvedValue({ data: {} })
 })
 
 afterEach(() => {
@@ -97,12 +100,17 @@ describe('escrow store — offline enqueue is now able to fail', () => {
   it('propagates the failure of an offline event instead of flagging it as queued', async () => {
     const escrow = useEscrowStore()
     useOfflineQueueStore().isOnline = false
-    escrow.currentDetail = { transaction: { id: 9, state: 'PAID' }, evidence: [] }
+    // `FUNDS_LOCKED` + `SHIP_GOODS` et non `PAID` + `SHIP` : ces deux dernières valeurs
+    // n'existent dans AUCUNE des deux énumérations, et `evidence` n'appartient pas à
+    // `currentDetail` (c'est une clé de la réponse d'ouverture de litige). Le test reste
+    // le même — il prouve qu'un échec d'enfilement remonte au lieu d'être marqué en
+    // attente — mais il le prouve désormais sur un état que la machine peut atteindre.
+    escrow.currentDetail = { transaction: aTransaction({ id: 9, state: 'FUNDS_LOCKED' }), auditLogs: [] }
     vi.spyOn(idb, 'put').mockRejectedValueOnce(new Error('QuotaExceededError'))
 
-    await expect(escrow.sendTransactionEvent(9, 'SHIP')).rejects.toThrow('QuotaExceededError')
+    await expect(escrow.sendTransactionEvent(9, 'SHIP_GOODS')).rejects.toThrow('QuotaExceededError')
 
-    expect(escrow.currentDetail.transaction._queuedEvent).toBeUndefined()
+    expect(escrow.currentDetail!.transaction._queuedEvent).toBeUndefined()
   })
 })
 
@@ -124,12 +132,12 @@ describe('escrow store — opening a dispute offline', () => {
     expect(entry.method).toBe('post')
     expect(entry.url).toBe('/api/v1/escrow/7/dispute')
     expect(entry.meta).toEqual({ type: 'OPEN_DISPUTE', transactionId: 7 })
-    expect(entry.data.comment).toBe('Colis endommagé')
-    expect(entry.data.clientCapturedAt).toMatch(/^\d{4}-\d{2}-\d{2}T[\d:.]+Z$/)
+    expect(entry.data!.comment).toBe('Colis endommagé')
+    expect(entry.data!.clientCapturedAt).toMatch(/^\d{4}-\d{2}-\d{2}T[\d:.]+Z$/)
     // `files` at the root — that is where `buildFormData()` looks for them.
     expect(entry.files).toHaveLength(2)
-    await expectSameBytes(entry.files[0], a)
-    await expectSameBytes(entry.files[1], b)
+    await expectSameBytes(entry.files![0], a)
+    await expectSameBytes(entry.files![1], b)
     expect(openDisputeApi).not.toHaveBeenCalled()
   })
 
@@ -137,12 +145,12 @@ describe('escrow store — opening a dispute offline', () => {
     const escrow = useEscrowStore()
     useOfflineQueueStore().isOnline = false
     escrow.currentDetail = detailFor(7)
-    escrow.transactions = [{ id: 7, state: 'FUNDS_LOCKED' }, { id: 8, state: 'FUNDS_LOCKED' }]
+    escrow.transactions = [aTransaction({ id: 7, state: 'FUNDS_LOCKED' }), aTransaction({ id: 8, state: 'FUNDS_LOCKED' })]
 
     await escrow.openDispute(7, { files: [makeBlob(512)], comment: 'Article cassé' })
 
-    expect(escrow.currentDetail.transaction.state).toBe('DISPUTED')
-    expect(escrow.currentDetail.transaction._queuedDispute).toBe(true)
+    expect(escrow.currentDetail!.transaction.state).toBe('DISPUTED')
+    expect(escrow.currentDetail!.transaction._queuedDispute).toBe(true)
     expect(escrow.transactions[0]).toMatchObject({ state: 'DISPUTED', _queuedDispute: true })
     // The other transaction must not be dragged along.
     expect(escrow.transactions[1].state).toBe('FUNDS_LOCKED')
@@ -152,13 +160,13 @@ describe('escrow store — opening a dispute offline', () => {
     const escrow = useEscrowStore()
     useOfflineQueueStore().isOnline = false
     escrow.currentDetail = detailFor(7)
-    escrow.transactions = [{ id: 7, state: 'FUNDS_LOCKED' }]
+    escrow.transactions = [aTransaction({ id: 7, state: 'FUNDS_LOCKED' })]
 
     // What production really passes: `TransactionDetailView` declares its route
     // prop as a String and hands it down, while the API sends numeric ids.
     await escrow.openDispute('7', { files: [makeBlob(512)], comment: 'Id de route' })
 
-    expect(escrow.currentDetail.transaction._queuedDispute).toBe(true)
+    expect(escrow.currentDetail!.transaction._queuedDispute).toBe(true)
     expect(escrow.transactions[0]._queuedDispute).toBe(true)
   })
 
@@ -176,7 +184,7 @@ describe('escrow store — opening a dispute offline', () => {
     )
 
     expect(queue.pendingCount).toBe(0)
-    expect(escrow.currentDetail.transaction.state).toBe('FUNDS_LOCKED')
+    expect(escrow.currentDetail!.transaction.state).toBe('FUNDS_LOCKED')
   })
 
   it('shows nothing optimistic when the entry could not be persisted', async () => {
@@ -184,7 +192,7 @@ describe('escrow store — opening a dispute offline', () => {
     const queue = useOfflineQueueStore()
     queue.isOnline = false
     escrow.currentDetail = detailFor(7)
-    escrow.transactions = [{ id: 7, state: 'FUNDS_LOCKED' }]
+    escrow.transactions = [aTransaction({ id: 7, state: 'FUNDS_LOCKED' })]
     vi.spyOn(idb, 'put').mockRejectedValueOnce(new Error('QuotaExceededError'))
 
     await expect(
@@ -193,8 +201,8 @@ describe('escrow store — opening a dispute offline', () => {
 
     // Nothing queued means nothing will ever sync: a DISPUTED badge here would
     // promise a dispute that exists nowhere.
-    expect(escrow.currentDetail.transaction.state).toBe('FUNDS_LOCKED')
-    expect(escrow.currentDetail.transaction._queuedDispute).toBeUndefined()
+    expect(escrow.currentDetail!.transaction.state).toBe('FUNDS_LOCKED')
+    expect(escrow.currentDetail!.transaction._queuedDispute).toBeUndefined()
     expect(escrow.transactions[0]._queuedDispute).toBeUndefined()
     expect(queue.pendingCount).toBe(0)
   })
@@ -207,7 +215,7 @@ describe('escrow store — opening a dispute offline', () => {
     // fixture would queue an ownerless entry, which nothing ever replays.
     // Awaited, because `applySession` now also adopts the queue for the new
     // session — left in flight it would read and flush behind this test's back.
-    await useAuthStore().applySession({ token: 'alice-token', user: { id: 42, email: 'alice@corp.example' } })
+    await useAuthStore().applySession({ token: 'alice-token', user: aUser({ id: 42, email: 'alice@corp.example' }) })
     queue.isOnline = false
     escrow.currentDetail = detailFor(7)
     const [a, b] = [makeBlob(2048, 'image/png'), makeBlob(4096, 'application/pdf')]
@@ -223,7 +231,7 @@ describe('escrow store — opening a dispute offline', () => {
 
     // The entry this story produces is really consumable by the 4.1 replay.
     expect(apiClient.request).toHaveBeenCalledOnce()
-    const config = apiClient.request.mock.calls[0][0]
+    const config = vi.mocked(apiClient.request).mock.calls[0][0]
     expect(config.method).toBe('post')
     expect(config.url).toBe('/api/v1/escrow/7/dispute')
     expect(config.headers).toEqual({ 'Content-Type': 'multipart/form-data' })
@@ -245,7 +253,7 @@ describe('escrow store — opening a dispute offline', () => {
     // Persisted, so the brand-new Pinia below finds the same session back — which
     // is what a real reload does, and what Story 1.9 requires before an entry can
     // be hydrated at all. Awaited for the same reason as above.
-    await useAuthStore().applySession({ token: 'alice-token', user: { id: 42, email: 'alice@corp.example' } })
+    await useAuthStore().applySession({ token: 'alice-token', user: aUser({ id: 42, email: 'alice@corp.example' }) })
     useOfflineQueueStore().isOnline = false
     escrow.currentDetail = detailFor(7)
     const blob = makeBlob(4096, 'image/jpeg')
@@ -264,14 +272,14 @@ describe('escrow store — opening a dispute offline', () => {
     // The owner rides along with the rest of `meta`: it is what lets the reloaded
     // queue recognise the entry as this session's (Story 1.9).
     expect(entry.meta).toEqual({ type: 'OPEN_DISPUTE', transactionId: 7, userId: 42 })
-    expect(entry.files[0]).toBeInstanceOf(Blob)
-    await expectSameBytes(entry.files[0], blob)
+    expect(entry.files![0]).toBeInstanceOf(Blob)
+    await expectSameBytes(entry.files![0], blob)
 
     reloaded.isOnline = true
     await reloaded.flush()
 
     expect(apiClient.request).toHaveBeenCalledOnce()
-    await expectSameBytes(apiClient.request.mock.calls[0][0].data.getAll('files')[0], blob)
+    await expectSameBytes(vi.mocked(apiClient.request).mock.calls[0][0].data.getAll('files')[0], blob)
   })
 })
 
@@ -307,7 +315,7 @@ describe('escrow store — when a load saw the server', () => {
     // *before* that freeze, so a stamp of LANDED_AT would let `SyncFailureNotice`
     // badge it as having seen the rejection.
     vi.setSystemTime(new Date(LANDED_AT))
-    land([{ id: 7, state: 'FUNDS_LOCKED' }])
+    land([aTransaction({ id: 7, state: 'FUNDS_LOCKED' })])
     await loading
 
     expect(escrow.transactionsFetchedAt).toBe(ISSUED_AT)
@@ -382,8 +390,8 @@ describe('escrow store — opening a dispute online is unchanged', () => {
     const queue = useOfflineQueueStore()
     queue.isOnline = true
     escrow.currentDetail = detailFor(7)
-    escrow.transactions = [{ id: 7, state: 'FUNDS_LOCKED' }]
-    const disputed = { id: 7, state: 'DISPUTED' }
+    escrow.transactions = [aTransaction({ id: 7, state: 'FUNDS_LOCKED' })]
+    const disputed = aTransaction({ id: 7, state: 'DISPUTED' })
     openDisputeApi.mockResolvedValueOnce({ transaction: disputed })
 
     const dto = await escrow.openDispute(7, { files: [makeBlob(512)], comment: 'En ligne' })
@@ -396,10 +404,10 @@ describe('escrow store — opening a dispute online is unchanged', () => {
     expect(form.get('comment')).toBe('En ligne')
     // The online path never stamped a capture time; that stays offline-only.
     expect(form.get('clientCapturedAt')).toBeNull()
-    expect(escrow.currentDetail.transaction).toEqual(disputed)
+    expect(escrow.currentDetail!.transaction).toEqual(disputed)
     expect(escrow.transactions[0]).toEqual(disputed)
     // Nothing must reach the queue while online.
     expect(queue.pendingCount).toBe(0)
-    expect(escrow.currentDetail.transaction._queuedDispute).toBeUndefined()
+    expect(escrow.currentDetail!.transaction._queuedDispute).toBeUndefined()
   })
 })

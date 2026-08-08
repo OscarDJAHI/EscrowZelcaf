@@ -9,6 +9,7 @@ import { useEscrowStore } from '@/stores/escrow'
 import { useOfflineQueueStore } from '@/stores/offlineQueue'
 import type { QueueEntry, QueuedActionType } from '@/types/queue'
 import type { Pinia } from 'pinia'
+import { aTransaction, aUser } from '@/test-support/factories'
 
 // Mocked so that "the notice emits no fetch" is an assertion and not a hope: it
 // reads the real state out of the store, and the only load action available
@@ -141,7 +142,7 @@ describe('SyncFailureNotice — what it renders at all', () => {
     queue.queue = [
       frozen({ code: 'DISPUTE_ALREADY_RESOLVED', message: 'Dispute on transaction 7 was already arbitrated' }),
     ]
-    escrow.transactions = [{ id: 7, state: 'RELEASED' }]
+    escrow.transactions = [aTransaction({ id: 7, state: 'RELEASED' })]
     escrow.transactionsFetchedAt = AFTER_FREEZE
 
     const wrapper = mountNotice(pinia)
@@ -263,7 +264,7 @@ describe('SyncFailureNotice — the notice belongs to one user', () => {
     ]
 
     auth.logout()
-    auth.applySession({ token: 'bob-token', user: { id: 7, email: 'bob@corp.example' } })
+    auth.applySession({ token: 'bob-token', user: aUser({ id: 7, email: 'bob@corp.example' }) })
     const wrapper = mountNotice(pinia)
 
     expect(auth.isAuthenticated).toBe(true) // the gate that was not enough
@@ -340,7 +341,7 @@ describe('SyncFailureNotice — a state is badged only once it has seen the reje
     useOfflineQueueStore().queue = [
       frozen({ type: 'SEND_EVENT', transactionId: '7', code: 'ILLEGAL_TRANSITION' }),
     ]
-    escrow.transactions = [{ id: 7, state: 'SHIPPED' }]
+    escrow.transactions = [aTransaction({ id: 7, state: 'SHIPPED' })]
     escrow.transactionsFetchedAt = BEFORE_FREEZE
 
     const wrapper = mountNotice(pinia)
@@ -357,9 +358,9 @@ describe('SyncFailureNotice — a state is badged only once it has seen the reje
     // wins, and here that is the list.
     const escrow = useEscrowStore()
     useOfflineQueueStore().queue = [frozen({ code: 'DISPUTE_ALREADY_RESOLVED' })]
-    escrow.currentDetail = { transaction: { id: 7, state: 'FUNDS_LOCKED' }, auditLogs: [] }
+    escrow.currentDetail = { transaction: aTransaction({ id: 7, state: 'FUNDS_LOCKED' }), auditLogs: [] }
     escrow.currentDetailFetchedAt = BEFORE_FREEZE
-    escrow.transactions = [{ id: 7, state: 'RELEASED' }]
+    escrow.transactions = [aTransaction({ id: 7, state: 'RELEASED' })]
     escrow.transactionsFetchedAt = AFTER_FREEZE
 
     const wrapper = mountNotice(pinia)
@@ -372,7 +373,7 @@ describe('SyncFailureNotice — a state is badged only once it has seen the reje
     // direction: on the detail view it is `transactions` that goes stale.
     const escrow = useEscrowStore()
     useOfflineQueueStore().queue = [frozen({ code: 'DISPUTE_ALREADY_RESOLVED' })]
-    escrow.currentDetail = { transaction: { id: 7, state: 'RELEASED' }, auditLogs: [] }
+    escrow.currentDetail = { transaction: aTransaction({ id: 7, state: 'RELEASED' }), auditLogs: [] }
     escrow.currentDetailFetchedAt = AFTER_FREEZE
     escrow.transactions = [{ id: 7, state: 'DISPUTED', _queuedDispute: true }]
     escrow.transactionsFetchedAt = BEFORE_FREEZE
@@ -387,9 +388,9 @@ describe('SyncFailureNotice — a state is badged only once it has seen the reje
     // this is what forbids a fixed precedence rather than merely not needing one.
     const escrow = useEscrowStore()
     useOfflineQueueStore().queue = [frozen({ code: 'DISPUTE_ALREADY_RESOLVED' })]
-    escrow.currentDetail = { transaction: { id: 7, state: 'DISPUTED' }, auditLogs: [] }
+    escrow.currentDetail = { transaction: aTransaction({ id: 7, state: 'DISPUTED' }), auditLogs: [] }
     escrow.currentDetailFetchedAt = AFTER_FREEZE
-    escrow.transactions = [{ id: 7, state: 'RELEASED' }]
+    escrow.transactions = [aTransaction({ id: 7, state: 'RELEASED' })]
     escrow.transactionsFetchedAt = LONG_AFTER_FREEZE
 
     const wrapper = mountNotice(pinia)
@@ -402,9 +403,9 @@ describe('SyncFailureNotice — a state is badged only once it has seen the reje
     // nothing else.
     const escrow = useEscrowStore()
     useOfflineQueueStore().queue = [frozen({ code: 'DISPUTE_ALREADY_RESOLVED' })]
-    escrow.currentDetail = { transaction: { id: 7, state: 'RELEASED' }, auditLogs: [] }
+    escrow.currentDetail = { transaction: aTransaction({ id: 7, state: 'RELEASED' }), auditLogs: [] }
     escrow.currentDetailFetchedAt = LONG_AFTER_FREEZE
-    escrow.transactions = [{ id: 7, state: 'DISPUTED' }]
+    escrow.transactions = [aTransaction({ id: 7, state: 'DISPUTED' })]
     escrow.transactionsFetchedAt = AFTER_FREEZE
 
     const wrapper = mountNotice(pinia)
@@ -417,7 +418,7 @@ describe('SyncFailureNotice — a state is badged only once it has seen the reje
     // even one loaded a second ago.
     const escrow = useEscrowStore()
     useOfflineQueueStore().queue = [frozen({ code: 'DISPUTE_ALREADY_RESOLVED', at: null })]
-    escrow.transactions = [{ id: 7, state: 'RELEASED' }]
+    escrow.transactions = [aTransaction({ id: 7, state: 'RELEASED' })]
     escrow.transactionsFetchedAt = AFTER_FREEZE
 
     const wrapper = mountNotice(pinia)
@@ -453,9 +454,9 @@ describe('SyncFailureNotice — a state is badged only once it has seen the reje
     // to the user out of a hat.
     const escrow = useEscrowStore()
     useOfflineQueueStore().queue = [frozen({ code: 'DISPUTE_ALREADY_RESOLVED' })]
-    escrow.currentDetail = { transaction: { id: 7, state: 'REFUNDED' }, auditLogs: [] }
+    escrow.currentDetail = { transaction: aTransaction({ id: 7, state: 'REFUNDED' }), auditLogs: [] }
     escrow.currentDetailFetchedAt = AFTER_FREEZE
-    escrow.transactions = [{ id: 7, state: 'RELEASED' }]
+    escrow.transactions = [aTransaction({ id: 7, state: 'RELEASED' })]
     escrow.transactionsFetchedAt = AFTER_FREEZE
 
     const wrapper = mountNotice(pinia)
@@ -469,9 +470,9 @@ describe('SyncFailureNotice — a state is badged only once it has seen the reje
   it('badges the state when two equally fresh sources agree', () => {
     const escrow = useEscrowStore()
     useOfflineQueueStore().queue = [frozen({ code: 'DISPUTE_ALREADY_RESOLVED' })]
-    escrow.currentDetail = { transaction: { id: 7, state: 'RELEASED' }, auditLogs: [] }
+    escrow.currentDetail = { transaction: aTransaction({ id: 7, state: 'RELEASED' }), auditLogs: [] }
     escrow.currentDetailFetchedAt = AFTER_FREEZE
-    escrow.transactions = [{ id: 7, state: 'RELEASED' }]
+    escrow.transactions = [aTransaction({ id: 7, state: 'RELEASED' })]
     escrow.transactionsFetchedAt = AFTER_FREEZE
 
     const wrapper = mountNotice(pinia)
@@ -484,7 +485,7 @@ describe('SyncFailureNotice — a state is badged only once it has seen the reje
     useOfflineQueueStore().queue = [frozen({ code: 'DISPUTE_ALREADY_RESOLVED' })]
     escrow.transactions = []
     escrow.transactionsFetchedAt = AFTER_FREEZE
-    escrow.currentDetail = { transaction: { id: 99, state: 'RELEASED' }, auditLogs: [] }
+    escrow.currentDetail = { transaction: aTransaction({ id: 99, state: 'RELEASED' }), auditLogs: [] }
     escrow.currentDetailFetchedAt = AFTER_FREEZE
 
     const wrapper = mountNotice(pinia)
@@ -498,7 +499,7 @@ describe('SyncFailureNotice — a state is badged only once it has seen the reje
   it('matches a route id given as a string against the numeric id the API sends', () => {
     const escrow = useEscrowStore()
     useOfflineQueueStore().queue = [frozen({ transactionId: '7', code: 'DISPUTE_ALREADY_RESOLVED' })]
-    escrow.transactions = [{ id: 7, state: 'RELEASED' }]
+    escrow.transactions = [aTransaction({ id: 7, state: 'RELEASED' })]
     escrow.transactionsFetchedAt = AFTER_FREEZE
 
     const wrapper = mountNotice(pinia)
@@ -532,7 +533,7 @@ describe('SyncFailureNotice — the fixes review found', () => {
     // instead of the answer, on its very first render.
     useOfflineQueueStore().queue = [frozen({ code: 'DISPUTE_ALREADY_RESOLVED', at: FROZE_AT })]
     const escrow = useEscrowStore()
-    escrow.transactions = [{ id: 7, state: 'RELEASED' }]
+    escrow.transactions = [aTransaction({ id: 7, state: 'RELEASED' })]
     escrow.transactionsFetchedAt = FROZE_AT
 
     const wrapper = mountNotice(pinia)
@@ -549,7 +550,7 @@ describe('SyncFailureNotice — the fixes review found', () => {
       // to have one: "This transaction no longer exists. Current state: …".
       useOfflineQueueStore().queue = [frozen({ code, status: 404 })]
       const escrow = useEscrowStore()
-      escrow.transactions = [{ id: 7, state: 'FUNDS_LOCKED' }]
+      escrow.transactions = [aTransaction({ id: 7, state: 'FUNDS_LOCKED' })]
       escrow.transactionsFetchedAt = AFTER_FREEZE
 
       const wrapper = mountNotice(pinia)

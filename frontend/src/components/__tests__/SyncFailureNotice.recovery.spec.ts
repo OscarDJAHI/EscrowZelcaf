@@ -5,6 +5,7 @@ import SyncFailureNotice from '@/components/SyncFailureNotice.vue'
 import { createEscrowI18n } from '@/i18n'
 import { useAuthStore } from '@/stores/auth'
 import { useOfflineQueueStore } from '@/stores/offlineQueue'
+import { aUser } from '@/test-support/factories'
 
 /**
  * The way *out* of the notice — deliberately a separate file from
@@ -171,7 +172,7 @@ describe('SyncFailureNotice — every frozen entry has a way out', () => {
     useOfflineQueueStore().queue = [frozen({ id: 'e-alice', type: 'OPEN_DISPUTE', files: [{}] })]
 
     auth.logout()
-    auth.applySession({ token: 'bob-token', user: { id: 7, email: 'bob@corp.example' } })
+    auth.applySession({ token: 'bob-token', user: aUser({ id: 7, email: 'bob@corp.example' }) })
     const wrapper = mountNotice(pinia)
 
     expect(links(wrapper)).toEqual([])

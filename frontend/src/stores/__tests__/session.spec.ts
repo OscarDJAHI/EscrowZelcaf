@@ -15,6 +15,7 @@ import {
   installSessionExpiryListener,
 } from '@/stores/session'
 import * as idb from '@/stores/offlineQueue.idb'
+import { aTransaction } from '@/test-support/factories'
 
 /**
  * What Story 1.9 is worth is as much in what survives as in what goes. Every
@@ -121,7 +122,7 @@ beforeEach(() => {
   localStorage.clear()
   setActivePinia(createPinia())
   apiClient.request.mockReset()
-  apiClient.request.mockResolvedValue({ data: {} })
+  vi.mocked(apiClient.request).mockResolvedValue({ data: {} })
   vi.clearAllMocks()
 })
 
@@ -158,8 +159,8 @@ describe('endSession — an explicit logout hands the device back', () => {
     const escrow = useEscrowStore()
     const evidence = useEvidenceStore()
     const queue = useOfflineQueueStore()
-    escrow.transactions = [{ id: 7, state: 'SHIPPED' }]
-    escrow.currentDetail = { transaction: { id: 7, state: 'SHIPPED' }, auditLogs: [] }
+    escrow.transactions = [aTransaction({ id: 7, state: 'SHIPPED' })]
+    escrow.currentDetail = { transaction: aTransaction({ id: 7, state: 'SHIPPED' }), auditLogs: [] }
     escrow.transactionsFetchedAt = '2026-01-01T00:00:00.000Z'
     evidence.items = [{ id: 1, originalFilename: 'invoice.pdf' }]
     evidence.loadedId = 7
@@ -237,8 +238,8 @@ describe('endSession — an explicit logout hands the device back', () => {
     const escrow = useEscrowStore()
     const evidence = useEvidenceStore()
     const queue = useOfflineQueueStore()
-    escrow.transactions = [{ id: 7, state: 'SHIPPED' }]
-    escrow.currentDetail = { transaction: { id: 7, state: 'SHIPPED' }, auditLogs: [] }
+    escrow.transactions = [aTransaction({ id: 7, state: 'SHIPPED' })]
+    escrow.currentDetail = { transaction: aTransaction({ id: 7, state: 'SHIPPED' }), auditLogs: [] }
     evidence.items = [{ id: 1, originalFilename: 'invoice.pdf' }]
     queue.queue = [entry({ id: 'alice-pending', userId: ALICE.id })]
 
@@ -288,7 +289,7 @@ describe('endSession — an expiry is suffered, not chosen', () => {
     const auth = signIn(ALICE)
     const escrow = useEscrowStore()
     const queue = useOfflineQueueStore()
-    escrow.transactions = [{ id: 7, state: 'SHIPPED' }]
+    escrow.transactions = [aTransaction({ id: 7, state: 'SHIPPED' })]
     queue.queue = [entry({ id: 'alice-pending', userId: ALICE.id })]
 
     await endSession({ reason: 'expired' })
@@ -415,8 +416,8 @@ describe('beginSession — the read cache belongs to whoever filled it', () => {
     stubCaches()
     const escrow = useEscrowStore()
     const evidence = useEvidenceStore()
-    escrow.transactions = [{ id: 7, state: 'SHIPPED' }]
-    escrow.currentDetail = { transaction: { id: 7, state: 'SHIPPED' }, auditLogs: [] }
+    escrow.transactions = [aTransaction({ id: 7, state: 'SHIPPED' })]
+    escrow.currentDetail = { transaction: aTransaction({ id: 7, state: 'SHIPPED' }), auditLogs: [] }
     evidence.items = [{ id: 1, originalFilename: 'invoice.pdf' }]
 
     await beginSession(BOB.id)
@@ -443,7 +444,7 @@ describe('a shared device, from ALICE signing out to BOB signing in', () => {
     // One request, and it is his. It went out under his JWT because it is his
     // entry; ALICE's would have come back NOT_A_PARTY — permanent — and been
     // frozen out of her own reach for good.
-    expect(apiClient.request.mock.calls.map((c) => c[0].url)).toEqual([URL_OF.bobPending])
+    expect(vi.mocked(apiClient.request).mock.calls.map((c) => c[0].url)).toEqual([URL_OF.bobPending])
     // Accepted, so it is gone; ALICE's and the ownerless one went at her logout.
     expect(await storedIds()).toEqual([])
     expect(queue.queue).toEqual([])
@@ -461,7 +462,7 @@ describe('a shared device, from ALICE signing out to BOB signing in', () => {
 
     // The scenario the ledger flagged: ALICE's session died, BOB signed in, and
     // her queued mutation used to go out under his token.
-    expect(apiClient.request.mock.calls.map((c) => c[0].url)).toEqual([URL_OF.bobPending])
+    expect(vi.mocked(apiClient.request).mock.calls.map((c) => c[0].url)).toEqual([URL_OF.bobPending])
     expect(await storedIds()).toEqual(['alice-frozen', 'alice-pending', 'orphan'])
   })
 
@@ -503,7 +504,7 @@ describe('a shared device, from ALICE signing out to BOB signing in', () => {
     // Story 4.5 decided nobody would be shown it; inventing an owner now would
     // reopen exactly the leak that decision closed.
     expect(queue.queue.map((item) => item.id)).not.toContain('orphan')
-    expect(apiClient.request.mock.calls.map((c) => c[0].url)).not.toContain(URL_OF.orphan)
+    expect(vi.mocked(apiClient.request).mock.calls.map((c) => c[0].url)).not.toContain(URL_OF.orphan)
     // Not resurrected, and not destroyed either — only an explicit logout does
     // that, once nobody can reach it any more.
     expect(await storedIds()).toContain('orphan')

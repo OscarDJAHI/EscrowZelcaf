@@ -82,7 +82,7 @@ beforeEach(() => {
   auth.user = { ...USER }
   auth.persist()
   apiClient.request.mockReset()
-  apiClient.request.mockResolvedValue({ data: {} })
+  vi.mocked(apiClient.request).mockResolvedValue({ data: {} })
 })
 
 afterEach(() => {
@@ -200,7 +200,7 @@ describe('offlineQueue — non-regression for binary-less entries', () => {
     }))
 
     vi.spyOn(console, 'error').mockImplementation(() => {})
-    apiClient.request.mockRejectedValueOnce(new Error('network down'))
+    vi.mocked(apiClient.request).mockRejectedValueOnce(new Error('network down'))
     store.isOnline = true
     await store.flush()
 
@@ -227,7 +227,7 @@ describe('offlineQueue — multipart replay', () => {
     await store.flush()
 
     expect(apiClient.request).toHaveBeenCalledOnce()
-    const config = apiClient.request.mock.calls[0][0]
+    const config = vi.mocked(apiClient.request).mock.calls[0][0]
     expect(config.method).toBe('post')
     expect(config.url).toBe('/api/v1/escrow/7/dispute')
     expect(config.headers).toEqual({ 'Content-Type': 'multipart/form-data' })
@@ -258,7 +258,7 @@ describe('offlineQueue — multipart replay', () => {
     }))
 
     vi.spyOn(console, 'error').mockImplementation(() => {})
-    apiClient.request.mockRejectedValueOnce(new Error('offline again'))
+    vi.mocked(apiClient.request).mockRejectedValueOnce(new Error('offline again'))
     store.isOnline = true
     await store.flush()
 
@@ -419,7 +419,7 @@ describe('offlineQueue — reconciling on a permanent rejection', () => {
     }))
 
     vi.spyOn(console, 'error').mockImplementation(() => {})
-    apiClient.request.mockRejectedValueOnce(
+    vi.mocked(apiClient.request).mockRejectedValueOnce(
       httpError(409, { code: 'DISPUTE_ALREADY_RESOLVED', message: 'Le litige a déjà été arbitré' }),
     )
     const listener = vi.fn()
@@ -460,7 +460,7 @@ describe('offlineQueue — reconciling on a permanent rejection', () => {
     }))
 
     vi.spyOn(console, 'error').mockImplementation(() => {})
-    apiClient.request.mockRejectedValueOnce(httpError(409, { code: 'DISPUTE_ALREADY_RESOLVED' }))
+    vi.mocked(apiClient.request).mockRejectedValueOnce(httpError(409, { code: 'DISPUTE_ALREADY_RESOLVED' }))
     store.isOnline = true
     await store.flush()
     expect(apiClient.request).toHaveBeenCalledOnce()
@@ -501,13 +501,13 @@ describe('offlineQueue — reconciling on a permanent rejection', () => {
     }))
 
     vi.spyOn(console, 'error').mockImplementation(() => {})
-    apiClient.request.mockRejectedValueOnce(httpError(409, { code: 'DISPUTE_ALREADY_RESOLVED' }))
+    vi.mocked(apiClient.request).mockRejectedValueOnce(httpError(409, { code: 'DISPUTE_ALREADY_RESOLVED' }))
     store.isOnline = true
     await store.flush()
 
     // The second entry went through and was dropped; only the frozen one is left.
     expect(apiClient.request).toHaveBeenCalledTimes(2)
-    expect(apiClient.request.mock.calls[1][0].url).toBe('/api/v1/escrow/9/event')
+    expect(vi.mocked(apiClient.request).mock.calls[1][0].url).toBe('/api/v1/escrow/9/event')
     expect(store.pendingCount).toBe(0)
     expect(store.frozenCount).toBe(1)
     expect(await idb.getAll()).toHaveLength(1)
@@ -519,7 +519,7 @@ describe('offlineQueue — reconciling on a permanent rejection', () => {
     await store.enqueue(owned({ method: 'post', url: '/api/v1/escrow/404/event', data: { event: 'SHIP' } }))
 
     vi.spyOn(console, 'error').mockImplementation(() => {})
-    apiClient.request.mockRejectedValueOnce(httpError(404, ''))
+    vi.mocked(apiClient.request).mockRejectedValueOnce(httpError(404, ''))
     store.isOnline = true
     await store.flush()
 
@@ -536,7 +536,7 @@ describe('offlineQueue — reconciling on a permanent rejection', () => {
 
     vi.spyOn(console, 'error').mockImplementation(() => {})
     vi.spyOn(idb, 'put').mockRejectedValueOnce(new Error('QuotaExceededError'))
-    apiClient.request.mockRejectedValueOnce(httpError(400, { code: 'ILLEGAL_TRANSITION' }))
+    vi.mocked(apiClient.request).mockRejectedValueOnce(httpError(400, { code: 'ILLEGAL_TRANSITION' }))
     store.isOnline = true
     await store.flush()
 
@@ -553,7 +553,7 @@ describe('offlineQueue — transient rejections stay queued', () => {
     await store.enqueue(owned({ method: 'post', url: '/api/v1/escrow/7/event', data: { event: 'SHIP' } }))
 
     vi.spyOn(console, 'error').mockImplementation(() => {})
-    apiClient.request.mockRejectedValueOnce(httpError(409, { code: 'CONCURRENT_MODIFICATION' }))
+    vi.mocked(apiClient.request).mockRejectedValueOnce(httpError(409, { code: 'CONCURRENT_MODIFICATION' }))
     const listener = vi.fn()
     window.addEventListener('escrow:sync', listener)
     store.isOnline = true
@@ -582,7 +582,7 @@ describe('offlineQueue — transient rejections stay queued', () => {
     }))
 
     vi.spyOn(console, 'error').mockImplementation(() => {})
-    apiClient.request.mockRejectedValueOnce(httpError(400, { code: 'FILE_READ_ERROR' }))
+    vi.mocked(apiClient.request).mockRejectedValueOnce(httpError(400, { code: 'FILE_READ_ERROR' }))
     store.isOnline = true
     await store.flush()
 
@@ -599,7 +599,7 @@ describe('offlineQueue — transient rejections stay queued', () => {
     await store.enqueue(owned({ method: 'post', url: '/api/v1/escrow/7/event', data: { event: 'SHIP' } }))
 
     vi.spyOn(console, 'error').mockImplementation(() => {})
-    apiClient.request.mockRejectedValueOnce(httpError(401, ''))
+    vi.mocked(apiClient.request).mockRejectedValueOnce(httpError(401, ''))
     store.isOnline = true
     await store.flush()
 
@@ -654,7 +654,7 @@ describe('offlineQueue — replay order', () => {
     reloaded.isOnline = true
     await reloaded.flush()
 
-    expect(apiClient.request.mock.calls.map((c) => c[0].url)).toEqual([
+    expect(vi.mocked(apiClient.request).mock.calls.map((c) => c[0].url)).toEqual([
       '/api/v1/escrow/1/event',
       '/api/v1/escrow/2/event',
       '/api/v1/escrow/3/event',
@@ -724,7 +724,7 @@ describe('offlineQueue — the queue is device-global, the session is not (Story
     store.isOnline = true
     await store.flush()
 
-    const sent = apiClient.request.mock.calls.map((c) => c[0].url)
+    const sent = vi.mocked(apiClient.request).mock.calls.map((c) => c[0].url)
     expect(sent).toEqual(['/api/v1/escrow/1/event'])
     expect(sent).not.toContain('/api/v1/escrow/2/event')
     expect(sent).not.toContain('/api/v1/escrow/3/event')
@@ -873,7 +873,7 @@ describe('offlineQueue — the queue is device-global, the session is not (Story
     await store.flush()
     window.removeEventListener('escrow:sync', synced)
 
-    expect(apiClient.request.mock.calls.map((c) => c[0].url)).toEqual(['/api/v1/escrow/1/event'])
+    expect(vi.mocked(apiClient.request).mock.calls.map((c) => c[0].url)).toEqual(['/api/v1/escrow/1/event'])
     // The second entry is untouched — not sent, not frozen, still its owner's.
     const left = await idb.getAll()
     expect(left.map((item) => item.id)).toEqual(['second'])

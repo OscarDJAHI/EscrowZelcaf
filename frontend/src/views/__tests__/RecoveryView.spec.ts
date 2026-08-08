@@ -8,6 +8,9 @@ import * as escrowApi from '@/api/escrow'
 import { useAuthStore } from '@/stores/auth'
 import { useEscrowStore } from '@/stores/escrow'
 import { useOfflineQueueStore } from '@/stores/offlineQueue'
+import type { QueueEntry, QueuedActionType } from '@/types/queue'
+import type { Pinia } from 'pinia'
+import { aTransaction, aUser } from '@/test-support/factories'
 
 // Mocked so that "this screen emits no fetch" is an assertion and not a hope: a
 // frozen entry is typically read offline, and the only load available writes
@@ -23,13 +26,25 @@ vi.mock('@/api/escrow', () => ({
 // `role` inclus : la réponse de connexion en fournit toujours un, et depuis la
 // Story 2.3 le routage des trois espaces s'y fonde EXCLUSIVEMENT (AD-21). Une
 // fixture sans rôle décrivait un état que le serveur n'émet jamais.
-const USER = { id: 42, email: 'alice@corp.example', role: 'BUYER' }
+const USER = aUser({ id: 42, email: 'alice@corp.example', role: 'BUYER' })
 
 /** Sentinels, never `new Date()`: the freshness rule is an ordering of stamps. */
 const FROZE_AT = '2026-01-01T00:05:00.000Z'
 const AFTER_FREEZE = '2026-01-01T00:10:00.000Z'
 
 const ENTRY_ID = 'entry-1'
+
+interface FrozenOptions {
+  id?: string
+  type?: QueuedActionType
+  /** `null` = pas de cible ; distinct d'`undefined`, qui prendrait le défaut. */
+  transactionId?: string | null
+  /** `null` = entrée sans propriétaire, invisible pour tout le monde. */
+  userId?: number | null
+  code?: string | null
+  message?: string | null
+  files?: Blob[]
+}
 
 function frozen({
   id = ENTRY_ID,
@@ -39,9 +54,13 @@ function frozen({
   code = 'DISPUTE_ALREADY_RESOLVED',
   message = null,
   files,
-} = {}) {
+}: FrozenOptions = {}): QueueEntry {
   return {
     id,
+    // Ajoutés par la migration : `flush()` les produit toujours, la fabrique les taisait.
+    timestamp: FROZE_AT,
+    method: 'post',
+    url: `/api/v1/escrow/${transactionId ?? '7'}/dispute`,
     meta: {
       type,
       ...(transactionId === null ? {} : { transactionId }),
@@ -53,19 +72,26 @@ function frozen({
   }
 }
 
-/** A queued attachment as structured clone gives it back: name/type/size. */
-function file(name = 'photo.jpg', type = 'image/jpeg', size = 2 * 1024 * 1024) {
-  return { name, type, size }
+/**
+ * A queued attachment as structured clone gives it back: name/type/size.
+ *
+ * <p>Ce n'est PAS un vrai `Blob` — et c'est exactement ce que la vue doit encaisser :
+ * `RecoveryView` lit `file.name` sur des valeurs dont le type ne garantit que `Blob`.
+ * L'assertion ci-dessous est donc l'aveu honnête de ce que la fixture imite, plutôt
+ * qu'un `Blob` fabriqué qui ne porterait justement pas de nom.
+ */
+function file(name = 'photo.jpg', type = 'image/jpeg', size = 2 * 1024 * 1024): Blob {
+  return { name, type, size } as unknown as Blob
 }
 
-function mountView(pinia, entryId = ENTRY_ID) {
+let pinia: Pinia
+
+function mountView(pinia: Pinia, entryId = ENTRY_ID) {
   return mount(RecoveryView, {
     props: { entryId },
     global: { plugins: [pinia, createEscrowI18n('en')], stubs: { RouterLink: true } },
   })
 }
-
-let pinia
 
 beforeEach(async () => {
   localStorage.clear()
@@ -93,7 +119,7 @@ describe('RecoveryView — the nominal recovery', () => {
     const escrow = useEscrowStore()
     queue.hydrated = true
     queue.queue = [frozen({ files: [file()] })]
-    escrow.transactions = [{ id: 7, state: 'RELEASED' }]
+    escrow.transactions = [aTransaction({ id: 7, state: 'RELEASED' })]
     escrow.transactionsFetchedAt = AFTER_FREEZE
 
     const wrapper = mountView(pinia)
@@ -172,7 +198,7 @@ describe('RecoveryView — the nominal recovery', () => {
     queue.hydrated = true
     queue.queue = [frozen({ files: [file()] })]
     // Loaded, but before the freeze: it has not seen the rejection.
-    escrow.transactions = [{ id: 7, state: 'DISPUTED' }]
+    escrow.transactions = [aTransaction({ id: 7, state: 'DISPUTED' })]
     escrow.transactionsFetchedAt = '2026-01-01T00:00:00.000Z'
 
     const wrapper = mountView(pinia)
@@ -190,7 +216,7 @@ describe('RecoveryView — the nominal recovery', () => {
       const escrow = useEscrowStore()
       queue.hydrated = true
       queue.queue = [frozen({ code, files: [file()] })]
-      escrow.transactions = [{ id: 7, state: 'FUNDS_LOCKED' }]
+      escrow.transactions = [aTransaction({ id: 7, state: 'FUNDS_LOCKED' })]
       escrow.transactionsFetchedAt = AFTER_FREEZE
 
       const wrapper = mountView(pinia)

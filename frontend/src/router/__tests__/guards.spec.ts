@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import { useAuthStore } from '@/stores/auth'
+import { aUser } from '@/test-support/factories'
 
 /**
  * AC1 et AC4 — guards, redirections par rôle, et réponse uniforme.
@@ -22,9 +23,9 @@ async function navigate(user, path) {
   return router.currentRoute.value
 }
 
-const BUYER = { id: 1, email: 'a@corp.example', role: 'BUYER' }
-const ADMIN = { id: 2, email: 'b@corp.example', role: 'ADMIN' }
-const ARBITRE = { id: 3, email: 'c@corp.example', role: 'ARBITRATOR' }
+const BUYER = aUser({ id: 1, email: 'a@corp.example', role: 'BUYER' })
+const ADMIN = aUser({ id: 2, email: 'b@corp.example', role: 'ADMIN' })
+const ARBITRE = aUser({ id: 3, email: 'c@corp.example', role: 'ARBITRATOR' })
 
 beforeEach(() => setActivePinia(createPinia()))
 
