@@ -1,4 +1,5 @@
 import axios from 'axios'
+import type { AxiosError } from 'axios'
 import { extractFailureReason, isBareAuthFailure } from '@/utils/replayFailure'
 
 export const TOKEN_STORAGE_KEY = 'escrow_token'
@@ -57,7 +58,7 @@ export function resetSessionExpiryLatch() {
  * as current — a spurious sign-in screen is a nuisance, a revoked token left in
  * an authenticated UI is the defect Story 1.6 made routine.
  */
-function concernsCurrentSession(error) {
+function concernsCurrentSession(error: AxiosError): boolean {
   const currentToken = localStorage.getItem(TOKEN_STORAGE_KEY)
   if (!currentToken) return false
 
@@ -85,7 +86,7 @@ function concernsCurrentSession(error) {
  * Only the default (absent) and explicit `'json'` are let through: `'text'`,
  * `'arraybuffer'` and `'stream'` are just as unable to expose a `code`.
  */
-function envelopeWasParsed(error) {
+function envelopeWasParsed(error: AxiosError): boolean {
   const responseType = error?.config?.responseType
   return responseType == null || responseType === 'json'
 }
@@ -109,7 +110,7 @@ function envelopeWasParsed(error) {
  */
 apiClient.interceptors.response.use(
   (response) => response,
-  (error) => {
+  (error: AxiosError) => {
     if (
       typeof window !== 'undefined' &&
       !sessionExpiryAnnounced &&

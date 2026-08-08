@@ -31,7 +31,7 @@ const auth = useAuthStore()
  * rule of discarding tabs and newlines. Removing them first means the string the
  * guard inspects is the string a parser will see.
  */
-function safeRedirect(target) {
+function safeRedirect(target: unknown): string {
   if (typeof target !== 'string') return '/'
   // The class below is spelled with `\u` ESCAPES and must stay that way. Written
   // with the literal bytes it matches — which is how it first shipped — the NUL
@@ -47,14 +47,18 @@ function safeRedirect(target) {
     : '/'
 }
 
-const mode = ref('login')
+const mode = ref<'login' | 'register'>('login')
 
+// `role` porte son union, et ce n'est pas cosmétique : `reactive` aurait inféré `string`,
+// et la charge partait alors vers `register()` sans que rien ne vérifie que le rôle
+// demandé est bien l'un des deux que l'inscription autorise. Le `<select>` du gabarit ne
+// propose que ces deux valeurs — le type dit désormais la même chose que l'écran.
 const form = reactive({
   email: '',
   password: '',
   firstName: '',
   lastName: '',
-  role: 'BUYER',
+  role: 'BUYER' as 'BUYER' | 'SELLER',
   // Story 2.4 : raison sociale et consentement légal horodaté (FR-P27).
   companyName: '',
   consentAccepted: false,
@@ -62,7 +66,7 @@ const form = reactive({
 
 const submitting = ref(false)
 
-function setMode(next) {
+function setMode(next: 'login' | 'register') {
   mode.value = next
   auth.error = null
 }

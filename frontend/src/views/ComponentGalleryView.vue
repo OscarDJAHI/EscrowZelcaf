@@ -24,7 +24,10 @@ import { ALL_STATES } from '@/utils/stateMachine'
  */
 const { locale } = useI18n()
 
-const VARIANTS = ['primary', 'danger', 'secondary', 'ghost']
+// `as const` : sans lui la liste se type `string[]`, et `:variant="v"` passe une chaîne
+// quelconque à un composant qui n'accepte que ces quatre-là. La page de démonstration
+// doit être le premier endroit où le contrat du composant est respecté.
+const VARIANTS = ['primary', 'danger', 'secondary', 'ghost'] as const
 const pending = ref(false)
 </script>
 

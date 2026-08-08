@@ -2,24 +2,29 @@
 import { stateLabel } from '@/i18n/labels'
 import { useI18n } from 'vue-i18n'
 import { computed } from 'vue'
+import type { PropType } from 'vue'
 import { STATE_COLORS } from '@/utils/stateMachine'
+import type { AuditLog } from '@/types/domain'
 
 const { locale, t, te } = useI18n()
 
 const props = defineProps({
-  logs: { type: Array, default: () => [] },
+  logs: { type: Array as PropType<AuditLog[]>, default: () => [] },
 })
 
+// `.getTime()` explicite : la soustraction de deux `Date` fonctionne à l'exécution par
+// coercition, mais elle ne se type pas — et c'est une bonne nouvelle, la même écriture
+// sur deux valeurs non-dates aurait rendu `NaN` en silence, donc un ordre arbitraire.
 const sortedLogs = computed(() =>
-  [...props.logs].sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp)),
+  [...props.logs].sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()),
 )
 
-function formatDate(timestamp) {
+function formatDate(timestamp: string) {
   return new Date(timestamp).toLocaleString(locale.value)
 }
 
 /** Libellé d'état, avec dégradation lisible — `nextState` peut être absent. */
-function label(state) {
+function label(state: string | null | undefined) {
   return stateLabel({ t, te }, state)
 }
 </script>

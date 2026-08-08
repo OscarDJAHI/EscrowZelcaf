@@ -1,5 +1,10 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import type { PropType } from 'vue'
+
+// `type` et non `const` : `defineProps()` est hissé hors de `setup()` et ne peut
+// référencer aucune variable locale. Voir le commentaire détaillé d'`AppButton.vue`.
+type Shape = 'line' | 'card' | 'wallet'
 
 /**
  * Squelette de chargement, calqué sur la mise en page de la surface qu'il remplace.
@@ -15,9 +20,9 @@ import { computed } from 'vue'
  */
 const props = defineProps({
   variant: {
-    type: String,
+    type: String as PropType<Shape>,
     default: 'line',
-    validator: (v) => ['line', 'card', 'wallet'].includes(v),
+    validator: (v: unknown) => ['line', 'card', 'wallet'].includes(v as string),
   },
   /** Nombre de squelettes à empiler (liste). */
   count: { type: Number, default: 1 },
@@ -26,7 +31,7 @@ const props = defineProps({
 })
 
 /** Classes en toutes lettres : l'extraction Tailwind est statique. */
-const SHAPES = {
+const SHAPES: Record<Shape, string> = {
   line: 'h-4 rounded-md',
   card: 'h-28 rounded-lg',
   wallet: 'h-36 rounded-lg',
@@ -47,7 +52,7 @@ const MAX_ITEMS = 50
 const items = computed(() => {
   const requested = Number(props.count)
   const safe = Number.isFinite(requested) ? Math.min(MAX_ITEMS, Math.max(1, Math.trunc(requested))) : 1
-  return Array.from({ length: safe }, (unused, i) => i)
+  return Array.from({ length: safe }, (unused: unknown, i: number) => i)
 })
 </script>
 

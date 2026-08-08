@@ -1,6 +1,24 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { HOME_BY_SPACE, SPACES, resolveSpaceAccess, spaceForRole } from '@/router/spaces'
+import type { Space } from '@/router/spaces'
+
+/**
+ * `meta` DÉCLARÉ, et non deviné.
+ *
+ * <p>Vue Router type `meta` en `unknown` par défaut : `to.meta.space` se lisait donc sans
+ * que rien ne dise ce qu'on y trouve, et une route qui aurait écrit `spaces:` au pluriel
+ * — ou `public: 'true'` en chaîne — aurait désactivé sa propre garde en silence. C'est la
+ * surface de sécurité de la Story 2.3 ; elle mérite d'être déclarée.
+ */
+declare module 'vue-router' {
+  interface RouteMeta {
+    /** Route accessible sans session. */
+    public?: boolean
+    /** Espace propriétaire de la route. `null` = aucun (refus, page inconnue). */
+    space?: Space | null
+  }
+}
 
 /**
  * Une seule application, trois espaces, une seule authentification (UX-DR20).
@@ -164,7 +182,11 @@ router.beforeEach((to) => {
     return to.name === 'auth' ? true : { name: 'auth', query: { redirect: to.fullPath } }
   }
 
-  if (to.name === 'auth' && auth.isAuthenticated) {
+  // `space !== null` est répété ici plutôt qu'assumé du bloc précédent. Il l'est
+  // effectivement — ce bloc-là rend la main quand l'espace est nul — mais l'invariant
+  // n'existait que dans l'enchaînement des deux `if`, où une insertion entre les deux
+  // l'aurait rompu sans bruit. Écrit, il est vérifié.
+  if (to.name === 'auth' && auth.isAuthenticated && space !== null) {
     // Chacun chez soi : la connexion renvoie vers l'accueil de l'espace du RÔLE, et non
     // vers un tableau de bord client que tout le monde n'a pas vocation à voir.
     return { name: HOME_BY_SPACE[space] }

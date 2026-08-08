@@ -18,15 +18,28 @@
  * monter quoi que ce soit. `te()` (« translation exists ») est le seul moyen de distinguer
  * une clé absente d'une traduction qui vaudrait littéralement son propre nom.
  */
+import type { AllowedEvent } from '@/utils/stateMachine'
+
+/**
+ * Le strict nécessaire de vue-i18n, et rien de plus.
+ *
+ * <p>Déclarer ici les deux fonctions consommées plutôt que d'importer le type complet du
+ * composeur prolonge la propriété que l'en-tête revendique : ces fonctions sont
+ * appelables hors composant, et testables en leur passant deux `vi.fn()`.
+ */
+export interface I18nLike {
+  t: (key: string) => string
+  te: (key: string) => boolean
+}
 
 /** Dernier filet : une valeur machine rendue lisible, sans jamais lever. */
-export function humanize(code) {
+export function humanize(code: unknown): string {
   if (code === null || code === undefined) return ''
   return String(code).replaceAll('_', ' ')
 }
 
 /** Traduit `key` si elle existe, sinon `fallback`. */
-function translateOr({ t, te }, key, fallback) {
+function translateOr({ t, te }: I18nLike, key: string | null | undefined, fallback: string): string {
   return key && te(key) ? t(key) : fallback
 }
 
@@ -38,19 +51,19 @@ function translateOr({ t, te }, key, fallback) {
  * rien à l'utilisateur, et une clé brute affichée est précisément ce que la Story 2.1 a
  * passé trois passes de revue à éliminer.
  */
-export function translateOrHumanize(i18n, key) {
+export function translateOrHumanize(i18n: I18nLike, key: string | null | undefined): string {
   if (!key) return ''
   return translateOr(i18n, key, humanize(String(key).split('.').pop()))
 }
 
 /** Libellé d'un état du cycle de vie escrow. */
-export function stateLabel(i18n, state) {
+export function stateLabel(i18n: I18nLike, state: string | null | undefined): string {
   if (!state) return ''
   return translateOr(i18n, `state.${state}`, humanize(state))
 }
 
 /** Libellé d'un rôle de plateforme. */
-export function roleLabel(i18n, role) {
+export function roleLabel(i18n: I18nLike, role: string | null | undefined): string {
   if (!role) return ''
   return translateOr(i18n, `role.${role}`, humanize(role))
 }
@@ -62,7 +75,7 @@ export function roleLabel(i18n, role) {
  * c'est ce `null` qui faisait lever `$t`. On dégrade sur le nom de l'événement, ce que
  * faisait l'implémentation d'origine.
  */
-export function eventLabel(i18n, action) {
+export function eventLabel(i18n: I18nLike, action: AllowedEvent | null | undefined): string {
   if (!action) return ''
   return translateOr(i18n, action.labelKey, humanize(action.event))
 }

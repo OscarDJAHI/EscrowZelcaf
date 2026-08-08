@@ -4,6 +4,7 @@ import { useEvidenceStore } from './evidence'
 import { useOfflineQueueStore } from './offlineQueue'
 import { resetSessionExpiryLatch } from '@/api/client'
 import * as idb from './offlineQueue.idb'
+import type { Router } from 'vue-router'
 
 /**
  * The beginning and the end of a session, in one place — and deliberately NOT a
@@ -85,10 +86,10 @@ export async function purgeReadCache() {
  * and each one is independent. An unavailable Cache API must not be the reason
  * the queue is left on the device, and a rejected revocation must not be the
  * reason the credentials stay in localStorage. Never rejects.
- * @param {{reason: 'logout'|'expired'}} options
- * @returns {Promise<void>}
  */
-export async function endSession({ reason } = {}) {
+export type EndSessionReason = 'logout' | 'expired'
+
+export async function endSession({ reason }: { reason?: EndSessionReason } = {}): Promise<void> {
   const auth = useAuthStore()
   const explicit = reason === 'logout'
 
@@ -214,10 +215,8 @@ export async function endSession({ reason } = {}) {
  * Same `try/catch`-per-effect rule as `endSession`, and for a sharper reason:
  * this runs inside `applySession`, so an exception here would turn a successful
  * login into a failed one. Never rejects.
- * @param {string|number|null|undefined} userId
- * @returns {Promise<void>}
  */
-export async function beginSession(userId) {
+export async function beginSession(userId: string | number | null | undefined): Promise<void> {
   // The latch is lowered here and never on a timer: a timer would reopen the
   // teardown window at an arbitrary moment, which is precisely what the burst of
   // parallel 403s makes dangerous.
@@ -310,10 +309,9 @@ export async function beginSession(userId) {
  * makes this testable without mounting the application, and this is the only
  * place in the codebase that legitimately knows both the router and the stores.
  *
- * @param {import('vue-router').Router} router
- * @returns {() => void} removes the listener — for tests and for symmetry
+ * <p>Rend la fonction de retrait de l'écouteur — pour les tests et par symétrie.
  */
-export function installSessionExpiryListener(router) {
+export function installSessionExpiryListener(router: Router): () => void {
   if (typeof window === 'undefined') return () => {}
 
   const onExpired = async () => {

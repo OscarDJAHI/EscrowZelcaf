@@ -1,50 +1,57 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
 import { computed, ref } from 'vue'
+import type { PropType } from 'vue'
 import { useAuthStore } from '@/stores/auth'
 import { useEvidenceStore } from '@/stores/evidence'
 import { formatBytes, uploaderLabel } from '@/utils/evidence'
+import { apiErrorMessage } from '@/utils/apiError'
+import type { EvidenceItem } from '@/types/domain'
 
 const { t, locale } = useI18n()
 
 const props = defineProps({
-  transactionId: { type: [String, Number], required: true },
+  transactionId: { type: [String, Number] as PropType<string | number>, required: true },
 })
 
 const auth = useAuthStore()
 const evidenceStore = useEvidenceStore()
 
-const downloadingId = ref(null)
+const downloadingId = ref<number | null>(null)
 const downloadError = ref('')
-const withdrawingId = ref(null)
+const withdrawingId = ref<number | null>(null)
 const withdrawError = ref('')
 
 const items = computed(() => evidenceStore.items)
 
 /** Withdraw is only offered on the current user's own active evidence. */
-function canWithdraw(item) {
+function canWithdraw(item: EvidenceItem) {
   return item.status === 'ACTIVE' && item.uploadedByUserId === auth.user?.id
 }
 
-function deposedBy(item) {
+function deposedBy(item: EvidenceItem) {
   return uploaderLabel(item, auth.user?.id)
 }
 
 /** Extracts the server message even when the failed response body is a Blob
  * (the download uses responseType: 'blob', so error envelopes arrive as Blobs). */
-async function errorMessage(err, fallback) {
-  const data = err.response?.data
+async function errorMessage(err: unknown, fallback: string): Promise<string> {
+  const data = (err as { response?: { data?: unknown } })?.response?.data
   if (data instanceof Blob) {
     try {
-      return JSON.parse(await data.text())?.message || fallback
+      const parsed: unknown = JSON.parse(await data.text())
+      const message = (parsed as { message?: unknown })?.message
+      return typeof message === 'string' ? message : fallback
     } catch {
       return fallback
     }
   }
-  return data?.message || fallback
+  // Hors du cas Blob, la lecture d'enveloppe est celle de tout le reste de
+  // l'application : une seule implémentation, pas une deuxième qui dériverait.
+  return apiErrorMessage(err) || fallback
 }
 
-function formatTimestamp(value) {
+function formatTimestamp(value: string | null | undefined): string {
   if (!value) return ''
   try {
     return new Date(value).toLocaleString(locale.value)
@@ -53,17 +60,17 @@ function formatTimestamp(value) {
   }
 }
 
-function statusClasses(status) {
+function statusClasses(status: string) {
   return status === 'WITHDRAWN'
     ? 'bg-gray-100 text-gray-600'
     : 'bg-green-100 text-green-700'
 }
 
-function statusLabel(status) {
+function statusLabel(status: string) {
   return status === 'WITHDRAWN' ? t('evidence.statusWithdrawn') : t('evidence.statusActive')
 }
 
-async function download(item) {
+async function download(item: EvidenceItem) {
   downloadError.value = ''
   downloadingId.value = item.id
   try {
@@ -75,7 +82,7 @@ async function download(item) {
   }
 }
 
-async function withdraw(item) {
+async function withdraw(item: EvidenceItem) {
   withdrawError.value = ''
   withdrawingId.value = item.id
   try {

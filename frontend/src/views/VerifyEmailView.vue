@@ -26,7 +26,10 @@ const email = computed(() => (typeof route.query.email === 'string' ? route.quer
 const code = ref('')
 const submitting = ref(false)
 const cooldown = ref(0)
-let ticker = null
+// `ReturnType<typeof setInterval>` et non `number` : sous jsdom la suite s'exécute dans
+// Node, où `setInterval` rend un `Timeout` et non un entier. Écrire `number` aurait
+// obligé à mentir au compilateur dans le seul environnement où les tests tournent.
+let ticker: ReturnType<typeof setInterval> | null = null
 
 const CODE_LENGTH = 6
 
@@ -38,14 +41,14 @@ const CODE_LENGTH = 6
  * tiret — « 123 456 » doit fonctionner. Filtrer au collage seulement laisserait passer les
  * mêmes caractères saisis au clavier.
  */
-function normalize(raw) {
+function normalize(raw: unknown): string {
   return String(raw ?? '')
     .replace(/\D/g, '')
     .slice(0, CODE_LENGTH)
 }
 
-function onInput(event) {
-  code.value = normalize(event.target.value)
+function onInput(event: Event) {
+  code.value = normalize((event.target as HTMLInputElement | null)?.value)
 }
 
 function stopTicker() {
@@ -59,7 +62,7 @@ function stopTicker() {
 // le composant en mémoire.
 onUnmounted(stopTicker)
 
-function startCooldown(seconds) {
+function startCooldown(seconds: number) {
   cooldown.value = seconds
   stopTicker()
   if (seconds <= 0) return

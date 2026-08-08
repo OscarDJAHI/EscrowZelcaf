@@ -11,6 +11,7 @@ import { describeFailure } from '@/utils/replayFailure'
 import { describeAction, ownsEntry, resolveRealState } from '@/utils/frozenEntry'
 import { saveBlob } from '@/utils/download'
 import { formatBytes } from '@/utils/evidence'
+import type { RealState } from '@/utils/frozenEntry'
 
 const { t } = useI18n()
 
@@ -142,7 +143,11 @@ const detail = computed(() => {
     : null
 })
 
-const realState = computed(() =>
+// Annoté `RealState` : sans lui, la branche de repli `{ kind: 'none' }` s'infère
+// `{ kind: string }`, l'union cesse d'être discriminée, et le gabarit ne peut plus lire
+// `realState.state` ni `realState.id` après avoir pourtant testé `kind`. Le type existe,
+// il suffit de le nommer.
+const realState = computed<RealState>(() =>
   entry.value
     ? resolveRealState({
         entry: entry.value,
@@ -151,7 +156,7 @@ const realState = computed(() =>
         currentDetail: currentDetail.value,
         currentDetailFetchedAt: currentDetailFetchedAt.value,
       })
-    : { kind: 'none' },
+    : { kind: 'none' as const },
 )
 
 /**
@@ -165,17 +170,32 @@ const realState = computed(() =>
  * something else. A queued `File` normally carries its name through structured
  * clone; a bare `Blob` does not.
  */
-const files = computed(() =>
-  (entry.value?.files || []).map((file, index) => ({
-    file,
-    key: `${file.name ?? 'file'}-${file.size ?? 0}-${index}`,
-    name: file.name || `attachment-${index + 1}`,
-    type: file.type || 'unknown',
-    size: formatBytes(file.size),
-  })),
+interface RecoverableFile {
+  file: Blob
+  key: string
+  name: string
+  type: string
+  size: string
+}
+
+// Le commentaire ci-dessus dit déjà l'essentiel : un `File` mis en file porte son nom à
+// travers le clone structuré, un `Blob` nu ne le porte pas. Le type l'inscrit — `files`
+// est déclaré `Blob[]`, et `name` n'existe pas sur un `Blob`. D'où la lecture prudente
+// plutôt qu'un accès direct : c'est exactement le cas que les `??` d'origine visaient.
+const files = computed<RecoverableFile[]>(() =>
+  (entry.value?.files || []).map((file, index) => {
+    const named = file as Partial<File>
+    return {
+      file,
+      key: `${named.name ?? 'file'}-${file.size ?? 0}-${index}`,
+      name: named.name || `attachment-${index + 1}`,
+      type: file.type || 'unknown',
+      size: formatBytes(file.size),
+    }
+  }),
 )
 
-function download(item) {
+function download(item: RecoverableFile) {
   saveBlob(item.file, item.name)
 }
 
@@ -205,8 +225,10 @@ async function acknowledge() {
     // would vanish while the files stayed on disk, which is precisely the silent
     // loss this epic exists to prevent, inverted.
     confirming.value = false
-    error.value = err?.message
-      ? t('recovery.deleteFailedWithReason', { reason: err.message })
+    // `err` est `unknown` : on ne lit son message que si c'en est vraiment un.
+    const reason = err instanceof Error ? err.message : null
+    error.value = reason
+      ? t('recovery.deleteFailedWithReason', { reason })
       : t('recovery.deleteFailed')
   }
 }

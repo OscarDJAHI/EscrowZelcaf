@@ -14,6 +14,8 @@ import EvidenceDeposit from '@/components/EvidenceDeposit.vue'
 import EvidenceList from '@/components/EvidenceList.vue'
 import OpenDisputeForm from '@/components/OpenDisputeForm.vue'
 import { canOpenDispute, getAllowedEventsForTransaction } from '@/utils/stateMachine'
+import { apiErrorMessage } from '@/utils/apiError'
+import type { EscrowEventName } from '@/types/domain'
 
 const { t, locale, te } = useI18n()
 
@@ -31,14 +33,16 @@ const escrowStore = useEscrowStore()
 const evidenceStore = useEvidenceStore()
 const offlineQueue = useOfflineQueueStore()
 
-const sendingEvent = ref(null)
+const sendingEvent = ref<EscrowEventName | null>(null)
 const actionError = ref('')
 const showDisputeForm = ref(false)
 
 const transaction = computed(() => escrowStore.currentDetail?.transaction || null)
 const auditLogs = computed(() => escrowStore.currentDetail?.auditLogs || [])
 const allowedEvents = computed(() => getAllowedEventsForTransaction(transaction.value, auth.user))
-const canDeposit = computed(() => DEPOSIT_STATES.includes(transaction.value?.state))
+// `?? ''` plutôt qu'un `!` : sans transaction chargée, `state` est `undefined`, et
+// `includes(undefined)` rendait `false` par chance. La valeur absente est traitée.
+const canDeposit = computed(() => DEPOSIT_STATES.includes(transaction.value?.state ?? ''))
 const canOpen = computed(() => canOpenDispute(transaction.value, auth.user))
 
 const counterparty = computed(() => {
@@ -63,7 +67,7 @@ const formattedAmount = computed(() => {
   }
 })
 
-function buttonClasses(event) {
+function buttonClasses(event: string) {
   if (event === 'OPEN_DISPUTE') return 'bg-red-600 hover:bg-red-700'
   if (event === 'RESOLVE_REFUND') return 'bg-purple-600 hover:bg-purple-700'
   if (event === 'RESOLVE_RELEASE' || event === 'DELIVERY_CONFIRMED') return 'bg-green-600 hover:bg-green-700'
@@ -78,7 +82,7 @@ function loadEvidence() {
   return evidenceStore.loadEvidence(props.id)
 }
 
-async function trigger(event) {
+async function trigger(event: EscrowEventName) {
   actionError.value = ''
   sendingEvent.value = event
   try {
@@ -87,7 +91,7 @@ async function trigger(event) {
       await load()
     }
   } catch (err) {
-    actionError.value = err.response?.data?.message || t('transaction.actionFailed')
+    actionError.value = apiErrorMessage(err) || t('transaction.actionFailed')
   } finally {
     sendingEvent.value = null
   }

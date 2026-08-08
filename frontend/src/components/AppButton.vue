@@ -1,7 +1,19 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import type { PropType } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { translateOrHumanize } from '@/i18n/labels'
+
+/**
+ * Les quatre variantes, en TYPE et non en constante.
+ *
+ * <p>La première version déclarait un `const VARIANT_NAMES` que le validateur lisait.
+ * `defineProps()` est hissé hors de `setup()` par le compilateur de SFC : il ne peut donc
+ * référencer aucune variable locale, et la compilation échouait. `vue-tsc` ne le voit pas
+ * — seuls le build et la suite l'attrapent. Un `type` s'efface entièrement, il n'est pas
+ * une variable, et la liste littérale reste dans le validateur où le compilateur l'admet.
+ */
+type Variant = 'primary' | 'danger' | 'secondary' | 'ghost'
 
 /**
  * Bouton de la plateforme — quatre variantes, toutes construites sur les tokens de la
@@ -19,10 +31,14 @@ import { translateOrHumanize } from '@/i18n/labels'
 const props = defineProps({
   /** Clé i18n du libellé. Jamais une chaîne : les littéraux sont interdits par la garde. */
   labelKey: { type: String, required: true },
+  // `PropType` plutôt qu'un `defineProps<{...}>()` typé : la déclaration à l'exécution
+  // porte le `validator`, qui avertit en développement quand une variante inconnue est
+  // passée. Le passer en type seul aurait ÉCHANGÉ une garde d'exécution contre une garde
+  // de compilation, alors que les deux se cumulent ici.
   variant: {
-    type: String,
+    type: String as PropType<Variant>,
     default: 'primary',
-    validator: (v) => ['primary', 'danger', 'secondary', 'ghost'].includes(v),
+    validator: (v: unknown) => ['primary', 'danger', 'secondary', 'ghost'].includes(v as string),
   },
   /** Montant à faire figurer dans le libellé (confirmations financières). */
   amount: { type: Number, default: null },
@@ -31,10 +47,13 @@ const props = defineProps({
   /** Action en cours : désactive ET remplace le libellé. Jamais un spinner muet. */
   pending: { type: Boolean, default: false },
   pendingLabelKey: { type: String, default: 'common.pleaseWait' },
-  type: { type: String, default: 'button' },
+  type: {
+    type: String as PropType<'button' | 'submit' | 'reset'>,
+    default: 'button',
+  },
 })
 
-const emit = defineEmits(['click'])
+const emit = defineEmits<{ click: [event: MouseEvent] }>()
 
 const { t, te, locale } = useI18n()
 
@@ -43,7 +62,7 @@ const { t, te, locale } = useI18n()
  * statique et ne verrait pas une classe construite à l'exécution — la feuille de style
  * sortirait sans elle et le rendu serait muet, sans erreur.
  */
-const VARIANTS = {
+const VARIANTS: Record<Variant, string> = {
   primary: 'bg-primary text-primary-foreground hover:bg-primary-hover',
   // `hover:bg-danger` sur un fond déjà `bg-danger` ne changeait RIEN : le bouton le plus
   // dangereux de l'interface ne réagissait pas au pointeur. `DESIGN.md` définit
@@ -85,7 +104,7 @@ const label = computed(() =>
     : translateOrHumanize({ t, te }, props.labelKey),
 )
 
-function onClick(event) {
+function onClick(event: MouseEvent) {
   if (props.disabled || props.pending) return
   emit('click', event)
 }

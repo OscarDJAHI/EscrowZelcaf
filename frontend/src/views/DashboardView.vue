@@ -8,6 +8,8 @@ import { useEscrowStore } from '@/stores/escrow'
 import { endSession } from '@/stores/session'
 import TransactionCard from '@/components/TransactionCard.vue'
 import NewTransactionModal from '@/components/NewTransactionModal.vue'
+import { apiErrorMessage } from '@/utils/apiError'
+import type { CreateTransactionPayload } from '@/api/escrow'
 
 const { t, te } = useI18n()
 
@@ -33,14 +35,14 @@ onBeforeUnmount(() => {
   window.removeEventListener('escrow:sync', refresh)
 })
 
-async function handleCreate(payload) {
+async function handleCreate(payload: CreateTransactionPayload) {
   creating.value = true
   createError.value = ''
   try {
     await escrowStore.createNewTransaction(payload)
     showModal.value = false
   } catch (err) {
-    createError.value = err.response?.data?.message || t('dashboard.createFailed')
+    createError.value = apiErrorMessage(err) || t('dashboard.createFailed')
   } finally {
     creating.value = false
   }

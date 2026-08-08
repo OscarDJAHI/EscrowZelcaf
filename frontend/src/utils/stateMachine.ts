@@ -3,7 +3,14 @@
  * without another round-trip, which events the *current* user is allowed
  * to trigger from the transaction's *current* state.
  */
-import type { EscrowEventName, EscrowState, Role, StateToken, Transaction, User } from '@/types/domain'
+import type {
+  EscrowEventName,
+  EscrowState,
+  Role,
+  StateToken,
+  TransactionLike,
+  User,
+} from '@/types/domain'
 
 // `as const` et non `string[]` : sans lui, ces tableaux se typent `string[]` et
 // n'imposent plus rien — un état inventé y passerait sans que rien ne bronche, ce qui
@@ -178,7 +185,7 @@ export function getAllowedEvents(
  * sellerEmail. ADMIN never opens disputes (arbitration only).
  */
 export function canOpenDispute(
-  transaction: Transaction | null | undefined,
+  transaction: TransactionLike | null | undefined,
   user: User | null | undefined,
 ): boolean {
   if (!transaction || !user) return false
@@ -195,7 +202,7 @@ export function canOpenDispute(
  * party to this specific transaction. ADMIN can always arbitrate disputes.
  */
 export function getAllowedEventsForTransaction(
-  transaction: Transaction | null | undefined,
+  transaction: TransactionLike | null | undefined,
   user: User | null | undefined,
 ): AllowedEvent[] {
   if (!transaction || !user) return []

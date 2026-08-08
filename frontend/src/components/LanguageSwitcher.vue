@@ -14,7 +14,7 @@ import { SUPPORTED_LOCALES, applyLocale } from '@/i18n'
 // n'a donc aucune connaissance de l'instance globale.
 const { locale } = useI18n()
 
-function select(code) {
+function select(code: string) {
   applyLocale(locale, code)
 }
 </script>

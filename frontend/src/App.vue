@@ -25,12 +25,21 @@ import { DESKTOP_NAV, SPACES } from '@/router/spaces'
  */
 const route = useRoute()
 
-const shell = computed(() => {
-  if (route.meta.space === SPACES.CLIENT) return ClientShell
-  return DESKTOP_NAV[route.meta.space] ? DesktopShell : null
+// `meta.space` est désormais déclaré (`router/index.ts`) et donc OPTIONNEL : une route
+// publique ou un refus n'en portent pas. Les deux lectures ci-dessous l'indexaient sans
+// le dire — sur `undefined`, l'accès rendait `undefined` et la branche tombait juste par
+// chance. Le nul est traité, il n'est plus subi.
+const desktopNav = computed(() => {
+  const space = route.meta.space
+  return space ? DESKTOP_NAV[space] : undefined
 })
 
-const shellProps = computed(() => DESKTOP_NAV[route.meta.space] ?? {})
+const shell = computed(() => {
+  if (route.meta.space === SPACES.CLIENT) return ClientShell
+  return desktopNav.value ? DesktopShell : null
+})
+
+const shellProps = computed(() => desktopNav.value ?? {})
 </script>
 
 <template>

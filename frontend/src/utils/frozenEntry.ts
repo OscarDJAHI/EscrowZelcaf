@@ -21,7 +21,7 @@
  * graphe des stores contredirait la phrase ci-dessus.
  */
 import type { QueueEntry, QueueEntryMeta, QueuedActionType } from '@/types/queue'
-import type { EscrowState, Transaction, TransactionDetail, User } from '@/types/domain'
+import type { EscrowState, TransactionLike, User } from '@/types/domain'
 
 /** Ce que la lecture d'un état de transaction rend à l'appelant. */
 export type RealState =
@@ -130,7 +130,7 @@ function isOptimistic(row: object | null | undefined): boolean {
  * still went out after the server's verdict.
  */
 function trustworthy(
-  row: Transaction | null | undefined,
+  row: TransactionLike | null | undefined,
   fetchedAt: string | null | undefined,
   failureAt: string | null | undefined,
 ): { state: EscrowState; fetchedAt: string } | null {
@@ -158,7 +158,8 @@ export interface RealStateInput {
   /** `unknown` assumé : le contrat dit une liste, la valeur reçue peut n'en être pas une. */
   transactions: unknown
   transactionsFetchedAt: string | null | undefined
-  currentDetail: TransactionDetail | null | undefined
+  /** La forme minimale suffit : seuls `id` et `state` sont lus ici. */
+  currentDetail: { transaction?: TransactionLike | null } | null | undefined
   currentDetailFetchedAt: string | null | undefined
 }
 
@@ -197,7 +198,7 @@ export function resolveRealState({
       // Same reason as the `state` type guard above: the API contract says a
       // list, but the notice renders above `RouterView`, so a payload that is
       // not one must degrade to a link rather than blank every route.
-      (Array.isArray(transactions) ? (transactions as Transaction[]) : []).find(
+      (Array.isArray(transactions) ? (transactions as TransactionLike[]) : []).find(
         (t) => String(t.id) === String(id),
       ),
       transactionsFetchedAt,

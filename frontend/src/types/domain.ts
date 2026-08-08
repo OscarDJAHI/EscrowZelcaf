@@ -82,6 +82,23 @@ export interface AuditLog {
   timestamp: string
 }
 
+/**
+ * Le MINIMUM qu'une transaction doit porter pour les décisions de rôle et d'état.
+ *
+ * <p>Existe parce que `DisplayTransaction` (`stores/escrow.ts`) n'est pas une
+ * `Transaction` : une carte créée hors ligne porte un `id` chaîne `local-…` et un
+ * `buyerEmail` nul, le serveur ne l'ayant pas encore nommée. Les fonctions qui décident
+ * « cet utilisateur peut-il agir » doivent accepter les deux — elles comparent des
+ * `String(…)` et lisent l'état, rien de plus. Exiger `Transaction` les aurait fermées à
+ * l'entrée même qu'elles rencontrent hors ligne.
+ */
+export interface TransactionLike {
+  id: number | string
+  state: EscrowState
+  buyerEmail?: string | null
+  sellerEmail?: string | null
+}
+
 /** Réponse de `GET /escrow/{id}`. */
 export interface TransactionDetail {
   transaction: Transaction

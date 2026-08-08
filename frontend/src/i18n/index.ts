@@ -11,8 +11,16 @@ import fr from './fr.json'
  * jamais de son champ `message`.
  */
 
-export const SUPPORTED_LOCALES = ['en', 'fr']
-export const DEFAULT_LOCALE = 'en'
+// `as const` : sans lui ces deux constantes se typent `string[]` / `string`, et le type
+// `Locale` ci-dessous ne contraindrait plus rien — une langue inventée passerait partout.
+export const SUPPORTED_LOCALES = ['en', 'fr'] as const
+export const DEFAULT_LOCALE = 'en' as const
+
+/** Une langue effectivement servie par l'application. */
+export type Locale = (typeof SUPPORTED_LOCALES)[number]
+
+/** Le strict nécessaire de `localStorage` : `readStoredLocale` accepte un double de test. */
+type LocaleStorage = Pick<Storage, 'getItem' | 'setItem'>
 
 /**
  * Clé de persistance de la langue.
@@ -44,16 +52,16 @@ export const LOCALE_STORAGE_KEY = 'escrow_locale'
  * `__tests__/storageResilience.spec.js`, qui remplace `localStorage` par une propriété
  * dont le getter lève.
  */
-function safeStorage() {
+function safeStorage(): LocaleStorage | undefined {
   return globalThis.localStorage
 }
 
 /** Langue persistée si elle est encore supportée, sinon la langue par défaut. */
-export function readStoredLocale(storage) {
+export function readStoredLocale(storage?: LocaleStorage | null): Locale {
   try {
     const target = storage ?? safeStorage()
     const stored = target?.getItem(LOCALE_STORAGE_KEY)
-    return SUPPORTED_LOCALES.includes(stored) ? stored : DEFAULT_LOCALE
+    return isSupportedLocale(stored) ? stored : DEFAULT_LOCALE
   } catch {
     // Stockage indisponible ou inaccessible : la langue par défaut reste utilisable.
     // Une préférence d'affichage ne doit jamais empêcher de démarrer.
@@ -61,7 +69,7 @@ export function readStoredLocale(storage) {
   }
 }
 
-export function persistLocale(locale, storage) {
+export function persistLocale(locale: Locale, storage?: LocaleStorage | null): void {
   try {
     const target = storage ?? safeStorage()
     target?.setItem(LOCALE_STORAGE_KEY, locale)
@@ -85,11 +93,11 @@ export function missingKeysReport() {
   return [...missingKeys]
 }
 
-export function resetMissingKeys() {
+export function resetMissingKeys(): void {
   missingKeys.clear()
 }
 
-export function createEscrowI18n(locale = readStoredLocale()) {
+export function createEscrowI18n(locale: string = readStoredLocale()) {
   // Normalisation de l'argument, pas seulement de la valeur relue du stockage : un
   // appelant passant une langue non supportée obtenait une instance dont `locale` valait
   // ce code verbatim — le sélecteur n'affichait alors AUCUN bouton actif pendant que
@@ -116,9 +124,20 @@ export function createEscrowI18n(locale = readStoredLocale()) {
 
 export const i18n = createEscrowI18n()
 
+/**
+ * Garde de type : `stored` vient du stockage, donc de nulle part de sûr.
+ *
+ * <p>Écrit en prédicat plutôt qu'en simple `includes` pour que le compilateur RESTREIGNE
+ * la valeur ensuite — sans quoi chaque appelant devrait ré-assurer ce que ce test vient
+ * déjà d'établir.
+ */
+function isSupportedLocale(value: unknown): value is Locale {
+  return typeof value === 'string' && (SUPPORTED_LOCALES as readonly string[]).includes(value)
+}
+
 /** Langue supportée, ou langue par défaut. */
-export function normalizeLocale(locale) {
-  return SUPPORTED_LOCALES.includes(locale) ? locale : DEFAULT_LOCALE
+export function normalizeLocale(locale: unknown): Locale {
+  return isSupportedLocale(locale) ? locale : DEFAULT_LOCALE
 }
 
 /**
@@ -130,7 +149,7 @@ export function normalizeLocale(locale) {
  * avec sa propre instance voyait ses clics partir sur l'instance globale, sans effet
  * visible et sans erreur. Le test l'a révélé, pas la relecture.
  */
-export function applyLocale(localeRef, locale) {
+export function applyLocale(localeRef: { value: string }, locale: unknown): Locale {
   const next = normalizeLocale(locale)
   localeRef.value = next
   persistLocale(next)

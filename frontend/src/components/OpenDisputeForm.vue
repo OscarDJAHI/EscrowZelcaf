@@ -1,14 +1,16 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
 import { computed, ref } from 'vue'
+import type { PropType } from 'vue'
 import { useEscrowStore } from '@/stores/escrow'
 import { useOfflineQueueStore } from '@/stores/offlineQueue'
 import { formatBytes, validateFile } from '@/utils/evidence'
+import { apiErrorMessage } from '@/utils/apiError'
 
 const { t } = useI18n()
 
 const props = defineProps({
-  transactionId: { type: [String, Number], required: true },
+  transactionId: { type: [String, Number] as PropType<string | number>, required: true },
 })
 
 const emit = defineEmits(['opened', 'cancel'])
@@ -16,7 +18,7 @@ const emit = defineEmits(['opened', 'cancel'])
 const escrowStore = useEscrowStore()
 const offlineQueue = useOfflineQueueStore()
 
-const selectedFiles = ref([])
+const selectedFiles = ref<File[]>([])
 const comment = ref('')
 const validationError = ref('')
 const serverError = ref('')
@@ -31,10 +33,14 @@ const canSubmit = computed(
     !submitting.value,
 )
 
-function onFilesSelected(event) {
+function onFilesSelected(event: Event) {
   serverError.value = ''
   validationError.value = ''
-  const files = Array.from(event.target.files || [])
+  // `event.target` est `EventTarget | null` : c'est le gabarit qui garantit que la cible
+  // est bien l'`<input type="file">`, pas le type de l'événement. La restriction est donc
+  // faite ici, une fois, plutôt que supposée.
+  const input = event.target as HTMLInputElement | null
+  const files = Array.from(input?.files ?? [])
   selectedFiles.value = files
   for (const file of files) {
     const message = validateFile(file)
@@ -57,7 +63,7 @@ async function handleSubmit() {
     emit('opened')
   } catch (err) {
     // Keep the form intact so the user can retry; show the server message.
-    serverError.value = err.response?.data?.message || t('dispute.openFailed')
+    serverError.value = apiErrorMessage(err) || t('dispute.openFailed')
   } finally {
     submitting.value = false
   }

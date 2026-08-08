@@ -12,10 +12,11 @@
  * The `<a>` is appended before being clicked: a detached anchor's click is a
  * no-op in Firefox, and the element is removed again immediately so nothing is
  * left in the DOM.
- * @param {Blob} blob the bytes to save — already in memory, never fetched here
- * @param {string} filename the name proposed to the user's save dialog
+ *
+ * <p>`blob` : les octets à enregistrer, déjà en mémoire — jamais téléchargés ici.
+ * `filename` : le nom proposé à la boîte de dialogue d'enregistrement.
  */
-export function saveBlob(blob, filename) {
+export function saveBlob(blob: Blob, filename: string): void {
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url

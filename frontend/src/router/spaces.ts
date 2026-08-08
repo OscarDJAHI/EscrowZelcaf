@@ -11,12 +11,16 @@
  * la même raison qui a fait centraliser les fabriques d'exceptions côté backend en
  * Story 1.10, après qu'un oracle d'énumération eut survécu à plusieurs revues.
  */
+import type { Role } from '@/types/domain'
 
 export const SPACES = Object.freeze({
   CLIENT: 'client',
   ARBITRATION: 'arbitration',
   ADMIN: 'admin',
 })
+
+/** L'un des trois espaces. */
+export type Space = (typeof SPACES)[keyof typeof SPACES]
 
 /**
  * Rôle → espace. Tout rôle absent de cette table n'a AUCUN espace.
@@ -27,7 +31,7 @@ export const SPACES = Object.freeze({
  * mais reste INATTEIGNABLE jusque-là. Décrire le mapping ici est correct ; l'ajouter à
  * l'énumération serveur sans son mécanisme d'octroi audité ne le serait pas.
  */
-const SPACE_BY_ROLE = Object.freeze({
+const SPACE_BY_ROLE: Readonly<Partial<Record<Role, Space>>> = Object.freeze({
   BUYER: SPACES.CLIENT,
   SELLER: SPACES.CLIENT,
   ARBITRATOR: SPACES.ARBITRATION,
@@ -42,7 +46,16 @@ const SPACE_BY_ROLE = Object.freeze({
  * vue qui oublie de l'inclure s'affiche sans aucun moyen d'en sortir. L'espace client
  * illustrait déjà le défaut — son shell existait, aucune de ses sept routes ne le rendait.
  */
-export const DESKTOP_NAV = Object.freeze({
+export interface DesktopNav {
+  titleKey: string
+  navKeys: readonly string[]
+}
+
+/**
+ * `Partial` : l'espace CLIENT n'y figure pas, et c'est le fond du sujet — il a son propre
+ * shell mobile. Un `Record` complet aurait obligé à inventer une entrée pour lui.
+ */
+export const DESKTOP_NAV: Readonly<Partial<Record<Space, DesktopNav>>> = Object.freeze({
   [SPACES.ARBITRATION]: Object.freeze({
     titleKey: 'space.arbitration',
     navKeys: Object.freeze(['nav.disputeQueue', 'nav.decisions']),
@@ -54,7 +67,7 @@ export const DESKTOP_NAV = Object.freeze({
 })
 
 /** Porte d'entrée de chaque espace, utilisée pour rediriger après connexion. */
-export const HOME_BY_SPACE = Object.freeze({
+export const HOME_BY_SPACE: Readonly<Record<Space, string>> = Object.freeze({
   [SPACES.CLIENT]: 'dashboard',
   [SPACES.ARBITRATION]: 'arbitration-home',
   [SPACES.ADMIN]: 'admin-home',
@@ -68,7 +81,7 @@ export const HOME_BY_SPACE = Object.freeze({
  * un accès par DÉFAUT. Accorder sur une absence de décision est la façon dont les
  * privilèges fuient.
  */
-export function spaceForRole(role) {
+export function spaceForRole(role: string | null | undefined): Space | null {
   // `Object.hasOwn` et non une simple lecture indexée : `SPACE_BY_ROLE` est un objet
   // littéral, il HÉRITE donc d'`Object.prototype`. `SPACE_BY_ROLE['constructor']` rend la
   // fonction `Object`, `SPACE_BY_ROLE['toString']` une méthode — et `?? null` ne rattrape
@@ -80,7 +93,9 @@ export function spaceForRole(role) {
   // ENFERMEMENT. `space` cessant d'être `null`, le routeur sautait sa branche « session
   // incohérente » et `/auth` lui-même finissait sur l'écran de refus : plus aucun moyen
   // de rejoindre la connexion pour réparer le profil.
-  return Object.hasOwn(SPACE_BY_ROLE, role) ? SPACE_BY_ROLE[role] : null
+  return role != null && Object.hasOwn(SPACE_BY_ROLE, role)
+    ? (SPACE_BY_ROLE[role as Role] ?? null)
+    : null
 }
 
 /**
@@ -92,6 +107,9 @@ export function spaceForRole(role) {
  * « cela existe mais pas pour vous ». Enrichir cet objet d'un `reason` pour améliorer un
  * message d'erreur rouvrirait l'oracle — le message se choisit à l'affichage, pas ici.
  */
-export function resolveSpaceAccess(role, space) {
+export function resolveSpaceAccess(
+  role: string | null | undefined,
+  space: Space | null | undefined,
+): { allowed: boolean } {
   return spaceForRole(role) === space && space !== undefined ? { allowed: true } : { allowed: false }
 }

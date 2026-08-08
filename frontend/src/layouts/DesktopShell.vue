@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { PropType } from 'vue'
 import LanguageSwitcher from '@/components/LanguageSwitcher.vue'
 
 /**
@@ -15,7 +16,7 @@ import LanguageSwitcher from '@/components/LanguageSwitcher.vue'
  */
 defineProps({
   titleKey: { type: String, required: true },
-  navKeys: { type: Array, default: () => [] },
+  navKeys: { type: Array as PropType<readonly string[]>, default: () => [] },
 })
 </script>
 
