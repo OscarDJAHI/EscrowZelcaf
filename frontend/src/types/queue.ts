@@ -36,8 +36,15 @@ export interface QueueFailure {
   code: string | null
   status: number | null
   message: string | null
-  /** Horodatage du gel — comparé aux estampilles de chargement (`frozenEntry.ts`). */
-  at: string
+  /**
+   * Horodatage du gel — comparé aux estampilles de chargement (`frozenEntry.ts`).
+   *
+   * <p>OPTIONNEL, et ce n'est pas un relâchement : `resolveRealState` teste déjà son
+   * absence (`if (!failureAt) return null`), et `SyncFailureNotice.spec` couvre ce cas
+   * explicitement. Une entrée gelée avant que ce champ n'existe n'en porte pas ; le
+   * déclarer requis aurait fait mentir le type sur ce que la base contient vraiment.
+   */
+  at?: string
 }
 
 /**

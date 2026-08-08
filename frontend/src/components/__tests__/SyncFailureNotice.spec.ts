@@ -7,6 +7,8 @@ import * as escrowApi from '@/api/escrow'
 import { useAuthStore } from '@/stores/auth'
 import { useEscrowStore } from '@/stores/escrow'
 import { useOfflineQueueStore } from '@/stores/offlineQueue'
+import type { QueueEntry, QueuedActionType } from '@/types/queue'
+import type { Pinia } from 'pinia'
 
 // Mocked so that "the notice emits no fetch" is an assertion and not a hope: it
 // reads the real state out of the store, and the only load action available
@@ -41,9 +43,39 @@ const LONG_AFTER_FREEZE = '2026-01-01T00:20:00.000Z'
  * spelling the absent cases that way would silently hand them the default and
  * test the opposite of what they claim.
  */
-function frozen({ type = 'OPEN_DISPUTE', transactionId = '7', userId = USER.id, code, status = 409, message = null, at = FROZE_AT, files } = {}) {
+interface FrozenOptions {
+  type?: QueuedActionType
+  /** `null` = entrée sans cible ; distinct d'`undefined`, qui prendrait le défaut. */
+  transactionId?: string | null
+  /** `null` = entrée sans propriétaire, invisible pour tout le monde. */
+  userId?: number | null
+  code?: string | null
+  status?: number
+  message?: string | null
+  /** `null` = gel non horodaté (entrée d'avant l'existence du champ). */
+  at?: string | null
+  files?: Blob[]
+}
+
+function frozen({
+  type = 'OPEN_DISPUTE',
+  transactionId = '7',
+  userId = USER.id,
+  code = null,
+  status = 409,
+  message = null,
+  at = FROZE_AT,
+  files,
+}: FrozenOptions = {}): QueueEntry {
   return {
     id: `entry-${type}-${transactionId}`,
+    // `timestamp`, `method` et `url` sont ajoutés par la migration TypeScript : ils
+    // manquaient à cette fabrique alors que la production les porte TOUJOURS. Le
+    // composant ne les lit pas — mais un test qui construit une entrée que `flush()`
+    // n'aurait jamais pu produire prouve son comportement sur une forme irréelle.
+    timestamp: FROZE_AT,
+    method: 'post',
+    url: `/api/v1/escrow/${transactionId ?? '7'}/dispute`,
     meta: {
       type,
       ...(transactionId === null ? {} : { transactionId }),
@@ -56,7 +88,7 @@ function frozen({ type = 'OPEN_DISPUTE', transactionId = '7', userId = USER.id, 
 }
 
 /** Mounts against a real Pinia — `@pinia/testing` is not installed and must not be. */
-function mountNotice(pinia) {
+function mountNotice(pinia: Pinia) {
   return mount(SyncFailureNotice, { global: { plugins: [pinia, createEscrowI18n('en')], stubs: { RouterLink: true } } })
 }
 
