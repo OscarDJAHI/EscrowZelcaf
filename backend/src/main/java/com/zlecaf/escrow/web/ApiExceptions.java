@@ -84,6 +84,36 @@ public final class ApiExceptions {
         return new NotFoundException(ErrorCode.RESOURCE_NOT_FOUND, "Evidence not found");
     }
 
+    /**
+     * The one and only answer to a failed e-mail verification (Story 2.4, AC3).
+     *
+     * <p>Wrong code, expired code, already-consumed code, code killed by the attempt cap,
+     * and no pending code at all all come back through here, byte for byte identical.
+     * Telling "expired" from "wrong" would confirm a code was issued for this address —
+     * that is, that the address is registered — which is precisely the oracle AC4 closes
+     * at the other end of the flow. Closing it on registration and reopening it on
+     * verification would buy nothing.
+     *
+     * <p>Centralised as a factory for the same reason {@link #transactionNotFound()} is:
+     * a message written at the throw site drifts, and the property stops being assertable
+     * byte for byte. It carries no e-mail, no expiry, no attempt count.
+     */
+    public static UnauthorizedException otpInvalid() {
+        return new UnauthorizedException(ErrorCode.OTP_INVALID, "Verification failed");
+    }
+
+    /**
+     * Refus d'un renvoi au-delà du quota (Story 2.4, AC4).
+     *
+     * <p>Porte le délai en secondes plutôt qu'une date rendue : l'appelant compose son
+     * propre message localisé, et le front n'a pas à analyser du texte pour afficher un
+     * compte à rebours. La valeur vient de l'horloge SERVEUR (AD-11) — un minuteur calculé
+     * côté client se contourne en rechargeant la page.
+     */
+    public static TooManyRequestsException resendTooSoon(long retryAfterSeconds) {
+        return new TooManyRequestsException(retryAfterSeconds);
+    }
+
     /** Common carrier of the authoritative {@link ErrorCode}. */
     public abstract static class CodedException extends RuntimeException {
         private final ErrorCode code;
@@ -121,5 +151,24 @@ public final class ApiExceptions {
     public static class UnauthorizedException extends CodedException {
         public UnauthorizedException(String message) { this(ErrorCode.AUTH_FAILED, message); }
         public UnauthorizedException(ErrorCode code, String message) { super(code, message); }
+    }
+
+    /**
+     * 429 porteur de son propre délai de réessai (Story 2.4).
+     *
+     * <p>Distincte des verrous d'{@code AuthRateLimiter}, qui comptent des ÉCHECS
+     * d'authentification avec backoff. Ici il n'y a pas d'échec : un envoi légitime
+     * consomme un quota. Confondre les deux ferait verrouiller un compte honnête pour
+     * avoir demandé deux fois son code.
+     */
+    public static class TooManyRequestsException extends CodedException {
+        private final long retryAfterSeconds;
+
+        public TooManyRequestsException(long retryAfterSeconds) {
+            super(ErrorCode.RATE_LIMITED, "Too many requests");
+            this.retryAfterSeconds = Math.max(0, retryAfterSeconds);
+        }
+
+        public long getRetryAfterSeconds() { return retryAfterSeconds; }
     }
 }

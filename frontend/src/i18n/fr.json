@@ -30,7 +30,11 @@
     "roleBuyer": "Acheteur",
     "roleSeller": "Vendeur",
     "email": "E-mail",
-    "password": "Mot de passe"
+    "password": "Mot de passe",
+    "companyName": "Raison sociale",
+    "consent": "J'accepte les conditions générales et la politique de confidentialité",
+    "consentRequired": "Le consentement est obligatoire pour créer un compte.",
+    "companyRequired": "La raison sociale est obligatoire."
   },
   "dashboard": {
     "createFailed": "La création de la transaction a échoué.",
@@ -192,5 +196,14 @@
     "deniedTitle": "Cette page n'est pas disponible",
     "deniedBody": "Vérifiez l'adresse, ou revenez à votre écran d'accueil.",
     "backHome": "Revenir à mon accueil"
+  },
+  "verify": {
+    "title": "Vérifiez votre adresse e-mail",
+    "intro": "Nous avons envoyé un code à 6 chiffres à {email}. Saisissez-le ci-dessous.",
+    "codeLabel": "Code à 6 chiffres",
+    "submit": "Vérifier",
+    "resend": "Renvoyer le code",
+    "resendIn": "Nouveau renvoi possible dans {seconds} s",
+    "invalid": "Ce code est incorrect ou n'est plus valable. Demandez-en un nouveau."
   }
 }

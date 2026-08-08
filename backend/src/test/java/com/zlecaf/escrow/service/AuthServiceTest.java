@@ -1,12 +1,16 @@
 package com.zlecaf.escrow.service;
 
+import com.zlecaf.escrow.domain.Company;
 import com.zlecaf.escrow.domain.Role;
 import com.zlecaf.escrow.domain.User;
+import com.zlecaf.escrow.repository.CompanyRepository;
+import com.zlecaf.escrow.repository.EmailVerificationCodeRepository;
+import com.zlecaf.escrow.repository.LegalConsentRepository;
 import com.zlecaf.escrow.repository.UserRepository;
+import com.zlecaf.escrow.service.notification.EmailVerificationSender;
 import com.zlecaf.escrow.security.JwtService;
 import com.zlecaf.escrow.security.PasswordPolicy;
 import com.zlecaf.escrow.web.ApiExceptions.BadRequestException;
-import com.zlecaf.escrow.web.dto.AuthDtos.AuthResponse;
 import com.zlecaf.escrow.web.dto.AuthDtos.ChangePasswordRequest;
 import com.zlecaf.escrow.web.dto.AuthDtos.RegisterRequest;
 import org.junit.jupiter.api.BeforeEach;
@@ -14,6 +18,8 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
+import java.time.Clock;
+import java.time.ZoneOffset;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -33,6 +39,10 @@ import static org.mockito.Mockito.when;
 class AuthServiceTest {
 
     private UserRepository users;
+    private CompanyRepository companies;
+    private EmailVerificationCodeRepository codes;
+    private LegalConsentRepository consents;
+    private EmailVerificationSender sender;
     private PasswordEncoder encoder;
     private JwtService jwt;
     private AuditService audit;
@@ -41,16 +51,35 @@ class AuthServiceTest {
     @BeforeEach
     void setUp() {
         users = mock(UserRepository.class);
+        companies = mock(CompanyRepository.class);
+        codes = mock(EmailVerificationCodeRepository.class);
+        consents = mock(LegalConsentRepository.class);
+        sender = mock(EmailVerificationSender.class);
         encoder = mock(PasswordEncoder.class);
         jwt = mock(JwtService.class);
         audit = mock(AuditService.class);
         // PasswordPolicy est un composant pur (sans état) : on l'instancie directement.
-        service = new AuthService(users, encoder, jwt, new PasswordPolicy(12, 72, 3), audit);
+        service = new AuthService(users, companies, codes, consents, sender, encoder, jwt,
+                new PasswordPolicy(12, 72, 3), audit, Clock.systemUTC());
         when(users.existsByEmail(any())).thenReturn(false);
         when(encoder.encode(any())).thenReturn("hashed");
         when(jwt.generateToken(any())).thenReturn("jwt-token");
         when(users.save(any(User.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(companies.save(any(Company.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(codes.findByUserId(any())).thenReturn(Optional.empty());
         when(users.incrementTokenVersion(any())).thenReturn(1);
+    }
+
+    /**
+     * Fabrique d'inscription VALIDE — raison sociale et consentement compris.
+     *
+     * <p>Elle existe pour que les tests de cette classe portent sur ce qu'ils annoncent :
+     * le rôle et la politique de mot de passe. Sans elle, chaque appel répéterait les
+     * champs de la Story 2.4, et le jour où l'inscription en exigera un de plus, ces tests
+     * échoueraient tous pour une raison qui n'est pas leur sujet.
+     */
+    private static RegisterRequest registration(String email, String password, Role role) {
+        return new RegisterRequest(email, password, null, null, role, "Acme SARL", Boolean.TRUE, null);
     }
 
     // Mot de passe conforme à la politique (≥12, 4 catégories) — Story 1.6.
@@ -58,7 +87,7 @@ class AuthServiceTest {
 
     @Test
     void registerRejectsSelfAssignedAdmin() {
-        RegisterRequest req = new RegisterRequest("admin@escrow.co", STRONG, "A", "B", Role.ADMIN);
+        RegisterRequest req = registration("admin@escrow.co", STRONG, Role.ADMIN);
         assertThatThrownBy(() -> service.register(req))
                 .isInstanceOf(BadRequestException.class);
         verify(users, never()).save(any());
@@ -66,21 +95,60 @@ class AuthServiceTest {
 
     @Test
     void registerAcceptsSellerRole() {
-        RegisterRequest req = new RegisterRequest("seller@escrow.co", STRONG, null, null, Role.SELLER);
-        AuthResponse resp = service.register(req);
+        RegisterRequest req = registration("seller@escrow.co", STRONG, Role.SELLER);
+        service.register(req);
         ArgumentCaptor<User> captor = ArgumentCaptor.forClass(User.class);
         verify(users).save(captor.capture());
         assertThat(captor.getValue().getRole()).isEqualTo(Role.SELLER);
-        assertThat(resp.token()).isEqualTo("jwt-token");
+        // AUCUNE session rendue : depuis la Story 2.4 le compte naît non vérifié, et c'est
+        // la saisie du code qui ouvre la session. Un jeton ici serait le défaut.
+        assertThat(captor.getValue().isEmailVerified()).isFalse();
+        verify(jwt, never()).generateToken(any());
     }
 
     @Test
     void registerDefaultsNullRoleToBuyer() {
-        RegisterRequest req = new RegisterRequest("nobody@escrow.co", STRONG, null, null, null);
+        RegisterRequest req = registration("nobody@escrow.co", STRONG, null);
         service.register(req);
         ArgumentCaptor<User> captor = ArgumentCaptor.forClass(User.class);
         verify(users).save(captor.capture());
         assertThat(captor.getValue().getRole()).isEqualTo(Role.BUYER);
+    }
+
+    // --- Story 2.4 : l'inscription ne divulgue rien, y compris au chronomètre -----
+
+    @Test
+    void registerOnKnownEmailCreatesNothing() {
+        when(users.existsByEmail(any())).thenReturn(true);
+        service.register(registration("deja@escrow.co", STRONG, Role.BUYER));
+        verify(users, never()).save(any());
+        verify(companies, never()).save(any());
+        verify(consents, never()).save(any());
+        verify(sender, never()).sendVerificationCode(any(), any());
+    }
+
+    @Test
+    void registerHashesThePasswordEvenWhenTheEmailIsAlreadyTaken() {
+        // La garde anti-oracle porte sur le TEMPS de réponse : un bcrypt coûte ~100 ms, et
+        // ne l'exécuter que dans la branche « création » rendrait les deux cas
+        // distinguables au chronomètre — le code d'erreur a beau être identique.
+        //
+        // Chronométrer serait instable en CI ; on asserte donc la CAUSE plutôt que l'effet :
+        // le hachage a lieu dans les deux branches, exactement une fois. Déplacer
+        // `encode(...)` après le `existsByEmail` fait tomber ce test, ce qu'aucune
+        // comparaison de corps de réponse ne pouvait faire.
+        when(users.existsByEmail(any())).thenReturn(true);
+        service.register(registration("deja@escrow.co", STRONG, Role.BUYER));
+        verify(encoder).encode(STRONG);
+    }
+
+    @Test
+    void registerRefusesAMissingConsent() {
+        // Un consentement absent est un REFUS, jamais un défaut permissif (FR-P27).
+        RegisterRequest req = new RegisterRequest("x@escrow.co", STRONG, null, null, Role.BUYER,
+                "Acme SARL", null, null);
+        assertThatThrownBy(() -> service.register(req)).isInstanceOf(BadRequestException.class);
+        verify(users, never()).save(any());
     }
 
     // --- Story 1.6 : politique de mot de passe + révocation ---------------------
@@ -88,7 +156,7 @@ class AuthServiceTest {
     @Test
     void registerRejectsWeakPassword() {
         // 'password' : 8 caractères, une seule catégorie -> rejeté avant tout save.
-        RegisterRequest req = new RegisterRequest("weak@escrow.co", "password", null, null, Role.BUYER);
+        RegisterRequest req = registration("weak@escrow.co", "password", Role.BUYER);
         assertThatThrownBy(() -> service.register(req))
                 .isInstanceOf(BadRequestException.class)
                 .hasMessageContaining("bytes");

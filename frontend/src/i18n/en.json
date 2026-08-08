@@ -30,7 +30,11 @@
     "roleBuyer": "Buyer",
     "roleSeller": "Seller",
     "email": "Email",
-    "password": "Password"
+    "password": "Password",
+    "companyName": "Company name",
+    "consent": "I accept the terms of service and the privacy policy",
+    "consentRequired": "Consent is required to create an account.",
+    "companyRequired": "Company name is required."
   },
   "dashboard": {
     "createFailed": "Failed to create transaction.",
@@ -192,5 +196,14 @@
     "deniedTitle": "This page is not available",
     "deniedBody": "Check the address, or go back to your home screen.",
     "backHome": "Back to my home screen"
+  },
+  "verify": {
+    "title": "Verify your email address",
+    "intro": "We sent a 6-digit code to {email}. Enter it below.",
+    "codeLabel": "6-digit code",
+    "submit": "Verify",
+    "resend": "Resend code",
+    "resendIn": "You can request a new code in {seconds}s",
+    "invalid": "That code is incorrect or no longer valid. Request a new one."
   }
 }

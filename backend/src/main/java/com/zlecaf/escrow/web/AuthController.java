@@ -19,9 +19,35 @@ public class AuthController {
         this.authService = authService;
     }
 
+    /**
+     * Inscription (Story 2.4). <b>202 sans corps</b>, et c'est le point important.
+     *
+     * <p>Un 201 « Created » affirmerait qu'un compte vient d'être créé — donc, par
+     * contraposée, que l'adresse était libre. La réponse ne peut pas dépendre de ce qu'on
+     * refuse de divulguer (NFR-P9, AC4). 202 « Accepted » est exactement ce qui s'est
+     * passé du point de vue de l'appelant : sa demande est prise en compte, et s'il est
+     * bien le propriétaire de l'adresse il recevra un code.
+     *
+     * <p>Aucun corps non plus : un corps, même neutre, finit par accueillir un champ utile
+     * qui redeviendra un oracle. Rien à comparer, rien à faire fuir.
+     */
     @PostMapping("/register")
-    public ResponseEntity<AuthResponse> register(@Valid @RequestBody RegisterRequest request) {
-        return ResponseEntity.status(HttpStatus.CREATED).body(authService.register(request));
+    public ResponseEntity<Void> register(@Valid @RequestBody RegisterRequest request) {
+        authService.register(request);
+        return ResponseEntity.accepted().build();
+    }
+
+    /** Saisie du code (AC2) : c'est ICI que la session est émise, pas à l'inscription. */
+    @PostMapping("/verify-email")
+    public AuthResponse verifyEmail(@Valid @RequestBody VerifyEmailRequest request) {
+        return authService.verifyEmail(request);
+    }
+
+    /** Renvoi du code (AC4). 202 sans corps, pour la même raison que l'inscription. */
+    @PostMapping("/resend-verification")
+    public ResponseEntity<Void> resendVerification(@Valid @RequestBody ResendVerificationRequest request) {
+        authService.resendVerificationCode(request);
+        return ResponseEntity.accepted().build();
     }
 
     @PostMapping("/login")

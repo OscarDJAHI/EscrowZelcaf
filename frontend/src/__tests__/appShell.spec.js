@@ -74,6 +74,10 @@ describe('Un seul landmark principal par écran', () => {
     ['/admin', ADMIN],
     ['/pas-une-route', BUYER],
     ['/auth', null],
+    // Écran sans shell : personne ne lui pose de `<main>`, il doit donc porter le sien.
+    // Il ne l'a pas fait — la carte s'étalait sur toute la largeur, collée au bord haut,
+    // et aucun landmark n'était exposé. Ce cas passe au rouge si le gabarit disparaît.
+    ['/verify-email', null],
   ])('%s ne rend qu’UN <main>', async (path, user) => {
     expect((await open(path, user)).findAll('main')).toHaveLength(1)
   })

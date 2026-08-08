@@ -120,6 +120,24 @@ public class GlobalExceptionHandler {
         return body(HttpStatus.FORBIDDEN, ex.getCode(), ex.getMessage());
     }
 
+    /**
+     * Quota d'envoi dépassé (Story 2.4, AC4) : 429 portant son délai de réessai.
+     *
+     * <p>{@code Retry-After} est un en-tête standard, calculé sur l'horloge SERVEUR
+     * (AD-11) : c'est lui qui alimente le compte à rebours affiché, et non un minuteur
+     * démarré par le client — celui-là se remet à zéro en rechargeant la page.
+     *
+     * <p>Le corps ne dit ni quel compte, ni combien d'envois restent : l'inscription
+     * refusant de confirmer qu'une adresse existe, un quota bavard le confirmerait à sa
+     * place.
+     */
+    @ExceptionHandler(TooManyRequestsException.class)
+    public ResponseEntity<Map<String, Object>> onTooManyRequests(TooManyRequestsException ex) {
+        HttpHeaders headers = new HttpHeaders();
+        headers.set(HttpHeaders.RETRY_AFTER, Long.toString(ex.getRetryAfterSeconds()));
+        return body(HttpStatus.TOO_MANY_REQUESTS, ex.getCode(), ex.getMessage(), headers);
+    }
+
     @ExceptionHandler(UnauthorizedException.class)
     public ResponseEntity<Map<String, Object>> onUnauthorized(UnauthorizedException ex) {
         // Partner signature auth failure (unknown/inactive key, bad signature,

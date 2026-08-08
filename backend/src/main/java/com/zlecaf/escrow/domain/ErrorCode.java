@@ -100,6 +100,24 @@ public enum ErrorCode {
      */
     AUTH_FAILED(Retryability.PERMANENT),
 
+    /**
+     * The one and only answer to every failed e-mail verification attempt
+     * (Story 2.4, AC3). Deliberately opaque, on the model of {@link #AUTH_FAILED}:
+     * wrong code, expired code, already-consumed code, code invalidated by the
+     * attempt cap, and <em>no pending code at all</em> share this single value.
+     *
+     * <p>Splitting them would hand back exactly what the registration flow refuses
+     * to disclose. "Expired" instead of "wrong" confirms that a code was issued for
+     * this address, which is the same as confirming the address is registered — the
+     * oracle AC4 exists to close. The distinction is worthless to a legitimate user
+     * anyway: in every case the next move is to ask for a new code.
+     *
+     * <p>PERMANENT and not TRANSIENT: replaying the same code will never start
+     * working, so the offline replay queue (AD-10) must surface it rather than
+     * retry it.
+     */
+    OTP_INVALID(Retryability.PERMANENT),
+
     // --- Transient -----------------------------------------------------------
 
     /**

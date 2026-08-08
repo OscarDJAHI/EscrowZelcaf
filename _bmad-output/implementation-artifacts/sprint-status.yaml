@@ -105,7 +105,7 @@ development_status:
   # 2026-07-28 ; ferme la faille avant que 2-4/2-5/2-6 n'empilent des parcours
   # authentifiés, et le bouton de déconnexion a déjà sa place définitive après 2-3.
   2-7-politique-session-appareil-partage: backlog # porte D4 + ses 4 satellites (ex-bundle SESSION-PARTAGÉE)
-  2-4-inscription-otp-consentement-entreprise: ready-for-dev # 3 blocages documentes : transport e-mail (8.1), rupture contrat register, notion gestionnaire (2.5)
+  2-4-inscription-otp-consentement-entreprise: in-progress # 3 blocages documentes : transport e-mail (8.1), rupture contrat register, notion gestionnaire (2.5)
   2-5-multi-utilisateur-roles-invitations: backlog
   2-6-securite-compte-reset-2fa-totp: backlog
   epic-2-retrospective: optional

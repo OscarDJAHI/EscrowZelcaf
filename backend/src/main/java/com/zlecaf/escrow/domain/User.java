@@ -38,6 +38,27 @@ public class User {
     @JoinColumn(name = "company_id")
     private Company company;
 
+    /**
+     * Compte vérifié par OTP (Story 2.4, FR-P27). Faux à la création : un compte non
+     * vérifié n'obtient pas de session, et sa connexion est renvoyée vers l'étape OTP.
+     *
+     * <p>La migration V10 a passé les comptes PRÉEXISTANTS à vrai — les laisser au défaut
+     * les aurait tous bloqués derrière un code qu'aucun d'eux ne peut recevoir.
+     */
+    @Column(name = "email_verified", nullable = false)
+    private boolean emailVerified = false;
+
+    /**
+     * Gestionnaire de l'entreprise rattachée (FR-P9), forme minimale assumée.
+     *
+     * <p>À NE PAS confondre avec {@link #role}, qui porte les rôles PLATEFORME et dont
+     * AD-21 réserve le routage des trois espaces. Gestionnaire est un axe différent : les
+     * rôles INTERNES à l'entreprise et le multi-utilisateur appartiennent à la Story 2.5,
+     * qui étendra ou remplacera cette colonne.
+     */
+    @Column(name = "company_manager", nullable = false)
+    private boolean companyManager = false;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 
@@ -72,6 +93,12 @@ public class User {
 
     public Company getCompany() { return company; }
     public void setCompany(Company company) { this.company = company; }
+
+    public boolean isEmailVerified() { return emailVerified; }
+    public void setEmailVerified(boolean emailVerified) { this.emailVerified = emailVerified; }
+
+    public boolean isCompanyManager() { return companyManager; }
+    public void setCompanyManager(boolean companyManager) { this.companyManager = companyManager; }
 
     public Instant getCreatedAt() { return createdAt; }
     public void setCreatedAt(Instant createdAt) { this.createdAt = createdAt; }

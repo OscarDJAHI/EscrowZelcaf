@@ -55,6 +55,9 @@ const form = reactive({
   firstName: '',
   lastName: '',
   role: 'BUYER',
+  // Story 2.4 : raison sociale et consentement légal horodaté (FR-P27).
+  companyName: '',
+  consentAccepted: false,
 })
 
 const submitting = ref(false)
@@ -66,15 +69,26 @@ function setMode(next) {
 
 async function handleSubmit() {
   submitting.value = true
-  const ok =
-    mode.value === 'login'
-      ? await auth.login({ email: form.email, password: form.password })
-      : await auth.register({ ...form })
+  if (mode.value === 'login') {
+    const ok = await auth.login({ email: form.email, password: form.password })
+    submitting.value = false
+    // `replace`, not `push`: the sign-in screen has no business in the history of
+    // a signed-in user, where Back would land them on it only to be bounced by the
+    // route guard.
+    if (ok) router.replace(safeRedirect(route.query.redirect))
+    return
+  }
+
+  // INSCRIPTION (Story 2.4) : elle n'ouvre plus de session. Le serveur crée un compte non
+  // vérifié et répond 202 sans corps — un succès ici veut dire « demande acceptée », pas
+  // « connecté ». On mène donc vers la saisie du code, et non vers le tableau de bord.
+  //
+  // L'adresse passe par l'URL parce que cet écran-là sera rechargé : on quitte l'onglet
+  // pour aller chercher le code dans sa boîte, et un navigateur mobile décharge volontiers
+  // la page pendant ce temps. Le code, lui, ne voyage jamais dans une URL.
+  const ok = await auth.register({ ...form })
   submitting.value = false
-  // `replace`, not `push`: the sign-in screen has no business in the history of
-  // a signed-in user, where Back would land them on it only to be bounced by the
-  // route guard.
-  if (ok) router.replace(safeRedirect(route.query.redirect))
+  if (ok) router.replace({ name: 'verify-email', query: { email: form.email } })
 }
 </script>
 
@@ -133,6 +147,16 @@ async function handleSubmit() {
             </div>
           </div>
           <div>
+            <label class="block text-sm font-medium text-gray-700" for="companyName">{{ $t('auth.companyName') }}</label>
+            <input
+              id="companyName"
+              v-model="form.companyName"
+              required
+              data-testid="company-name"
+              class="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-focus-ring focus:outline-none focus:ring-1 focus:ring-focus-ring"
+            />
+          </div>
+          <div>
             <label class="block text-sm font-medium text-gray-700" for="role">{{ $t('auth.role') }}</label>
             <select
               id="role"
@@ -165,6 +189,20 @@ async function handleSubmit() {
             class="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-focus-ring focus:outline-none focus:ring-1 focus:ring-focus-ring"
           />
         </div>
+
+        <!-- Le consentement se PROUVE, il ne se présume pas (FR-P27) : la case part
+             décochée et `required` empêche l'envoi tant qu'elle l'est. Le serveur revérifie
+             — une garde côté client seule ne prouve rien de ce qui est persisté. -->
+        <label v-if="mode === 'register'" class="flex items-start gap-2 text-sm text-gray-700">
+          <input
+            v-model="form.consentAccepted"
+            type="checkbox"
+            required
+            data-testid="consent"
+            class="mt-1 min-h-[16px] min-w-[16px]"
+          />
+          <span>{{ $t('auth.consent') }}</span>
+        </label>
 
         <p v-if="auth.error" class="text-sm text-red-600">{{ auth.error }}</p>
 

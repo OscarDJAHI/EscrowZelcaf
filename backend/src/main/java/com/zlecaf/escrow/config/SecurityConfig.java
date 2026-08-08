@@ -72,7 +72,7 @@ public class SecurityConfig {
             .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .authorizeHttpRequests(auth -> {
                 auth
-                    // Épinglé aux DEUX seules routes anonymes de l'authentification
+                    // Épinglé aux SEULES routes anonymes de l'authentification
                     // (revue 1.6). Un joker `/api/v1/auth/**` avalait silencieusement
                     // /auth/logout et /auth/change-password, qui exigent un JWT : le
                     // principal arrivait null au controller -> NPE -> 500 nu, hors
@@ -80,7 +80,16 @@ public class SecurityConfig {
                     // nouvelle route d'auth retombe désormais sur
                     // anyRequest().authenticated() par défaut — l'ouvrir est un geste
                     // explicite, jamais un effet de bord du préfixe.
-                    .requestMatchers(HttpMethod.POST, "/api/v1/auth/login", "/api/v1/auth/register").permitAll()
+                    //
+                    // Story 2.4 : /verify-email et /resend-verification sont anonymes PAR
+                    // NÉCESSITÉ — elles servent un compte qui n'a pas encore de session,
+                    // c'est même leur seule raison d'être. Leur ouverture est donc écrite
+                    // ici, une par une, et non héritée d'un préfixe.
+                    .requestMatchers(HttpMethod.POST,
+                            "/api/v1/auth/login",
+                            "/api/v1/auth/register",
+                            "/api/v1/auth/verify-email",
+                            "/api/v1/auth/resend-verification").permitAll()
                     // Simulated partner webhook callbacks (HMAC-signed, not JWT-auth'd).
                     .requestMatchers("/api/v1/webhooks/incoming/**").permitAll()
                     // Machine partner deposit (auth carried entirely by the HMAC signature,

@@ -9,6 +9,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.zlecaf.escrow.support.PostgresTestSupport;
 
 import org.junit.jupiter.api.DisplayName;
+import com.zlecaf.escrow.support.CapturingEmailVerificationSender;
+import com.zlecaf.escrow.support.VerifiedAccounts;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -30,7 +32,12 @@ import org.springframework.test.web.servlet.MvcResult;
  */
 @SpringBootTest
 @AutoConfigureMockMvc
+@org.springframework.context.annotation.Import(CapturingEmailVerificationSender.Config.class)
 class PasswordAndRevocationIntegrationTest {
+
+    /** Seul chemin par lequel un test connaît un code : le port, jamais un endpoint. */
+    @org.springframework.beans.factory.annotation.Autowired
+    private CapturingEmailVerificationSender verificationCodes;
 
     private static final String STRONG = "Str0ng!Passw0rd";
     private static final String STRONG2 = "An0ther!Passw0rd";
@@ -211,12 +218,13 @@ class PasswordAndRevocationIntegrationTest {
     }
 
     /** Inscrit un utilisateur avec un mot de passe conforme et renvoie son JWT. */
+    /**
+     * Compte AUTHENTIFIÉ. Depuis la Story 2.4 l'inscription ne rend plus de session : elle
+     * crée un compte non vérifié et envoie un code. Ce test veut un utilisateur qui peut
+     * appeler l'API, pas éprouver le parcours d'inscription — la fabrique partagée traverse
+     * donc les deux vrais endpoints et rend le jeton.
+     */
     private String registerAndGetToken(String email) throws Exception {
-        MvcResult result = mvc.perform(post("/api/v1/auth/register")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"email\":\"" + email + "\",\"password\":\"" + STRONG + "\"}"))
-                .andExpect(status().isCreated())
-                .andReturn();
-        return objectMapper.readTree(result.getResponse().getContentAsString()).get("token").asText();
+        return VerifiedAccounts.createVerified(mvc, objectMapper, verificationCodes, email);
     }
 }

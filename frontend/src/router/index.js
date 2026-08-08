@@ -16,6 +16,15 @@ const routes = [
     component: () => import('@/views/AuthView.vue'),
     meta: { public: true },
   },
+  // Publique PAR NÉCESSITÉ : elle sert un compte qui n'a pas encore de session — c'est même
+  // sa seule raison d'être. L'adresse voyage en paramètre de requête, jamais le code : une
+  // URL part dans l'historique, les journaux serveur et l'en-tête `Referer`.
+  {
+    path: '/verify-email',
+    name: 'verify-email',
+    component: () => import('@/views/VerifyEmailView.vue'),
+    meta: { public: true },
+  },
 
   // --- Espace CLIENT ---------------------------------------------------------
   {

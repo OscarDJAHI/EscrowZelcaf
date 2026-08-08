@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { loginUser, registerUser, logoutUser } from '@/api/auth'
+import { loginUser, registerUser, logoutUser, verifyEmail, resendVerification } from '@/api/auth'
 import { TOKEN_STORAGE_KEY } from '@/api/client'
 import { beginSession } from './session'
 
@@ -84,18 +84,68 @@ export const useAuthStore = defineStore('auth', {
       }
     },
 
+    /**
+     * Inscription (Story 2.4). NE POSE PAS de session.
+     *
+     * <p>Avant cette story, `register` enchaînait sur `applySession` : le compte était
+     * connecté sur-le-champ. Le serveur ne rend plus de jeton — le compte naît non vérifié
+     * — et l'appelant doit passer par l'écran de saisie du code. Rendre `true` ici signifie
+     * « demande acceptée », pas « connecté » : c'est `verify` qui ouvre la session.
+     */
     async register(payload) {
       this.loading = true
       this.error = null
       try {
-        const session = await registerUser(payload)
-        await this.applySession(session)
+        await registerUser(payload)
         return true
       } catch (err) {
         this.error = err.response?.data?.message || 'Registration failed. Please try again.'
         return false
       } finally {
         this.loading = false
+      }
+    },
+
+    /** Saisie du code (AC2) : le seul endroit du parcours d'inscription qui ouvre une session. */
+    async verify({ email, code }) {
+      this.loading = true
+      this.error = null
+      try {
+        const session = await verifyEmail({ email, code })
+        // Attendu, pour la même raison qu'au login : sur un appareil partagé,
+        // `beginSession` purge le cache de lecture du précédent utilisateur, et
+        // « avant tout rendu » n'est vrai que si la vue attend encore ici.
+        await this.applySession(session)
+        return true
+      } catch (err) {
+        this.error = err.response?.data?.message || null
+        return false
+      } finally {
+        this.loading = false
+      }
+    },
+
+    /**
+     * Renvoi du code (AC4).
+     *
+     * <p>Rend le délai avant le prochain envoi autorisé, en secondes, ou `0`. La valeur
+     * vient de l'en-tête `Retry-After` du SERVEUR (AD-11) : un compte à rebours calculé
+     * localement se remettrait à zéro au rechargement de la page.
+     *
+     * @returns {Promise<{ok: boolean, retryAfterSeconds: number}>}
+     */
+    async resend({ email }) {
+      this.error = null
+      try {
+        await resendVerification({ email })
+        return { ok: true, retryAfterSeconds: 0 }
+      } catch (err) {
+        const header = err.response?.headers?.['retry-after']
+        const parsed = Number(header)
+        // `Number.isFinite` et non un `||` : `Number(undefined)` vaut NaN, et un NaN
+        // propagé jusqu'à l'affichage produirait un compte à rebours « NaN s » sans
+        // qu'aucune exception ne soit levée.
+        return { ok: false, retryAfterSeconds: Number.isFinite(parsed) && parsed > 0 ? Math.ceil(parsed) : 0 }
       }
     },
 

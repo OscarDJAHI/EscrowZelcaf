@@ -34,7 +34,29 @@ public final class AuthDtos {
             String lastName,
             // Rôle optionnel et non-privilégié : le serveur retombe sur BUYER si absent et
             // rejette toute demande d'ADMIN (voir AuthService.register). Jamais bindé en ADMIN.
-            Role role) {}
+            Role role,
+            // Raison sociale (Story 2.4, AC1). Non annotée @NotBlank : la validation vit
+            // dans le service, avec celle du consentement, pour que les deux refus soient
+            // rendus dans le même ordre quelle que soit l'existence de l'adresse — une
+            // validation bean court AVANT le service et changerait cet ordre.
+            @Size(max = 150) String companyName,
+            /** Consentement aux documents légaux (FR-P27). Objet et non {@code boolean} : un
+             *  champ absent doit se distinguer d'un refus explicite, et un primitif les
+             *  confondrait tous deux en {@code false} — ce qui masquerait un client cassé. */
+            Boolean consentAccepted,
+            /** Version acceptée ; le serveur retombe sur la version courante si absente. */
+            @Size(max = 50) String consentDocumentVersion) {}
+
+    /** Saisie du code à 6 chiffres (Story 2.4, AC2). */
+    public record VerifyEmailRequest(
+            @Email @NotBlank String email,
+            // Borne de garde-fou uniquement : la validité du code appartient au service, qui
+            // rend UNE seule réponse d'échec. Un rejet en VALIDATION_ERROR pour un code de
+            // 5 chiffres distinguerait « mal formé » de « faux » — soit un demi-oracle.
+            @NotBlank @Size(max = 32) String code) {}
+
+    /** Demande de renvoi du code (Story 2.4, AC4). */
+    public record ResendVerificationRequest(@Email @NotBlank String email) {}
 
     public record LoginRequest(
             @Email @NotBlank String email,

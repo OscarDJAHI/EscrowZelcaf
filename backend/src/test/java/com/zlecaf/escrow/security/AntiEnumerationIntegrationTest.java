@@ -27,6 +27,8 @@ import com.zlecaf.escrow.support.PostgresTestSupport;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
+import com.zlecaf.escrow.support.CapturingEmailVerificationSender;
+import com.zlecaf.escrow.support.VerifiedAccounts;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -69,7 +71,12 @@ import java.util.UUID;
  */
 @SpringBootTest
 @AutoConfigureMockMvc
+@org.springframework.context.annotation.Import(CapturingEmailVerificationSender.Config.class)
 class AntiEnumerationIntegrationTest {
+
+    /** Seul chemin par lequel un test connaît un code : le port, jamais un endpoint. */
+    @org.springframework.beans.factory.annotation.Autowired
+    private CapturingEmailVerificationSender verificationCodes;
 
     private static final String STRONG = "Str0ng!Passw0rd";
     /** Identifiant hors de toute plage attribuée : la sonde « ça n'existe pas ». */
@@ -461,13 +468,14 @@ class AntiEnumerationIntegrationTest {
     }
 
     /** Inscrit un utilisateur conforme à la politique de mot de passe et rend son JWT. */
+    /**
+     * Compte AUTHENTIFIÉ. Depuis la Story 2.4 l'inscription ne rend plus de session : elle
+     * crée un compte non vérifié et envoie un code. Ce test veut un utilisateur qui peut
+     * appeler l'API, pas éprouver le parcours d'inscription — la fabrique partagée traverse
+     * donc les deux vrais endpoints et rend le jeton.
+     */
     private String register(String email) throws Exception {
-        MvcResult result = mvc.perform(post("/api/v1/auth/register")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"email\":\"" + email + "\",\"password\":\"" + STRONG + "\"}"))
-                .andExpect(status().isCreated())
-                .andReturn();
-        return objectMapper.readTree(result.getResponse().getContentAsString()).get("token").asText();
+        return VerifiedAccounts.createVerified(mvc, objectMapper, verificationCodes, email);
     }
 
     /** Crée une transaction escrow réelle via l'API et rend son identifiant. */

@@ -1,10 +1,40 @@
 import apiClient from './client'
 
 /**
- * @param {{email: string, password: string, firstName: string, lastName: string, role: 'BUYER'|'SELLER'|'ADMIN'}} payload
+ * Inscription (Story 2.4).
+ *
+ * <p>Ne rend AUCUNE session : le serveur répond 202 sans corps, et le compte naît non
+ * vérifié. C'est `verifyEmail` qui ouvre la session. La réponse est volontairement vide —
+ * un corps, même neutre, finirait par accueillir un champ qui trahirait l'existence de
+ * l'adresse (NFR-P9).
+ *
+ * @param {{email: string, password: string, firstName?: string, lastName?: string,
+ *          role?: 'BUYER'|'SELLER', companyName: string, consentAccepted: boolean}} payload
  */
 export function registerUser(payload) {
-  return apiClient.post('/api/v1/auth/register', payload).then((res) => res.data)
+  return apiClient.post('/api/v1/auth/register', payload).then(() => undefined)
+}
+
+/**
+ * Saisie du code à 6 chiffres — c'est ici que la session est émise (Story 2.4, AC2).
+ *
+ * @param {{email: string, code: string}} payload
+ */
+export function verifyEmail(payload) {
+  return apiClient.post('/api/v1/auth/verify-email', payload).then((res) => res.data)
+}
+
+/**
+ * Renvoi du code (AC4). 202 sans corps, comme l'inscription.
+ *
+ * <p>Un dépassement de quota remonte en 429 portant un en-tête `Retry-After` : c'est
+ * l'horloge SERVEUR qui dicte le compte à rebours (AD-11). Un minuteur démarré par le
+ * client se remettrait à zéro en rechargeant la page.
+ *
+ * @param {{email: string}} payload
+ */
+export function resendVerification(payload) {
+  return apiClient.post('/api/v1/auth/resend-verification', payload).then(() => undefined)
 }
 
 /**

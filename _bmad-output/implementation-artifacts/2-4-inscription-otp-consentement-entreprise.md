@@ -1,6 +1,10 @@
+---
+baseline_commit: 1ac97dc3c486378cfdf1ba011699090be575d5ea
+---
+
 # Story 2.4: Inscription vérifiée par OTP, consentement horodaté et rattachement à l'entreprise
 
-Status: ready-for-dev
+Status: in-progress
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -121,38 +125,38 @@ Livrer ici la **forme minimale** : un rattachement porteur d'un statut de gestio
   Aucune classe de test n'est rustinée individuellement pour repasser au vert : elles ont
   besoin d'un compte **authentifié**, pas d'un `register` détourné.
 
-- [ ] **T1 — Lire avant d'écrire** (préalable)
-  - [ ] `backend/.../service/AuthService.java` — `register`, `login`, `changePassword`, `revokeSessions` : ce qui existe, et la **liste blanche de rôles** qui satisfait déjà FR-P16 (ne pas la réécrire, ne pas la régresser).
-  - [ ] `backend/.../security/AuthRateLimitFilter.java` + `AuthRateLimiter.java` — clés compte/origine, backoff, **état en mémoire process** (mono-instance ; la limitation distribuée relève de 11.3).
-  - [ ] `backend/.../domain/{User,Company,Role,ErrorCode}.java` — `User.company_id` et l'entité `Company` **existent déjà** (`name`, `registrationNumber` UNIQUE, `country`).
-  - [ ] `backend/.../security/PasswordPolicy.java` — autorité unique de la politique, appelée avant le hachage.
-  - [ ] `frontend/src/stores/auth.js`, `src/api/auth.js`, `src/views/AuthView.vue` — le formulaire, le mode login/register, et `safeRedirect`.
-  - [ ] `frontend/src/router/index.js` + `spaces.js` — la garde livrée en 2.3 : un compte non vérifié devra être routé sans casser la redirection profonde de 1.9 ni le cloisonnement par rôle.
+- [x] **T1 — Lire avant d'écrire** (préalable)
+  - [x] `backend/.../service/AuthService.java` — `register`, `login`, `changePassword`, `revokeSessions` : ce qui existe, et la **liste blanche de rôles** qui satisfait déjà FR-P16 (ne pas la réécrire, ne pas la régresser).
+  - [x] `backend/.../security/AuthRateLimitFilter.java` + `AuthRateLimiter.java` — clés compte/origine, backoff, **état en mémoire process** (mono-instance ; la limitation distribuée relève de 11.3).
+  - [x] `backend/.../domain/{User,Company,Role,ErrorCode}.java` — `User.company_id` et l'entité `Company` **existent déjà** (`name`, `registrationNumber` UNIQUE, `country`).
+  - [x] `backend/.../security/PasswordPolicy.java` — autorité unique de la politique, appelée avant le hachage.
+  - [x] `frontend/src/stores/auth.js`, `src/api/auth.js`, `src/views/AuthView.vue` — le formulaire, le mode login/register, et `safeRedirect`.
+  - [x] `frontend/src/router/index.js` + `spaces.js` — la garde livrée en 2.3 : un compte non vérifié devra être routé sans casser la redirection profonde de 1.9 ni le cloisonnement par rôle.
 
-- [ ] **T2 — Schéma et migration** (AC: 1)
-  - [ ] Migration Flyway **`V10__…`** (V1..V9 existent) — une seule migration pour cette story.
-  - [ ] Table OTP : **hash** du code (jamais le code en clair — c'est une credential), `expires_at`, compteur de tentatives, marque d'usage unique, lien utilisateur.
-  - [ ] Table consentements : version du document, horodatage **serveur** (`TIMESTAMPTZ`, AD-11), utilisateur.
-  - [ ] Rattachement User↔Company avec statut de gestionnaire (forme minimale — voir blocage 3).
-  - [ ] Drapeau de vérification sur `users`.
+- [x] **T2 — Schéma et migration** (AC: 1)
+  - [x] Migration Flyway **`V10__…`** (V1..V9 existent) — une seule migration pour cette story.
+  - [x] Table OTP : **hash** du code (jamais le code en clair — c'est une credential), `expires_at`, compteur de tentatives, marque d'usage unique, lien utilisateur.
+  - [x] Table consentements : version du document, horodatage **serveur** (`TIMESTAMPTZ`, AD-11), utilisateur.
+  - [x] Rattachement User↔Company avec statut de gestionnaire (forme minimale — voir blocage 3).
+  - [x] Drapeau de vérification sur `users`.
 
-- [ ] **T3 — Inscription** (AC: 1,4)
-  - [ ] `register` crée un compte **non vérifié**, sans émettre de JWT.
-  - [ ] Réponse **strictement identique** que l'email existe ou non (NFR-P9) : ni code, ni message, ni forme différente. Aucune entreprise ni consentement créés dans la branche « email connu ».
-  - [ ] Plafond d'envoi keyé sur **l'adresse cible ET l'origine** (voir blocage 2).
-  - [ ] Consentement horodaté serveur ; entreprise créée et reliée, créateur gestionnaire.
-  - [ ] La liste blanche de rôles reste en place (FR-P16).
+- [x] **T3 — Inscription** (AC: 1,4)
+  - [x] `register` crée un compte **non vérifié**, sans émettre de JWT.
+  - [x] Réponse **strictement identique** que l'email existe ou non (NFR-P9) : ni code, ni message, ni forme différente. Aucune entreprise ni consentement créés dans la branche « email connu ».
+  - [x] Plafond d'envoi keyé sur **l'adresse cible ET l'origine** (voir blocage 2).
+  - [x] Consentement horodaté serveur ; entreprise créée et reliée, créateur gestionnaire.
+  - [x] La liste blanche de rôles reste en place (FR-P16).
 
-- [ ] **T4 — Vérification OTP** (AC: 2,3)
-  - [ ] Comparaison **constant-time** du hash ; code à usage unique ; TTL.
-  - [ ] Plafond de tentatives **persisté** (il doit survivre à un redémarrage — un compteur en mémoire ne protège pas un code qui, lui, vit en base).
-  - [ ] Succès → compte vérifié + session émise par le `JwtService` existant.
-  - [ ] Un compte non vérifié qui se connecte est renvoyé vers l'étape OTP, **jamais** dans l'application.
-  - [ ] Codes d'erreur via l'enum `ErrorCode` et l'enveloppe unique du `GlobalExceptionHandler` — jamais de format parallèle.
+- [x] **T4 — Vérification OTP** (AC: 2,3)
+  - [x] Comparaison **constant-time** du hash ; code à usage unique ; TTL.
+  - [x] Plafond de tentatives **persisté** (il doit survivre à un redémarrage — un compteur en mémoire ne protège pas un code qui, lui, vit en base).
+  - [x] Succès → compte vérifié + session émise par le `JwtService` existant.
+  - [x] Un compte non vérifié qui se connecte est renvoyé vers l'étape OTP, **jamais** dans l'application.
+  - [x] Codes d'erreur via l'enum `ErrorCode` et l'enveloppe unique du `GlobalExceptionHandler` — jamais de format parallèle.
 
-- [ ] **T5 — Renvoi limité** (AC: 4)
-  - [ ] Plafond de renvois + délai entre deux envois ; dépassement rejeté avec un message **daté**.
-  - [ ] Le compte à rebours affiché par le front vient du **serveur**, pas d'un minuteur local : l'heure serveur est la source de vérité (AD-11), et un minuteur client se contourne en rechargeant la page.
+- [x] **T5 — Renvoi limité** (AC: 4)
+  - [x] Plafond de renvois + délai entre deux envois ; dépassement rejeté avec un message **daté**.
+  - [x] Le compte à rebours affiché par le front vient du **serveur**, pas d'un minuteur local : l'heure serveur est la source de vérité (AD-11), et un minuteur client se contourne en rechargeant la page.
 
 - [ ] **T6 — Front : inscription, OTP, consentement** (AC: 1,2,3,4)
   - [ ] Formulaire 1 colonne, validation à la volée (UX-DR35), case de consentement.
@@ -161,9 +165,9 @@ Livrer ici la **forme minimale** : un rattachement porteur d'un statut de gestio
   - [ ] Assembler la bibliothèque 2-2 (`AppButton`, `AppCard`, `AppSkeleton`) — ne rien réinventer.
   - [ ] `stores/auth.js` : `register` ne pose plus de session ; le parcours passe par l'étape OTP.
 
-- [ ] **T7 — Refactor du support de test** (blocage 2)
-  - [ ] Fabrique de compte vérifié pour les 8 classes qui utilisaient `register()` comme raccourci.
-  - [ ] `AntiEnumerationIntegrationTest` doit rester vert **et** s'étendre à la nouvelle surface d'inscription.
+- [x] **T7 — Refactor du support de test** (blocage 2)
+  - [x] Fabrique de compte vérifié pour les 8 classes qui utilisaient `register()` comme raccourci.
+  - [x] `AntiEnumerationIntegrationTest` doit rester vert **et** s'étendre à la nouvelle surface d'inscription.
 
 - [ ] **T8 — Tests** (AC: 1,2,3,4)
   - [ ] Indistinguabilité de la réponse d'inscription (email connu / inconnu) — **par égalité du corps ET du statut**, à l'image du gabarit backend existant.
@@ -243,14 +247,120 @@ Cinq derniers commits : `eb5680c` (2.3 done + dettes au ledger), `e336b7e` (corr
 
 ### Agent Model Used
 
+claude-opus-5 (interactif, flux BMad classique)
+
+### État à l'arrêt du 2026-07-28 — REPRENDRE ICI
+
+**Backend : terminé et prouvé.** T1–T5 et T7 complets.
+**Frontend : câblé jusqu'à l'écran OTP, tests non écrits.** T6 partiel, T8 partiel.
+
+Ce qui reste, dans l'ordre :
+
+1. **T6 (fin)** — rien de bloquant, le parcours est en place (`VerifyEmailView.vue`, route
+   publique `verify-email`, store `verify`/`resend`, `AuthView` avec raison sociale et
+   consentement). À relire : la vue n'a **aucun test**, donc rien ne prouve encore la
+   normalisation du collage, la conservation de la saisie, ni le compte à rebours.
+2. **T8 (frontend)** — tests de `VerifyEmailView` (collage « 123 456 » → `123456`, message
+   d'erreur SOUS le champ et lié par `aria-describedby`, saisie conservée après échec,
+   bouton de renvoi désactivé pendant le décompte) et du store (`register` n'ouvre PAS de
+   session, `verify` en ouvre une, `resend` lit `Retry-After` sans produire de NaN).
+3. **Vérifications finales** — suite complète des deux côtés, `npm run lint`,
+   `verify:no-demo`, `verify:pwa`, `scripts/check-encoding.py`, puis statut `review`.
+
+**Comptes de tests réellement observés** (ne pas les recopier sans revérifier — un compte
+annoncé s'est révélé faux deux fois sur cet epic) :
+- Frontend : **422 / 29 fichiers**, verts. Inchangé : aucun test frontend n'a encore été
+  ajouté pour cette story.
+- Backend : suite complète **489 verte** AVANT l'ajout des nouvelles classes. Depuis :
+  `AuthServiceTest` 13 (était 10), `RegistrationOtpIntegrationTest` 12 (nouveau),
+  `OutboxEmailVerificationSenderTest` 3 (nouveau) — tous verts individuellement. **La suite
+  complète n'a pas été relancée depuis**, le total est donc à établir, pas à annoncer.
+
 ### Debug Log References
+
+**UN VRAI DÉFAUT, trouvé par le test de l'AC3 — le plafond de tentatives ne comptait rien.**
+`verifyEmail` est `@Transactional` ; lever l'`UnauthorizedException` juste après avoir
+incrémenté `attempts` **annulait l'incrément**, Spring défaisant la transaction sur toute
+exception non vérifiée. Le compteur repartait de zéro à chaque essai et le code restait
+valide jusqu'à son expiration : forçage illimité sur un espace de 10^6 pendant 15 minutes.
+Le code se lisait comme correct. Corrigé par `@Transactional(noRollbackFor =
+ApiExceptions.CodedException.class)` ; **rouge sans le correctif**, vert avec.
+
+**UNE DE MES GARDES ÉTAIT CREUSE — cinquième fois sur cet epic.** Le hachage du mot de passe
+est calculé AVANT le branchement sur l'existence de l'adresse, pour que les deux cas coûtent
+le même temps : sans cela, l'oracle fermé côté code d'erreur se rouvre au chronomètre. La
+mutation qui replace `encode(...)` après le `existsByEmail` est passée **VERTE** — aucune
+assertion ne relisait cette garde, et une comparaison de corps de réponse ne peut par
+construction pas voir un écart de temps. Remplacé par une assertion sur la CAUSE plutôt que
+sur l'effet (`verify(encoder).encode(...)` même quand l'adresse est connue), déterministe là
+où un chronométrage serait instable en CI. Rouge sous mutation.
+
+**`mvn test-compile` a répondu BUILD SUCCESS sur des tests qui ne compilaient pas.** Maven
+n'avait pas recompilé les classes de test après le changement de signature d'`AuthService` ;
+la rupture n'est apparue qu'en `NoSuchMethodError` à l'exécution. Il a fallu un `clean` pour
+voir les six vraies erreurs. Corollaire pour la suite de cette story : ne pas conclure d'un
+`test-compile` vert que le rayon de souffle est nul.
+
+**Trois bogues dans mes propres tests, corrigés :**
+- comparaison d'enveloppes octet pour octet impossible telle quelle — `GlobalExceptionHandler`
+  y insère `Instant.now()`, donc deux réponses indistinguables diffèrent toujours. Neutralisé
+  par `withoutTimestamp(...)`, qui compare ce qu'un attaquant peut exploiter et pas l'heure ;
+- assertion sur l'outbox posée dans un contexte où l'adaptateur de capture REMPLACE
+  l'adaptateur outbox : elle ne regardait rien. Déplacée dans
+  `OutboxEmailVerificationSenderTest`, seul endroit où cet adaptateur tourne réellement ;
+- `LazyInitializationException` sur `User.company` hors session — test annoté `@Transactional`.
 
 ### Completion Notes List
 
+- **Décision T0 appliquée (voie 1)** : port `EmailVerificationSender` + outbox AD-22 +
+  adaptateur d'attente. **Aucun e-mail n'atteint une vraie boîte** : `delivered_at` reste nul
+  et c'est l'état réel du système. À porter au ledger à la clôture.
+- **Le port a été déplacé** d'un paquet `ports/` racine vers `service/notification/`, pour
+  suivre la convention réelle du dépôt (`service/storage/EvidenceStorage`).
+- **Aucun endpoint de lecture d'OTP**, et il ne doit pas en exister : les tests lisent le
+  code par le port (`CapturingEmailVerificationSender`). Un endpoint « de développement »
+  serait une porte dérobée d'authentification qu'une erreur de profil suffit à publier.
+- **202 sans corps à l'inscription, pas 201** : un « Created » affirmerait qu'un compte vient
+  d'être créé, donc que l'adresse était libre.
+- **Oracle résiduel assumé (AC4)** : les deux exigences de l'AC se contredisent en partie —
+  qui déclenche le 429 de quota apprend qu'un code est en attente pour cette adresse. Le
+  quota porte sur le DESTINATAIRE, ce qui ferme le canal de harcèlement ouvert par
+  l'anti-énumération, mais le rend observable. Le fermer demanderait de stocker un quota pour
+  des adresses arbitraires, soit un autre déni de service. À porter au ledger.
+- **Correction d'une affirmation de la story elle-même** : les Dev Notes disaient
+  qu'`AuditService` ne convenait pas aux faits de compte. C'est faux —
+  `recordAccountSecurityEvent` accepte un `transactionId` nul. Il est utilisé.
+- **Migration V10 : les comptes préexistants sont passés `email_verified = TRUE`.** Les
+  laisser au défaut `FALSE` les aurait tous bloqués derrière un code qu'aucun d'eux ne peut
+  recevoir.
+
 ### File List
+
+**Nouveaux — backend**
+- `backend/src/main/resources/db/migration/V10__email_verification_consent_company_link.sql`
+- `backend/src/main/java/com/zlecaf/escrow/domain/{EmailVerificationCode,LegalConsent,NotificationOutboxEntry}.java`
+- `backend/src/main/java/com/zlecaf/escrow/repository/{EmailVerificationCode,LegalConsent,NotificationOutbox}Repository.java`
+- `backend/src/main/java/com/zlecaf/escrow/service/notification/{EmailVerificationSender,OutboxEmailVerificationSender}.java`
+- `backend/src/test/java/com/zlecaf/escrow/support/{VerifiedAccounts,CapturingEmailVerificationSender}.java`
+- `backend/src/test/java/com/zlecaf/escrow/security/RegistrationOtpIntegrationTest.java`
+- `backend/src/test/java/com/zlecaf/escrow/service/notification/OutboxEmailVerificationSenderTest.java`
+
+**Nouveaux — frontend**
+- `frontend/src/views/VerifyEmailView.vue`
+
+**Modifiés — backend**
+- `service/AuthService.java` (register refondu, verifyEmail, resendVerificationCode, issueCode)
+- `domain/{User,ErrorCode}.java`, `web/{ApiExceptions,GlobalExceptionHandler,AuthController}.java`
+- `web/dto/AuthDtos.java`, `config/SecurityConfig.java`
+- `src/test/.../{AuthServiceTest,PasswordAndRevocationIntegrationTest,ChangePasswordRateLimitIntegrationTest,AntiEnumerationIntegrationTest}.java`
+
+**Modifiés — frontend**
+- `src/api/auth.js`, `src/stores/auth.js`, `src/views/AuthView.vue`, `src/router/index.js`
+- `src/i18n/{fr,en}.json`
 
 ### Change Log
 
 | Date | Version | Description |
 |---|---|---|
-| 2026-07-28 | 0.1 | Création du contexte de développement. Trois blocages documentés : transport e-mail inexistant (possédé par 8.1), rupture nécessaire du contrat `register` (8 classes de test + store frontend), notion de gestionnaire d'entreprise antérieure à 2.5. |
+| 2026-07-28 | 0.2 | Backend complet : OTP, consentement, rattachement entreprise, anti-énumération à l'inscription, port d'envoi + outbox AD-22, refactor du support de test. Correctif du plafond de tentatives annulé par le rollback transactionnel. Frontend câblé, tests frontend restant à écrire. |
+| 2026-07-28 | 0.1 | Création du contexte de développement. Trois blocages documentés. |
