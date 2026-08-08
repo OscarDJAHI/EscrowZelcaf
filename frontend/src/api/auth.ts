@@ -1,4 +1,15 @@
 import apiClient from './client'
+import type { Session } from '@/types/domain'
+
+export interface RegisterPayload {
+  email: string
+  password: string
+  firstName?: string
+  lastName?: string
+  role?: 'BUYER' | 'SELLER'
+  companyName: string
+  consentAccepted: boolean
+}
 
 /**
  * Inscription (Story 2.4).
@@ -6,22 +17,21 @@ import apiClient from './client'
  * <p>Ne rend AUCUNE session : le serveur répond 202 sans corps, et le compte naît non
  * vérifié. C'est `verifyEmail` qui ouvre la session. La réponse est volontairement vide —
  * un corps, même neutre, finirait par accueillir un champ qui trahirait l'existence de
- * l'adresse (NFR-P9).
- *
- * @param {{email: string, password: string, firstName?: string, lastName?: string,
- *          role?: 'BUYER'|'SELLER', companyName: string, consentAccepted: boolean}} payload
+ * l'adresse (NFR-P9). Le type de retour `void` porte désormais cette promesse : un
+ * appelant qui tenterait d'y lire un jeton ne compile plus.
  */
-export function registerUser(payload) {
+export function registerUser(payload: RegisterPayload): Promise<void> {
   return apiClient.post('/api/v1/auth/register', payload).then(() => undefined)
 }
 
-/**
- * Saisie du code à 6 chiffres — c'est ici que la session est émise (Story 2.4, AC2).
- *
- * @param {{email: string, code: string}} payload
- */
-export function verifyEmail(payload) {
-  return apiClient.post('/api/v1/auth/verify-email', payload).then((res) => res.data)
+export interface VerifyEmailPayload {
+  email: string
+  code: string
+}
+
+/** Saisie du code à 6 chiffres — c'est ici que la session est émise (Story 2.4, AC2). */
+export function verifyEmail(payload: VerifyEmailPayload): Promise<Session> {
+  return apiClient.post<Session>('/api/v1/auth/verify-email', payload).then((res) => res.data)
 }
 
 /**
@@ -30,18 +40,18 @@ export function verifyEmail(payload) {
  * <p>Un dépassement de quota remonte en 429 portant un en-tête `Retry-After` : c'est
  * l'horloge SERVEUR qui dicte le compte à rebours (AD-11). Un minuteur démarré par le
  * client se remettrait à zéro en rechargeant la page.
- *
- * @param {{email: string}} payload
  */
-export function resendVerification(payload) {
+export function resendVerification(payload: { email: string }): Promise<void> {
   return apiClient.post('/api/v1/auth/resend-verification', payload).then(() => undefined)
 }
 
-/**
- * @param {{email: string, password: string}} payload
- */
-export function loginUser(payload) {
-  return apiClient.post('/api/v1/auth/login', payload).then((res) => res.data)
+export interface LoginPayload {
+  email: string
+  password: string
+}
+
+export function loginUser(payload: LoginPayload): Promise<Session> {
+  return apiClient.post<Session>('/api/v1/auth/login', payload).then((res) => res.data)
 }
 
 /**
@@ -60,10 +70,9 @@ export function loginUser(payload) {
  * jeton est déjà mort côté client, un 401 tardif ne doit pas purger la session
  * *suivante* si l'utilisateur s'est reconnecté entre-temps.
  *
- * @param {string} token le JWT à révoquer
- * @returns {Promise<void>} résolue quelle que soit la réponse ; rejetée sur échec réseau
+ * <p>Résolue quelle que soit la réponse ; rejetée sur échec réseau.
  */
-export function logoutUser(token) {
+export function logoutUser(token: string): Promise<void> {
   const baseURL = apiClient.defaults.baseURL ?? ''
   return fetch(`${baseURL}/api/v1/auth/logout`, {
     method: 'POST',

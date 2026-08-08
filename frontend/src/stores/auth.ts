@@ -1,7 +1,10 @@
 import { defineStore } from 'pinia'
 import { loginUser, registerUser, logoutUser, verifyEmail, resendVerification } from '@/api/auth'
+import type { LoginPayload, RegisterPayload, VerifyEmailPayload } from '@/api/auth'
 import { TOKEN_STORAGE_KEY } from '@/api/client'
 import { beginSession } from './session'
+import { apiErrorHeader, apiErrorMessage } from '@/utils/apiError'
+import type { Role, Session, User } from '@/types/domain'
 
 /**
  * Exported since Story 1.9, and paired with `TOKEN_STORAGE_KEY`: the two keys a
@@ -14,17 +17,37 @@ import { beginSession } from './session'
  */
 export const USER_STORAGE_KEY = 'escrow_user'
 
-function loadStoredUser() {
+/**
+ * Le profil relu depuis localStorage n'est PAS digne de confiance.
+ *
+ * <p>`JSON.parse` rend `any` : le typer `User` d'autorité ferait croire au compilateur
+ * qu'un `role` valide est garanti, alors que la valeur vient d'un stockage que
+ * l'utilisateur peut éditer. Le ledger de la Story 1.9 documente déjà le cas réel
+ * (`escrow_user` illisible pendant que `escrow_token` survit), et le routeur a une
+ * branche « session incohérente » pour ça. On rend donc `User | null` après une
+ * vérification minimale de forme, plutôt qu'une promesse que rien ne tient.
+ */
+function loadStoredUser(): User | null {
   try {
     const raw = localStorage.getItem(USER_STORAGE_KEY)
-    return raw ? JSON.parse(raw) : null
+    if (!raw) return null
+    const parsed: unknown = JSON.parse(raw)
+    if (!parsed || typeof parsed !== 'object') return null
+    return parsed as User
   } catch {
     return null
   }
 }
 
+interface AuthState {
+  token: string | null
+  user: User | null
+  loading: boolean
+  error: string | null
+}
+
 export const useAuthStore = defineStore('auth', {
-  state: () => ({
+  state: (): AuthState => ({
     token: localStorage.getItem(TOKEN_STORAGE_KEY) || null,
     user: loadStoredUser(),
     loading: false,
@@ -32,12 +55,12 @@ export const useAuthStore = defineStore('auth', {
   }),
 
   getters: {
-    isAuthenticated: (state) => Boolean(state.token),
-    role: (state) => state.user?.role || null,
+    isAuthenticated: (state): boolean => Boolean(state.token),
+    role: (state): Role | null => state.user?.role || null,
   },
 
   actions: {
-    persist() {
+    persist(): void {
       if (this.token) localStorage.setItem(TOKEN_STORAGE_KEY, this.token)
       else localStorage.removeItem(TOKEN_STORAGE_KEY)
 
@@ -56,17 +79,15 @@ export const useAuthStore = defineStore('auth', {
      * returned rather than awaited, so `login()` can sequence the read-cache
      * purge before it hands control back to the view. `beginSession` never
      * rejects, so ignoring the returned promise is safe.
-     * @param {{token: string, user: object}} session
-     * @returns {Promise<void>}
      */
-    applySession({ token, user }) {
+    applySession({ token, user }: Session): Promise<void> {
       this.token = token
       this.user = user
       this.persist()
       return beginSession(user?.id)
     },
 
-    async login(credentials) {
+    async login(credentials: LoginPayload): Promise<boolean> {
       this.loading = true
       this.error = null
       try {
@@ -77,7 +98,7 @@ export const useAuthStore = defineStore('auth', {
         await this.applySession(session)
         return true
       } catch (err) {
-        this.error = err.response?.data?.message || 'Invalid email or password.'
+        this.error = apiErrorMessage(err) || 'Invalid email or password.'
         return false
       } finally {
         this.loading = false
@@ -92,14 +113,14 @@ export const useAuthStore = defineStore('auth', {
      * — et l'appelant doit passer par l'écran de saisie du code. Rendre `true` ici signifie
      * « demande acceptée », pas « connecté » : c'est `verify` qui ouvre la session.
      */
-    async register(payload) {
+    async register(payload: RegisterPayload): Promise<boolean> {
       this.loading = true
       this.error = null
       try {
         await registerUser(payload)
         return true
       } catch (err) {
-        this.error = err.response?.data?.message || 'Registration failed. Please try again.'
+        this.error = apiErrorMessage(err) || 'Registration failed. Please try again.'
         return false
       } finally {
         this.loading = false
@@ -107,7 +128,7 @@ export const useAuthStore = defineStore('auth', {
     },
 
     /** Saisie du code (AC2) : le seul endroit du parcours d'inscription qui ouvre une session. */
-    async verify({ email, code }) {
+    async verify({ email, code }: VerifyEmailPayload): Promise<boolean> {
       this.loading = true
       this.error = null
       try {
@@ -118,7 +139,7 @@ export const useAuthStore = defineStore('auth', {
         await this.applySession(session)
         return true
       } catch (err) {
-        this.error = err.response?.data?.message || null
+        this.error = apiErrorMessage(err)
         return false
       } finally {
         this.loading = false
@@ -132,15 +153,14 @@ export const useAuthStore = defineStore('auth', {
      * vient de l'en-tête `Retry-After` du SERVEUR (AD-11) : un compte à rebours calculé
      * localement se remettrait à zéro au rechargement de la page.
      *
-     * @returns {Promise<{ok: boolean, retryAfterSeconds: number}>}
      */
-    async resend({ email }) {
+    async resend({ email }: { email: string }): Promise<{ ok: boolean; retryAfterSeconds: number }> {
       this.error = null
       try {
         await resendVerification({ email })
         return { ok: true, retryAfterSeconds: 0 }
       } catch (err) {
-        const header = err.response?.headers?.['retry-after']
+        const header = apiErrorHeader(err, 'Retry-After')
         const parsed = Number(header)
         // `Number.isFinite` et non un `||` : `Number(undefined)` vaut NaN, et un NaN
         // propagé jusqu'à l'affichage produirait un compte à rebours « NaN s » sans
@@ -158,7 +178,7 @@ export const useAuthStore = defineStore('auth', {
      * message d'erreur de la session précédente accueille l'utilisateur suivant
      * sur l'écran de connexion.
      */
-    clearSession() {
+    clearSession(): void {
       this.token = null
       this.user = null
       this.loading = false
@@ -180,10 +200,9 @@ export const useAuthStore = defineStore('auth', {
      * <p>L'échec (hors ligne, jeton déjà invalide) reste ignoré : la déconnexion
      * locale prime.
      *
-     * @param {string|null|undefined} token le JWT à révoquer
-     * @returns {Promise<void>} toujours résolue, jamais rejetée
+     * <p>Toujours résolue, jamais rejetée.
      */
-    revokeOnServer(token) {
+    revokeOnServer(token: string | null | undefined): Promise<void> {
       if (!token) return Promise.resolve()
       return logoutUser(token).catch(() => {})
     },
@@ -204,9 +223,9 @@ export const useAuthStore = defineStore('auth', {
      * et l'enchaînement que `endSession` reproduit ; aucun appelant de
      * production ne l'utilise (`DashboardView.vue` passe par `endSession`).
      *
-     * @returns {Promise<void>} toujours résolue, jamais rejetée
+     * <p>Toujours résolue, jamais rejetée.
      */
-    logout() {
+    logout(): Promise<void> {
       const revokedToken = this.token
       this.clearSession()
       return this.revokeOnServer(revokedToken)

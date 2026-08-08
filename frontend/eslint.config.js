@@ -1,5 +1,6 @@
 import js from '@eslint/js'
 import pluginVue from 'eslint-plugin-vue'
+import tseslint from 'typescript-eslint'
 import globals from 'globals'
 
 // POURQUOI CE FICHIER EXISTE
@@ -20,6 +21,15 @@ import globals from 'globals'
 //   2. une directive devenue inutile doit FAIRE ÉCHOUER le lint
 //      (`reportUnusedDisableDirectives`), pour que le décalage constaté ici ne
 //      puisse pas se reformer en silence.
+//
+// MIGRATION TYPESCRIPT — le même défaut a failli se reformer, exactement.
+// Les motifs ci-dessous visaient `**/*.{js,vue}`. Le source passé en `.ts`,
+// `npm run lint` restait VERT en n'analysant plus que 31 fichiers sur 80 : les
+// 49 modules et suites migrés n'étaient plus lus par personne, et les six
+// directives `eslint-disable` qu'ils portent ne supprimaient plus rien tout en
+// cessant d'être signalées. Un lint qui passe parce qu'il ne regarde rien est
+// la barrière imaginaire que ce fichier existe pour interdire. D'où `ts` dans
+// chaque motif, et l'analyseur TypeScript branché sous `<script lang="ts">`.
 
 export default [
   {
@@ -40,6 +50,44 @@ export default [
   // la story 2-1 choisira, sur du code qu'elle aura elle-même écrit.
   ...pluginVue.configs['flat/essential'],
 
+  // Règles de CORRECTION pour TypeScript, sans la couche « stylistique » ni la
+  // couche « typée » : même arbitrage que pour `flat/essential` ci-dessus — on
+  // attrape des défauts, on ne réécrit pas 12 000 lignes qui viennent d'être
+  // migrées et dont la suite est verte.
+  //
+  // RESTREINT aux `.ts` — et le `.map` n'est pas de la coquetterie. La
+  // configuration `recommended` de typescript-eslint ne porte AUCUN `files` :
+  // elle s'applique donc à tout, y compris aux `.vue`, dont elle écrase
+  // l'analyseur posé par `flat/essential`. Résultat observé : les 28 composants
+  // échouaient en « Parsing error: '>' expected » dès la première ligne, le
+  // SFC étant lu comme du TypeScript. Le bloc `**/*.vue` plus bas rebranche
+  // l'analyseur TypeScript LÀ OÙ IL FAUT : à l'intérieur du script.
+  ...tseslint.configs.recommended.map((config) => ({ ...config, files: ['**/*.ts'] })),
+
+  {
+    // `<script lang="ts">` dans un composant : `vue-eslint-parser` lit le SFC et
+    // DÉLÈGUE le contenu du script à l'analyseur ci-dessous. Sans cette
+    // délégation, toute annotation de type est une erreur de syntaxe.
+    //
+    // Les règles sont recopiées ici plutôt qu'héritées, et c'est la conséquence
+    // directe du `files: ['**/*.ts']` posé plus haut : ainsi restreinte, la
+    // configuration `recommended` ne couvrait plus les composants. Vérifié par
+    // mutation — un `const x: any` glissé dans un `<script setup lang="ts">`
+    // ne déclenchait RIEN, pendant que le même défaut dans un `.ts` était bien
+    // signalé. Un linter qui ne lit qu'une moitié du code est le défaut que
+    // l'en-tête de ce fichier interdit ; il s'était reformé d'un cran plus bas.
+    files: ['**/*.vue'],
+    languageOptions: {
+      parserOptions: {
+        parser: tseslint.parser,
+      },
+    },
+    plugins: {
+      '@typescript-eslint': tseslint.plugin,
+    },
+    rules: Object.assign({}, ...tseslint.configs.recommended.map((config) => config.rules ?? {})),
+  },
+
   {
     // Une directive `eslint-disable` qui ne supprime plus rien est un mensonge
     // documentaire de la même famille que celui qui a motivé ce fichier : la
@@ -51,7 +99,7 @@ export default [
   },
 
   {
-    files: ['**/*.{js,vue}'],
+    files: ['**/*.{js,ts,vue}'],
     languageOptions: {
       ecmaVersion: 'latest',
       sourceType: 'module',
@@ -73,7 +121,7 @@ export default [
 
   {
     // Fichiers de configuration, d'amorçage et scripts de vérification : contexte Node.
-    files: ['*.config.js', 'vitest.setup.js', 'scripts/**/*.mjs'],
+    files: ['*.config.js', '*.config.ts', 'vitest.setup.ts', 'scripts/**/*.mjs'],
     languageOptions: {
       globals: {
         ...globals.node,
@@ -84,7 +132,7 @@ export default [
   {
     // Les suites lisent le système de fichiers (garde anti-dérive du contrat
     // ErrorCode) et pilotent des horloges : elles vivent dans les deux mondes.
-    files: ['**/__tests__/**/*.js', '**/*.spec.js'],
+    files: ['**/__tests__/**/*.ts', '**/*.spec.ts'],
     languageOptions: {
       globals: {
         ...globals.browser,

@@ -1,4 +1,4 @@
-<script setup>
+<script setup lang="ts">
 import AppCard from '@/components/AppCard.vue'
 
 /** Accueil du back-office opérateur. Les surfaces réelles arrivent avec l'Epic 7.

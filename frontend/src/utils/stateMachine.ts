@@ -3,10 +3,14 @@
  * without another round-trip, which events the *current* user is allowed
  * to trigger from the transaction's *current* state.
  */
+import type { EscrowEventName, EscrowState, Role, StateToken, Transaction, User } from '@/types/domain'
 
-export const MAIN_FLOW_STATES = ['INITIATED', 'FUNDS_LOCKED', 'SHIPPED', 'RELEASED']
-export const BRANCH_STATES = ['DISPUTED', 'REFUNDED']
-export const ALL_STATES = [...MAIN_FLOW_STATES, ...BRANCH_STATES]
+// `as const` et non `string[]` : sans lui, ces tableaux se typent `string[]` et
+// n'imposent plus rien — un état inventé y passerait sans que rien ne bronche, ce qui
+// est exactement ce que le miroir est censé empêcher.
+export const MAIN_FLOW_STATES = ['INITIATED', 'FUNDS_LOCKED', 'SHIPPED', 'RELEASED'] as const
+export const BRANCH_STATES = ['DISPUTED', 'REFUNDED'] as const
+export const ALL_STATES: readonly EscrowState[] = [...MAIN_FLOW_STATES, ...BRANCH_STATES]
 
 /**
  * Mapping état → FAMILLE SÉMANTIQUE. Source unique du code couleur du cycle de vie,
@@ -23,7 +27,7 @@ export const ALL_STATES = [...MAIN_FLOW_STATES, ...BRANCH_STATES]
  * <p>`EXPIRED` rejoindra `neutral` quand l'Epic 5 introduira l'expiration (AD-19/AD-22) ;
  * l'état n'existe pas encore dans cette machine, on ne le devine pas ici.
  */
-export const STATE_TOKENS = {
+export const STATE_TOKENS: Record<EscrowState, StateToken> = {
   INITIATED: 'warning',
   FUNDS_LOCKED: 'info',
   SHIPPED: 'info',
@@ -40,7 +44,14 @@ export const STATE_TOKENS = {
  * classe construite à l'exécution — la feuille de style sortirait sans elles et le rendu
  * serait muet, sans la moindre erreur.
  */
-const TOKEN_CLASSES = {
+/** Les trois surfaces qu'une famille sémantique habille. */
+export interface TokenClasses {
+  badge: string
+  dot: string
+  ring: string
+}
+
+const TOKEN_CLASSES: Record<StateToken, TokenClasses> = {
   warning: { badge: 'bg-warning-surface text-warning', dot: 'bg-warning', ring: 'ring-warning' },
   info: { badge: 'bg-info-surface text-info', dot: 'bg-info', ring: 'ring-info' },
   success: { badge: 'bg-success-surface text-success', dot: 'bg-success', ring: 'ring-success' },
@@ -56,7 +67,7 @@ const TOKEN_CLASSES = {
 /** Classes par état, DÉRIVÉES du mapping sémantique — jamais une seconde table à maintenir. */
 export const STATE_COLORS = Object.fromEntries(
   Object.entries(STATE_TOKENS).map(([state, token]) => [state, TOKEN_CLASSES[token]]),
-)
+) as Record<EscrowState, TokenClasses>
 
 /**
  * Familles sémantiques de la chrome hors-ligne — DEUX états, pas un.
@@ -84,7 +95,7 @@ export const SYNCING_CLASSES = TOKEN_CLASSES.info
  * boutons du parcours de transaction restaient en anglais, et aucune garde ne pouvait le
  * voir — la chaîne vivait dans un `.js` et transitait par une liaison (constat de revue).
  */
-export const EVENT_LABEL_KEYS = {
+export const EVENT_LABEL_KEYS: Record<EscrowEventName, string> = {
   PAY_FUNDS: 'event.PAY_FUNDS',
   SHIP_GOODS: 'event.SHIP_GOODS',
   DELIVERY_CONFIRMED: 'event.DELIVERY_CONFIRMED',
@@ -93,12 +104,25 @@ export const EVENT_LABEL_KEYS = {
   RESOLVE_REFUND: 'event.RESOLVE_REFUND',
 }
 
+/** Un bouton d'action proposable : l'événement, l'état visé, et sa clé de libellé. */
+export interface AllowedEvent {
+  event: EscrowEventName
+  next: EscrowState
+  labelKey: string | null
+}
+
 // state -> event -> { next, roles }
 // `roles` lists the account roles allowed to trigger the event from the UI.
 // PAY_FUNDS / DELIVERY_CONFIRMED can also be triggered by an automated
 // payment gateway ("system") server-side; from the PWA only the buyer
 // has a manual button for them.
-export const TRANSITIONS = {
+/** Cible d'une transition et rôles autorisés à la déclencher depuis l'interface. */
+export interface TransitionDefinition {
+  next: EscrowState
+  roles: readonly Role[]
+}
+
+export const TRANSITIONS: Record<EscrowState, Partial<Record<EscrowEventName, TransitionDefinition>>> = {
   INITIATED: {
     PAY_FUNDS: { next: 'FUNDS_LOCKED', roles: ['BUYER'] },
   },
@@ -118,7 +142,7 @@ export const TRANSITIONS = {
   REFUNDED: {},
 }
 
-export function isTerminal(state) {
+export function isTerminal(state: EscrowState | null | undefined): boolean {
   return state === 'RELEASED' || state === 'REFUNDED'
 }
 
@@ -132,11 +156,14 @@ export function isTerminal(state) {
  * TRANSITIONS as the single source of allowed roles (read by `canOpenDispute`),
  * but it must never be offered as a plain event button.
  */
-export function getAllowedEvents(state, role) {
-  const transitions = TRANSITIONS[state] || {}
+export function getAllowedEvents(
+  state: EscrowState | null | undefined,
+  role: Role | null | undefined,
+): AllowedEvent[] {
+  const transitions = (state ? TRANSITIONS[state] : undefined) ?? {}
   return Object.entries(transitions)
-    .filter(([event]) => event !== 'OPEN_DISPUTE')
-    .filter(([, definition]) => definition.roles.includes(role))
+    .filter((pair): pair is [EscrowEventName, TransitionDefinition] => pair[0] !== 'OPEN_DISPUTE')
+    .filter(([, definition]) => role != null && definition.roles.includes(role))
     .map(([event, definition]) => ({
       event,
       next: definition.next,
@@ -150,7 +177,10 @@ export function getAllowedEvents(state, role) {
  * enforces party membership: BUYER must match buyerEmail, SELLER must match
  * sellerEmail. ADMIN never opens disputes (arbitration only).
  */
-export function canOpenDispute(transaction, user) {
+export function canOpenDispute(
+  transaction: Transaction | null | undefined,
+  user: User | null | undefined,
+): boolean {
   if (!transaction || !user) return false
   const roles = TRANSITIONS[transaction.state]?.OPEN_DISPUTE?.roles
   if (!roles || !roles.includes(user.role)) return false
@@ -164,7 +194,10 @@ export function canOpenDispute(transaction, user) {
  * both the account role AND (for BUYER/SELLER) that the user is actually a
  * party to this specific transaction. ADMIN can always arbitrate disputes.
  */
-export function getAllowedEventsForTransaction(transaction, user) {
+export function getAllowedEventsForTransaction(
+  transaction: Transaction | null | undefined,
+  user: User | null | undefined,
+): AllowedEvent[] {
   if (!transaction || !user) return []
   const candidates = getAllowedEvents(transaction.state, user.role)
 

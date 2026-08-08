@@ -1,4 +1,4 @@
-<script setup>
+<script setup lang="ts">
 import { OFFLINE_CLASSES, SYNCING_CLASSES } from '@/utils/stateMachine'
 import { computed } from 'vue'
 import { storeToRefs } from 'pinia'

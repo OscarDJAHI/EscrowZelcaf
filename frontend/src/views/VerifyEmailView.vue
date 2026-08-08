@@ -1,4 +1,4 @@
-<script setup>
+<script setup lang="ts">
 import { computed, onUnmounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'

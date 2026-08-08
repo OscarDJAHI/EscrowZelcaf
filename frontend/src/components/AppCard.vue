@@ -1,4 +1,4 @@
-<script setup>
+<script setup lang="ts">
 /**
  * Carte standard — la surface de base de toute la plateforme.
  *

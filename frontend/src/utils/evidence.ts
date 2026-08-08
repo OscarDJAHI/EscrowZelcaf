@@ -3,6 +3,7 @@
  * The server remains the sole authority; these constants only power the
  * pre-upload UX validation and the human-readable list display.
  */
+import type { EvidenceItem, UploaderType } from '@/types/domain'
 
 export const MAX_EVIDENCE_SIZE = 10485760 // 10 MiB, mirrors the server limit
 
@@ -10,7 +11,7 @@ export const ALLOWED_MIME_TYPES = ['image/jpeg', 'image/png', 'application/pdf']
 
 export const ALLOWED_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.pdf']
 
-const UPLOADER_TYPE_LABELS = {
+const UPLOADER_TYPE_LABELS: Record<UploaderType, string> = {
   BUYER: 'Buyer',
   SELLER: 'Seller',
   ADMIN: 'Admin',
@@ -18,7 +19,7 @@ const UPLOADER_TYPE_LABELS = {
 }
 
 /** Formats a byte count into a short, human-readable string. */
-export function formatBytes(bytes) {
+export function formatBytes(bytes: number | null | undefined): string {
   if (bytes === null || bytes === undefined || Number.isNaN(bytes)) return '—'
   if (bytes === 0) return '0 B'
   const units = ['B', 'KB', 'MB', 'GB']
@@ -33,18 +34,22 @@ export function formatBytes(bytes) {
  * Shows "You" when the current user is the uploader, otherwise maps the
  * uploaderType enum. Identity is never inferred from the email alone.
  */
-export function uploaderLabel(item, currentUserId) {
+export function uploaderLabel(
+  item: EvidenceItem | null | undefined,
+  currentUserId: number | null | undefined,
+): string {
   if (item && currentUserId != null && item.uploadedByUserId === currentUserId) {
     return 'You'
   }
-  return UPLOADER_TYPE_LABELS[item?.uploaderType] || 'Unknown'
+  const type = item?.uploaderType
+  return (type && UPLOADER_TYPE_LABELS[type]) || 'Unknown'
 }
 
 /**
  * Client-side mirror validation (comfort only, never authority).
- * @returns {string|null} an English error message, or null when the file passes.
+ * Rend un message d'erreur anglais, ou `null` quand le fichier passe.
  */
-export function validateFile(file) {
+export function validateFile(file: File | null | undefined): string | null {
   if (!file) return 'Please choose a file to upload.'
   if (file.size === 0) return 'The selected file is empty.'
   if (file.size > MAX_EVIDENCE_SIZE) {

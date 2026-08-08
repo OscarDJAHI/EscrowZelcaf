@@ -1,4 +1,4 @@
-<script setup>
+<script setup lang="ts">
 import AppCard from '@/components/AppCard.vue'
 import AppButton from '@/components/AppButton.vue'
 import { useRouter } from 'vue-router'

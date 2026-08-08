@@ -1,4 +1,4 @@
-<script setup>
+<script setup lang="ts">
 import { eventLabel } from '@/i18n/labels'
 import { useI18n } from 'vue-i18n'
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'

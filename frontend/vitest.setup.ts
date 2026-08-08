@@ -9,8 +9,13 @@ import { Blob, File } from 'node:buffer'
 //    serialises a jsdom Blob into an empty `{}`: no error is thrown, `size`
 //    becomes undefined and the bytes are gone. Node's Blob/File (node:buffer)
 //    are structured-cloneable and round-trip byte-perfect.
-globalThis.Blob = Blob
-globalThis.File = File
+// Les trois affectations ci-dessous remplacent une implémentation globale par une
+// autre, ce que TypeScript refuse à juste titre : les signatures de `node:buffer` et
+// celles de `lib.dom` ne sont pas identiques (c'est précisément pour cela qu'on
+// substitue). L'assertion est donc DÉLIBÉRÉE et localisée au harnais ; l'écrire large
+// (`globalThis as any`) masquerait une faute de frappe sur le nom de la globale.
+globalThis.Blob = Blob as unknown as typeof globalThis.Blob
+globalThis.File = File as unknown as typeof globalThis.File
 
 // 2. FormData must come from the SAME realm as the Blob above. jsdom's FormData
 //    brand-checks against jsdom's own Blob, so appending a node:buffer Blob
@@ -24,4 +29,4 @@ globalThis.File = File
 //    module-evaluation time, and a static `import` is hoisted above these
 //    assignments — it would capture jsdom's Blob and reject Node's.
 const { FormData } = await import('undici')
-globalThis.FormData = FormData
+globalThis.FormData = FormData as unknown as typeof globalThis.FormData
