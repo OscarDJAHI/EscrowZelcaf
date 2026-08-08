@@ -6,6 +6,8 @@ import { useAuthStore } from '@/stores/auth'
 import { useOfflineQueueStore } from '@/stores/offlineQueue'
 import * as idb from '@/stores/offlineQueue.idb'
 import type { QueuedRequest } from '@/types/queue'
+import { aUser } from '@/test-support/factories'
+import type { QueueEntry } from '@/types/queue'
 
 const LEGACY_STORAGE_KEY = 'escrow_offline_queue'
 
@@ -20,7 +22,7 @@ vi.mock('@/api/client', () => ({
 }))
 
 /** The signed-in user every fixture below belongs to. */
-const USER = { id: 42, email: 'alice@corp.example' }
+const USER = aUser({ id: 42, email: 'alice@corp.example' })
 
 /**
  * Stamps a queued request with its owner, exactly as `stores/escrow.js` does at
@@ -54,7 +56,7 @@ function makeBlob(sizeBytes = 3 * 1024 * 1024, type = 'image/jpeg'): Blob {
  * `{}` by fake-indexeddb has neither. The IndexedDB-path tests below add an
  * explicit `toBeInstanceOf(Blob)` where it is meaningful.
  */
-async function expectSameBytes(actual, expected) {
+async function expectSameBytes(actual: Blob, expected: Blob) {
   expect(typeof actual?.arrayBuffer).toBe('function')
   expect(actual.size).toBe(expected.size)
   const [a, b] = [await actual.arrayBuffer(), await expected.arrayBuffer()]
@@ -82,7 +84,7 @@ beforeEach(() => {
   auth.token = 'alice-token'
   auth.user = { ...USER }
   auth.persist()
-  apiClient.request.mockReset()
+  vi.mocked(apiClient.request).mockReset()
   vi.mocked(apiClient.request).mockResolvedValue({ data: {} })
 })
 
@@ -108,8 +110,8 @@ describe('offlineQueue — enqueue with binary', () => {
 
     const persisted = await idb.getAll()
     expect(persisted).toHaveLength(1)
-    expect(persisted[0]!.files[0]).toBeInstanceOf(Blob)
-    await expectSameBytes(persisted[0]!.files[0], blob)
+    expect(persisted[0]!.files![0]).toBeInstanceOf(Blob)
+    await expectSameBytes(persisted[0]!.files![0], blob)
   })
 
   it('rejects (and does not enqueue) when the IndexedDB write fails', async () => {
@@ -233,15 +235,19 @@ describe('offlineQueue — multipart replay', () => {
     expect(config.url).toBe('/api/v1/escrow/7/dispute')
     expect(config.headers).toEqual({ 'Content-Type': 'multipart/form-data' })
     expect(config.data).toBeInstanceOf(FormData)
+    // Affirmé APRÈS l'assertion qui vient de l'établir : `config.data` est `unknown` pour
+    // axios, qui accepte n'importe quel corps. La ligne au-dessus est la vérification ;
+    // celle-ci n'est que la façon de la faire lire au compilateur.
+    const body = config.data as FormData
 
     // Repeated key `files` — never `files[]`.
-    const sent = config.data.getAll('files')
+    const sent = body.getAll('files')
     expect(sent).toHaveLength(2)
-    await expectSameBytes(sent[0], a)
-    await expectSameBytes(sent[1], b)
-    expect(config.data.get('comment')).toBe('Deux preuves jointes')
-    expect(config.data.get('clientCapturedAt')).toBe('2026-07-17T06:00:00.000Z')
-    expect(config.data.getAll('files[]')).toHaveLength(0)
+    await expectSameBytes(sent[0] as Blob, a)
+    await expectSameBytes(sent[1] as Blob, b)
+    expect(body.get('comment')).toBe('Deux preuves jointes')
+    expect(body.get('clientCapturedAt')).toBe('2026-07-17T06:00:00.000Z')
+    expect(body.getAll('files[]')).toHaveLength(0)
 
     expect(store.pendingCount).toBe(0)
     expect(await idb.getAll()).toHaveLength(0)
@@ -439,12 +445,12 @@ describe('offlineQueue — reconciling on a permanent rejection', () => {
     // proves the freeze survived the round-trip with its bytes.
     const persisted = await idb.getAll()
     expect(persisted).toHaveLength(1)
-    const [kept] = persisted
+    const kept = persisted[0]!
     expect(kept.frozen).toBe(true)
-    expect(kept.failure.code).toBe('DISPUTE_ALREADY_RESOLVED')
-    expect(kept.failure.status).toBe(409)
-    expect(kept.failure.message).toBe('Le litige a déjà été arbitré')
-    expect(kept.failure.at).toEqual(expect.any(String))
+    expect(kept.failure!.code).toBe('DISPUTE_ALREADY_RESOLVED')
+    expect(kept.failure!.status).toBe(409)
+    expect(kept.failure!.message).toBe('Le litige a déjà été arbitré')
+    expect(kept.failure!.at).toEqual(expect.any(String))
     expect(kept.files![0]).toBeInstanceOf(Blob)
     await expectSameBytes(kept.files![0], a)
     await expectSameBytes(kept.files![1], b)
@@ -482,7 +488,7 @@ describe('offlineQueue — reconciling on a permanent rejection', () => {
     expect(apiClient.request).toHaveBeenCalledOnce()
     expect(reloaded.pendingCount).toBe(0)
     expect(reloaded.frozenCount).toBe(1)
-    expect(reloaded.frozenEntries[0].failure.code).toBe('DISPUTE_ALREADY_RESOLVED')
+    expect(reloaded.frozenEntries[0]!.failure!.code).toBe('DISPUTE_ALREADY_RESOLVED')
   })
 
   it('does not block the entries behind it: the freeze bounds the retry, not the queue', async () => {
@@ -526,8 +532,8 @@ describe('offlineQueue — reconciling on a permanent rejection', () => {
 
     const [kept] = await idb.getAll()
     expect(kept.frozen).toBe(true)
-    expect(kept.failure.code).toBeNull()
-    expect(kept.failure.status).toBe(404)
+    expect(kept.failure!.code).toBeNull()
+    expect(kept.failure!.status).toBe(404)
   })
 
   it('keeps the freeze for the session when persisting it fails', async () => {
@@ -632,7 +638,9 @@ describe('offlineQueue — replay order', () => {
     const first = await store.enqueue({ method: 'post', url: '/api/v1/escrow/1/event', data: {} })
     const second = await store.enqueue({ method: 'post', url: '/api/v1/escrow/2/event', data: {} })
 
-    expect(second.seq).toBeGreaterThan(first.seq)
+    // `seq` est optionnel dans le type parce que les entrées migrées de localStorage
+    // n'en portent pas ; celles-ci viennent d'`enqueue()`, qui en pose toujours un.
+    expect(second.seq!).toBeGreaterThan(first.seq!)
   })
 
   it('flushes entries FIFO, in the order they were queued', async () => {
@@ -679,17 +687,27 @@ describe('offlineQueue — replay order', () => {
 })
 
 describe('offlineQueue — the queue is device-global, the session is not (Story 1.9)', () => {
-  const STRANGER = { id: 7, email: 'bob@corp.example' }
+  const STRANGER = aUser({ id: 7, email: 'bob@corp.example' })
 
   /** Writes an entry straight to IndexedDB, as a previous session left it. */
-  function persisted({ id, userId, seq }) {
+  function persisted({
+    id,
+    userId,
+    seq = 1,
+  }: {
+    id: string
+    /** `null` = entrée sans propriétaire. */
+    userId?: number | null
+    seq?: number
+  }): QueueEntry {
     return {
       id,
       timestamp: `2026-01-01T00:00:0${seq}.000Z`,
       seq,
       method: 'post',
       url: `/api/v1/escrow/${seq}/event`,
-      data: { event: 'SHIP' },
+      // `SHIP_GOODS` : `SHIP` n'existe dans aucune énumération.
+      data: { event: 'SHIP_GOODS' },
       meta: { type: 'SEND_EVENT', transactionId: seq, ...(userId === null ? {} : { userId }) },
     }
   }
@@ -861,7 +879,7 @@ describe('offlineQueue — the queue is device-global, the session is not (Story
 
     const auth = useAuthStore()
     // The first upload "takes a while", and the device changes hands during it.
-    apiClient.request.mockImplementationOnce(async () => {
+    vi.mocked(apiClient.request).mockImplementationOnce(async () => {
       auth.token = 'bob-token'
       auth.user = { ...STRANGER }
       auth.persist()
@@ -902,7 +920,7 @@ describe('offlineQueue — the queue is device-global, the session is not (Story
     const auth = useAuthStore()
     // The device changes hands mid-upload — exactly what `endSession` does — and
     // only then does the server give its final word on the request.
-    apiClient.request.mockImplementationOnce(async () => {
+    vi.mocked(apiClient.request).mockImplementationOnce(async () => {
       auth.clearSession()
       await idb.clearForUser(USER.id)
       throw httpError(400, { code: 'ILLEGAL_TRANSITION', message: 'already shipped' })
@@ -936,7 +954,15 @@ describe('offlineQueue — the queue is device-global, the session is not (Story
     }
     store.queue = [
       persisted({ id: 'first', userId: USER.id, seq: 1 }),
-      { ...persisted({ id: 'second', seq: 2 }), meta: { type: 'SEND_EVENT', userId: brittleOwner } },
+      {
+        ...persisted({ id: 'second', seq: 2 }),
+        // Propriétaire HOSTILE : un objet dont `toString()` lève au deuxième appel, pour
+        // prouver qu'`ownsEntry` ne le lit qu'une fois. `meta.userId` sort d'un clone
+        // structuré d'IndexedDB, donc rien ne garantit sa forme à l'exécution — mais
+        // élargir le type à `unknown` affaiblirait le contrat partout ailleurs, pour un
+        // seul test. L'assertion reste donc LOCALE, et commentée.
+        meta: { type: 'SEND_EVENT', userId: brittleOwner as unknown as string },
+      },
     ]
 
     const synced = vi.fn()

@@ -15,8 +15,10 @@ import {
   installSessionExpiryListener,
 } from '@/stores/session'
 import * as idb from '@/stores/offlineQueue.idb'
-import { aTransaction } from '@/test-support/factories'
+import { aTransaction, anEvidenceItem, aUser } from '@/test-support/factories'
 import type { QueueEntry } from '@/types/queue'
+import type { User } from '@/types/domain'
+import type { Router } from 'vue-router'
 
 /**
  * What Story 1.9 is worth is as much in what survives as in what goes. Every
@@ -43,11 +45,13 @@ vi.mock('@/api/client', async (importOriginal) => {
   // Only the axios instance is replaced: `TOKEN_STORAGE_KEY` and
   // `resetSessionExpiryLatch` are the real ones, so the keys this suite asserts
   // on are the keys production writes.
-  return { ...actual, default: { request: vi.fn() } }
+  // `importActual` rend `unknown` : le module réel est bien un objet, mais le
+  // compilateur ne peut pas le savoir. L'assertion porte sur ce seul fait.
+  return { ...(actual as object), default: { request: vi.fn() } }
 })
 
-const ALICE = { id: 42, email: 'alice@corp.example' }
-const BOB = { id: 7, email: 'bob@corp.example' }
+const ALICE = aUser({ id: 42, email: 'alice@corp.example' })
+const BOB = aUser({ id: 7, email: 'bob@corp.example' })
 const LAST_USER_STORAGE_KEY = 'escrow_last_user'
 
 /**
@@ -99,7 +103,10 @@ async function storedIds() {
 /** A stand-in for the Cache API, absent from jsdom. */
 function stubCaches() {
   const del = vi.fn(async () => true)
-  globalThis.caches = { delete: del }
+  // Un double PARTIEL, assumé : `endSession` n'appelle que `caches.delete`, et jsdom
+  // n'implémente pas l'API du tout. Fabriquer `has`/`keys`/`match`/`open` pour satisfaire
+  // le type donnerait quatre fonctions que rien n'exerce — un décor, pas une garantie.
+  globalThis.caches = { delete: del } as unknown as CacheStorage
   return del
 }
 
@@ -113,7 +120,7 @@ function stubCaches() {
  * because `flush()` issues its first request synchronously, which is a race
  * dressed up as a test.
  */
-async function signInAndReplay(user) {
+async function signInAndReplay(user: User) {
   await useAuthStore().applySession({ token: `${user.email}-token`, user: { ...user } })
   await new Promise((resolve) => setTimeout(resolve, 0))
 }
@@ -132,13 +139,15 @@ beforeEach(() => {
   idb.resetDBForTests()
   localStorage.clear()
   setActivePinia(createPinia())
-  apiClient.request.mockReset()
+  vi.mocked(apiClient.request).mockReset()
   vi.mocked(apiClient.request).mockResolvedValue({ data: {} })
   vi.clearAllMocks()
 })
 
 afterEach(() => {
-  delete globalThis.caches
+  // `delete` sur une globale déclarée non optionnelle : le nettoyage est réel (jsdom
+  // n'a pas d'API Cache, la globale n'existe que parce que `stubCaches` l'a posée).
+  delete (globalThis as { caches?: CacheStorage }).caches
   vi.restoreAllMocks()
 })
 
@@ -173,7 +182,7 @@ describe('endSession — an explicit logout hands the device back', () => {
     escrow.transactions = [aTransaction({ id: 7, state: 'SHIPPED' })]
     escrow.currentDetail = { transaction: aTransaction({ id: 7, state: 'SHIPPED' }), auditLogs: [] }
     escrow.transactionsFetchedAt = '2026-01-01T00:00:00.000Z'
-    evidence.items = [{ id: 1, originalFilename: 'invoice.pdf' }]
+    evidence.items = [anEvidenceItem({ id: 1, originalFilename: 'invoice.pdf' })]
     evidence.loadedId = 7
     queue.queue = [entry({ id: 'alice-pending', userId: ALICE.id })]
 
@@ -213,10 +222,14 @@ describe('endSession — an explicit logout hands the device back', () => {
 
   it('finishes the local purge even when revocation, IndexedDB and caches all fail', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => {})
-    globalThis.caches = { delete: vi.fn(async () => { throw new Error('cache API unavailable') }) }
+    globalThis.caches = {
+      delete: vi.fn(async () => {
+        throw new Error('cache API unavailable')
+      }),
+    } as unknown as CacheStorage
     await seedSharedDevice()
     const auth = signIn(ALICE)
-    logoutUser.mockRejectedValueOnce(new Error('network down'))
+    vi.mocked(logoutUser).mockRejectedValueOnce(new Error('network down'))
     vi.spyOn(idb, 'clearForUser').mockRejectedValueOnce(new Error('IndexedDB unavailable'))
 
     // A logout that could reject would leave the user signed in on a device they
@@ -251,11 +264,11 @@ describe('endSession — an explicit logout hands the device back', () => {
     const queue = useOfflineQueueStore()
     escrow.transactions = [aTransaction({ id: 7, state: 'SHIPPED' })]
     escrow.currentDetail = { transaction: aTransaction({ id: 7, state: 'SHIPPED' }), auditLogs: [] }
-    evidence.items = [{ id: 1, originalFilename: 'invoice.pdf' }]
+    evidence.items = [anEvidenceItem({ id: 1, originalFilename: 'invoice.pdf' })]
     queue.queue = [entry({ id: 'alice-pending', userId: ALICE.id })]
 
-    let releaseRevocation
-    logoutUser.mockReturnValueOnce(new Promise((resolve) => { releaseRevocation = resolve }))
+    let releaseRevocation: (() => void) | undefined
+    vi.mocked(logoutUser).mockReturnValueOnce(new Promise((resolve) => { releaseRevocation = resolve }))
 
     const pending = endSession({ reason: 'logout' })
     // Waited for rather than drained with a fixed tick: the purges that now run
@@ -275,7 +288,7 @@ describe('endSession — an explicit logout hands the device back', () => {
     expect(del).toHaveBeenCalledWith(READ_CACHE_NAME)
     expect(localStorage.getItem(LAST_USER_STORAGE_KEY)).toBeNull()
 
-    releaseRevocation()
+    releaseRevocation!()
     await expect(pending).resolves.toBeUndefined()
   })
 
@@ -406,7 +419,11 @@ describe('beginSession — the read cache belongs to whoever filled it', () => {
 
   it('completes the sign-in even when the Cache API throws', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => {})
-    globalThis.caches = { delete: vi.fn(async () => { throw new Error('cache API unavailable') }) }
+    globalThis.caches = {
+      delete: vi.fn(async () => {
+        throw new Error('cache API unavailable')
+      }),
+    } as unknown as CacheStorage
     localStorage.setItem(LAST_USER_STORAGE_KEY, String(ALICE.id))
 
     await expect(beginSession(BOB.id)).resolves.toBeUndefined()
@@ -429,7 +446,7 @@ describe('beginSession — the read cache belongs to whoever filled it', () => {
     const evidence = useEvidenceStore()
     escrow.transactions = [aTransaction({ id: 7, state: 'SHIPPED' })]
     escrow.currentDetail = { transaction: aTransaction({ id: 7, state: 'SHIPPED' }), auditLogs: [] }
-    evidence.items = [{ id: 1, originalFilename: 'invoice.pdf' }]
+    evidence.items = [anEvidenceItem({ id: 1, originalFilename: 'invoice.pdf' })]
 
     await beginSession(BOB.id)
 
@@ -544,11 +561,14 @@ describe('starting up with no session at all', () => {
 
 describe('installSessionExpiryListener — back to sign-in, target kept', () => {
   /** A router reduced to what the listener actually uses. */
-  function fakeRouter(fullPath, name = 'escrow-detail') {
+  function fakeRouter(fullPath: string, name = 'escrow-detail') {
+    // Double PARTIEL, et le commentaire ci-dessus le dit déjà : le listener ne lit que
+    // `currentRoute.value` et `replace`. Fabriquer les quarante membres de `Router`
+    // n'ajouterait aucune garantie — seulement du décor à maintenir.
     return {
       currentRoute: { value: { name, fullPath } },
       replace: vi.fn(async () => undefined),
-    }
+    } as unknown as Router
   }
 
   it('tears the session down and carries the target to the sign-in screen', async () => {

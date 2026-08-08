@@ -14,6 +14,7 @@ import * as idb from '@/stores/offlineQueue.idb'
 import { aTransaction, aUser } from '@/test-support/factories'
 import type { DisplayTransactionDetail } from '@/stores/escrow'
 import type { EscrowState } from '@/types/domain'
+import type { CreateTransactionPayload } from '@/api/escrow'
 
 // `TOKEN_STORAGE_KEY` is re-exported because a whole-module factory drops
 // everything it does not name, and `stores/auth` — reached through
@@ -32,7 +33,15 @@ vi.mock('@/api/escrow', () => ({
   openDispute: vi.fn(),
 }))
 
-const payload = { sellerEmail: 'seller@example.com', amount: 1500, currency: 'XOF' }
+// `description` ajoutée par la migration : le contrat de `createTransaction` l'exige, et
+// le serveur la reçoit toujours. Une charge amputée d'un champ requis n'est pas ce que
+// l'écran envoie.
+const payload: CreateTransactionPayload = {
+  sellerEmail: 'seller@example.com',
+  amount: 1500,
+  currency: 'XOF',
+  description: 'Cargaison de cacao',
+}
 
 /** Deterministic payload — see `offlineQueue.spec.js`, same rationale. */
 function makeBlob(sizeBytes = 2048, type = 'image/jpeg'): Blob {
@@ -56,7 +65,10 @@ async function expectSameBytes(actual: Blob, expected: Blob) {
 
 /** Detail shape the dispute paths read: a transaction plus its audit logs. */
 function detailFor(id: number | string, state: EscrowState = 'FUNDS_LOCKED'): DisplayTransactionDetail {
-  return { transaction: aTransaction({ id, state }), auditLogs: [] }
+  // `id` est répandu APRÈS la fabrique : une transaction du serveur porte un identifiant
+  // numérique, mais la vue en connaît aussi de la forme `local-…` (carte optimiste), et
+  // c'est `DisplayTransaction` qui l'admet — pas `Transaction`.
+  return { transaction: { ...aTransaction({ state }), id }, auditLogs: [] }
 }
 
 beforeEach(() => {
@@ -64,7 +76,7 @@ beforeEach(() => {
   idb.resetDBForTests()
   localStorage.clear()
   setActivePinia(createPinia())
-  apiClient.request.mockReset()
+  vi.mocked(apiClient.request).mockReset()
   vi.mocked(apiClient.request).mockResolvedValue({ data: {} })
 })
 
@@ -221,7 +233,7 @@ describe('escrow store — opening a dispute offline', () => {
     const [a, b] = [makeBlob(2048, 'image/png'), makeBlob(4096, 'application/pdf')]
 
     await escrow.openDispute(7, { files: [a, b], comment: 'Deux preuves jointes' })
-    const { clientCapturedAt } = (await idb.getAll())[0].data
+    const { clientCapturedAt } = (await idb.getAll())[0]!.data!
     const synced = vi.fn()
     window.addEventListener('escrow:sync', synced)
 
@@ -231,16 +243,19 @@ describe('escrow store — opening a dispute offline', () => {
 
     // The entry this story produces is really consumable by the 4.1 replay.
     expect(apiClient.request).toHaveBeenCalledOnce()
-    const config = vi.mocked(apiClient.request).mock.calls[0][0]
+    const config = vi.mocked(apiClient.request).mock.calls[0]![0]
     expect(config.method).toBe('post')
     expect(config.url).toBe('/api/v1/escrow/7/dispute')
     expect(config.headers).toEqual({ 'Content-Type': 'multipart/form-data' })
-    const sent = config.data.getAll('files')
+    // `config.data` est `unknown` pour axios, qui accepte n'importe quel corps ; les
+    // trois lignes au-dessus viennent d'établir que c'en est bien un multipart.
+    const body = config.data as FormData
+    const sent = body.getAll('files')
     expect(sent).toHaveLength(2)
-    await expectSameBytes(sent[0], a)
-    await expectSameBytes(sent[1], b)
-    expect(config.data.get('comment')).toBe('Deux preuves jointes')
-    expect(config.data.get('clientCapturedAt')).toBe(clientCapturedAt)
+    await expectSameBytes(sent[0] as Blob, a)
+    await expectSameBytes(sent[1] as Blob, b)
+    expect(body.get('comment')).toBe('Deux preuves jointes')
+    expect(body.get('clientCapturedAt')).toBe(clientCapturedAt)
     expect(queue.pendingCount).toBe(0)
     expect(await idb.getAll()).toHaveLength(0)
     // The views refetch on this event — it is what clears `_queuedDispute` and
@@ -279,7 +294,10 @@ describe('escrow store — opening a dispute offline', () => {
     await reloaded.flush()
 
     expect(apiClient.request).toHaveBeenCalledOnce()
-    await expectSameBytes(vi.mocked(apiClient.request).mock.calls[0][0].data.getAll('files')[0], blob)
+    await expectSameBytes(
+      (vi.mocked(apiClient.request).mock.calls[0]![0].data as FormData).getAll('files')[0] as Blob,
+      blob,
+    )
   })
 })
 
@@ -307,7 +325,7 @@ describe('escrow store — when a load saw the server', () => {
     vi.useFakeTimers()
     vi.setSystemTime(new Date(ISSUED_AT))
     let land
-    fetchTransactionsApi.mockReturnValueOnce(new Promise((resolve) => { land = resolve }))
+    vi.mocked(fetchTransactionsApi).mockReturnValueOnce(new Promise((resolve) => { land = resolve }))
 
     const loading = escrow.loadTransactions()
     // The response is in flight while the clock moves — precisely the window in
@@ -315,7 +333,7 @@ describe('escrow store — when a load saw the server', () => {
     // *before* that freeze, so a stamp of LANDED_AT would let `SyncFailureNotice`
     // badge it as having seen the rejection.
     vi.setSystemTime(new Date(LANDED_AT))
-    land([aTransaction({ id: 7, state: 'FUNDS_LOCKED' })])
+    land!([aTransaction({ id: 7, state: 'FUNDS_LOCKED' })])
     await loading
 
     expect(escrow.transactionsFetchedAt).toBe(ISSUED_AT)
@@ -326,11 +344,11 @@ describe('escrow store — when a load saw the server', () => {
     vi.useFakeTimers()
     vi.setSystemTime(new Date(ISSUED_AT))
     let land
-    fetchTransactionDetailApi.mockReturnValueOnce(new Promise((resolve) => { land = resolve }))
+    vi.mocked(fetchTransactionDetailApi).mockReturnValueOnce(new Promise((resolve) => { land = resolve }))
 
     const loading = escrow.loadTransactionDetail(7)
     vi.setSystemTime(new Date(LANDED_AT))
-    land(detailFor(7))
+    land!(detailFor(7))
     await loading
 
     expect(escrow.currentDetailFetchedAt).toBe(ISSUED_AT)
@@ -340,8 +358,8 @@ describe('escrow store — when a load saw the server', () => {
     const escrow = useEscrowStore()
     escrow.transactionsFetchedAt = ISSUED_AT
     escrow.currentDetailFetchedAt = ISSUED_AT
-    fetchTransactionsApi.mockRejectedValueOnce(new Error('network down'))
-    fetchTransactionDetailApi.mockRejectedValueOnce(new Error('network down'))
+    vi.mocked(fetchTransactionsApi).mockRejectedValueOnce(new Error('network down'))
+    vi.mocked(fetchTransactionDetailApi).mockRejectedValueOnce(new Error('network down'))
 
     await escrow.loadTransactions()
     await escrow.loadTransactionDetail(7)
@@ -357,19 +375,19 @@ describe('escrow store — a queued entry carries its owner', () => {
   it('stamps meta.userId on all three offline paths', async () => {
     const escrow = useEscrowStore()
     const queue = useOfflineQueueStore()
-    useAuthStore().user = { id: 42, email: 'alice@corp.example' }
+    useAuthStore().user = aUser({ id: 42, email: 'alice@corp.example' })
     queue.isOnline = false
     escrow.currentDetail = detailFor(7)
 
     await escrow.createNewTransaction(payload)
-    await escrow.sendTransactionEvent(7, 'SHIP')
+    await escrow.sendTransactionEvent(7, 'SHIP_GOODS')
     await escrow.openDispute(7, { files: [makeBlob(512)], comment: 'Colis endommagé' })
 
     // Read back through IndexedDB: the owner has to survive the reload, since
     // that is exactly when a frozen entry gets displayed to whoever is logged in.
     const stored = await idb.getAll()
     expect(stored).toHaveLength(3)
-    expect(stored.map((e) => e.meta.userId)).toEqual([42, 42, 42])
+    expect(stored.map((e) => e.meta!.userId)).toEqual([42, 42, 42])
   })
 
   it('leaves meta.userId absent when nobody is logged in', async () => {
@@ -380,7 +398,7 @@ describe('escrow store — a queued entry carries its owner', () => {
 
     // Not a crash and not a fabricated owner: an unowned entry is shown to
     // nobody rather than to the next person to log in.
-    expect((await idb.getAll())[0].meta.userId).toBeUndefined()
+    expect((await idb.getAll())[0]!.meta!.userId).toBeUndefined()
   })
 })
 
@@ -392,13 +410,15 @@ describe('escrow store — opening a dispute online is unchanged', () => {
     escrow.currentDetail = detailFor(7)
     escrow.transactions = [aTransaction({ id: 7, state: 'FUNDS_LOCKED' })]
     const disputed = aTransaction({ id: 7, state: 'DISPUTED' })
-    openDisputeApi.mockResolvedValueOnce({ transaction: disputed })
+    // `evidence` fait partie du `DisputeOpenedDto` : la réponse rend la transaction ET
+    // les pièces créées. L'omettre construisait une réponse que le serveur n'envoie pas.
+    vi.mocked(openDisputeApi).mockResolvedValueOnce({ transaction: disputed, evidence: [] })
 
     const dto = await escrow.openDispute(7, { files: [makeBlob(512)], comment: 'En ligne' })
 
-    expect(dto).toEqual({ transaction: disputed })
+    expect(dto).toEqual({ transaction: disputed, evidence: [] })
     expect(openDisputeApi).toHaveBeenCalledOnce()
-    const [id, form] = openDisputeApi.mock.calls[0]
+    const [id, form] = vi.mocked(openDisputeApi).mock.calls[0]
     expect(id).toBe(7)
     expect(form.getAll('files')).toHaveLength(1)
     expect(form.get('comment')).toBe('En ligne')
