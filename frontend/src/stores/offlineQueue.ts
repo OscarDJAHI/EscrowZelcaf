@@ -5,11 +5,12 @@ import { classifyReplayFailure, extractFailureReason } from '@/utils/replayFailu
 import { ownsEntry } from '@/utils/frozenEntry'
 import { useAuthStore } from './auth'
 import * as idb from './offlineQueue.idb'
+import type { QueueEntry, QueuedRequest } from '@/types/queue'
 
 let seqCounter = 0
 
 /** Enqueue order within this session; ties `timestamp` down to a total order. */
-function nextSeq() {
+function nextSeq(): number {
   seqCounter += 1
   return seqCounter
 }
@@ -22,13 +23,15 @@ function nextSeq() {
  * Those three parts are the whole contract: `data` deliberately carries nothing
  * else on a binary entry, so there is nothing to forward generically. Anything
  * added there later needs a part here too — it would not travel on its own.
- * @param {object} item
- * @returns {FormData}
  */
-function buildFormData(item) {
+function buildFormData(item: QueueEntry): FormData {
   const form = new FormData()
-  for (const file of item.files) form.append('files', file) // exact repeated key 'files'
-  const data = item.data || {}
+  // `?? []` plutôt qu'une assertion : `files` est optionnel dans le type parce qu'il
+  // l'est dans les faits — seules les entrées binaires en portent. L'appelant ne
+  // franchit cette fonction que si `item.files?.length`, mais c'est SON invariant,
+  // pas celui d'ici.
+  for (const file of item.files ?? []) form.append('files', file) // exact repeated key 'files'
+  const data = item.data ?? {}
   // `!= null`, not truthiness: an empty comment is the server's call to reject,
   // not ours to silently drop.
   if (data.comment != null) form.append('comment', data.comment)
@@ -49,8 +52,16 @@ function buildFormData(item) {
  * are surfaced to the caller rather than assumed to succeed. Entries without
  * `files` keep their exact previous shape and JSON replay.
  */
+interface OfflineQueueState {
+  isOnline: boolean
+  queue: QueueEntry[]
+  flushing: boolean
+  initialized: boolean
+  hydrated: boolean
+}
+
 export const useOfflineQueueStore = defineStore('offlineQueue', {
-  state: () => ({
+  state: (): OfflineQueueState => ({
     isOnline: typeof navigator === 'undefined' ? true : navigator.onLine,
     queue: [],
     flushing: false,
@@ -61,10 +72,10 @@ export const useOfflineQueueStore = defineStore('offlineQueue', {
   getters: {
     // Frozen entries are excluded: they are no longer waiting for anything, and
     // `OnlineBanner` reads this to mean "there is still work in flight".
-    pendingCount: (state) => state.queue.filter((item) => !item.frozen).length,
+    pendingCount: (state): number => state.queue.filter((item) => !item.frozen).length,
     /** Entries definitively rejected by the server; kept, never auto-replayed. */
-    frozenEntries: (state) => state.queue.filter((item) => item.frozen),
-    frozenCount: (state) => state.queue.filter((item) => item.frozen).length,
+    frozenEntries: (state): QueueEntry[] => state.queue.filter((item) => item.frozen),
+    frozenCount: (state): number => state.queue.filter((item) => item.frozen).length,
   },
 
   actions: {
@@ -84,7 +95,7 @@ export const useOfflineQueueStore = defineStore('offlineQueue', {
      * them only for a signed-in boot would leave a user who signs in afterwards
      * with a queue that never flushes on reconnection.
      */
-    async init() {
+    async init(): Promise<void> {
       if (typeof window === 'undefined') return
 
       if (!this.initialized) {
@@ -158,7 +169,7 @@ export const useOfflineQueueStore = defineStore('offlineQueue', {
      * queued during this very session is legitimately in `queue` and is not the
      * caller's to lose.
      */
-    async hydrate() {
+    async hydrate(): Promise<void> {
       const userId = useAuthStore().user?.id
       if (userId == null) return
 
@@ -181,7 +192,7 @@ export const useOfflineQueueStore = defineStore('offlineQueue', {
      * `initialized` and the connectivity listeners are left alone: the tab is
      * still the same tab, and re-binding them per session would stack duplicates.
      */
-    clearMemory() {
+    clearMemory(): void {
       this.queue = []
       this.hydrated = false
     },
@@ -199,7 +210,7 @@ export const useOfflineQueueStore = defineStore('offlineQueue', {
      * Never rejects — it is called from `beginSession()`, itself reached from a
      * store action nobody awaits for its errors.
      */
-    async adoptSession() {
+    async adoptSession(): Promise<void> {
       if (typeof window === 'undefined') return
 
       // Lowered BEFORE the attempt, not merely raised after it. A boot on the
@@ -250,12 +261,9 @@ export const useOfflineQueueStore = defineStore('offlineQueue', {
       }
     },
 
-    /**
-     * @param {{method: string, url: string, data?: object, files?: Blob[], meta?: object}} request
-     * @returns {Promise<object>} the queued item (includes a generated id)
-     */
-    async enqueue(request) {
-      const item = {
+    /** Rend l'entrée mise en file, identifiant généré compris. */
+    async enqueue(request: QueuedRequest): Promise<QueueEntry> {
+      const item: QueueEntry = {
         id: `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
         timestamp: new Date().toISOString(),
         // Monotonic within the session: `timestamp` only resolves to the
@@ -272,7 +280,7 @@ export const useOfflineQueueStore = defineStore('offlineQueue', {
       return item
     },
 
-    async removeFromQueue(id) {
+    async removeFromQueue(id: string): Promise<void> {
       await idb.remove(id)
       this.queue = this.queue.filter((item) => item.id !== id)
     },
@@ -290,7 +298,7 @@ export const useOfflineQueueStore = defineStore('offlineQueue', {
      * Filtering the display was Story 4.4's job and is not enough — the damage
      * here is done by the request, not by the pixel.
      */
-    async flush() {
+    async flush(): Promise<void> {
       // `pendingCount`, not `queue.length`: frozen entries are never purged, so a
       // queue holding nothing else would otherwise pay a full empty run on every
       // `online` event and every startup, forever.

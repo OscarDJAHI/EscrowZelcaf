@@ -8,6 +8,17 @@
  * alone — 400 and 409 each carry both verdicts (FILE_READ_ERROR is a retryable
  * 400; DISPUTE_ALREADY_RESOLVED is a definitive 409).
  */
+import { apiErrorCode, apiErrorMessage, apiErrorStatus, apiHasResponse } from './apiError'
+
+/** Le motif lisible par la machine derrière un refus, tel que ce module le normalise. */
+export interface FailureReason {
+  code: string | null
+  status: number | null
+  message: string | null
+}
+
+/** Verdict de rejouabilité. */
+export type ReplayVerdict = 'transient' | 'permanent'
 
 /**
  * Mirror of the `Retryability.TRANSIENT` codes of
@@ -21,7 +32,7 @@
  * `ErrorCodeContractTest.transientPartitionIsExact` (an exact-equality
  * assertion) red instead of silently freezing an entry that deserved a retry.
  */
-export const TRANSIENT_CODES = new Set([
+export const TRANSIENT_CODES: ReadonlySet<string> = new Set([
   'CONCURRENT_MODIFICATION',
   // Story 1.3 — anti-bruteforce auth (429) : se resorbe seul (Retry-After).
   'RATE_LIMITED',
@@ -44,18 +55,22 @@ export const TRANSIENT_CODES = new Set([
  * `code` is null whenever the response was not built by `@RestControllerAdvice`
  * (Spring Security's 401, a routing 404, the default `/error`): those carry no
  * envelope, and no code must ever be inferred for them.
- * @param {object} err an AxiosError, or any rejection from the shared client
- * @returns {{code: string|null, status: number|null, message: string|null}}
+ *
+ * <p>La lecture de l'enveloppe est DÉLÉGUÉE à `utils/apiError.ts` plutôt que recopiée :
+ * c'est le même raisonnement que celui qui a fait vivre `isBareAuthFailure` ici plutôt
+ * qu'en double dans l'intercepteur — deux copies dérivent, et chaque sens de la dérive
+ * est un vrai défaut.
+ *
+ * <p>Accepte une `AxiosError` comme n'importe quel rejet du client partagé.
  */
-export function extractFailureReason(err) {
-  const res = err?.response
+export function extractFailureReason(err: unknown): FailureReason {
   return {
-    code: res?.data?.code ?? null,
-    status: res?.status ?? null,
+    code: apiErrorCode(err),
+    status: apiErrorStatus(err),
     // No envelope, no message: falling back on `err.message` would hand 4.4 an
     // axios-internal string ("Request failed with status code 404") to show a
     // user as if it were a verdict. The same reason `code` refuses to guess.
-    message: res?.data?.message ?? null,
+    message: apiErrorMessage(err),
   }
 }
 
@@ -137,10 +152,11 @@ const GENERIC_FAILURE_LABEL = 'The server refused this action.'
  * raw `code`: `SOME_NEW_CODE` is not a sentence.
  *
  * Pure — no store, no clock, no network — so Story 4.5 can reuse it as-is.
- * @param {{code: string|null, message: string|null}|null|undefined} failure as `extractFailureReason` shapes it
- * @returns {string}
+ * <p>`failure` a la forme que lui donne `extractFailureReason`.
  */
-export function describeFailure(failure) {
+export function describeFailure(
+  failure: Partial<Pick<FailureReason, 'code' | 'message'>> | null | undefined,
+): string {
   const code = failure?.code
   const message = failure?.message
   const hasMessage = typeof message === 'string' && message.trim() !== ''
@@ -153,7 +169,9 @@ export function describeFailure(failure) {
 
   // `hasOwn`, not `FAILURE_LABELS[code]`: `code` comes off a server response, so
   // a lookup that walks the prototype would let 'constructor' return a function.
-  if (typeof code === 'string' && Object.hasOwn(FAILURE_LABELS, code)) return FAILURE_LABELS[code]
+  if (typeof code === 'string' && Object.hasOwn(FAILURE_LABELS, code)) {
+    return FAILURE_LABELS[code as keyof typeof FAILURE_LABELS]
+  }
 
   if (hasMessage) return message
 
@@ -180,10 +198,12 @@ export function describeFailure(failure) {
  * interceptor of `api/client.js`). Two copies would drift, and each direction of
  * drift is a real defect: a business verdict that signs the user out, or a
  * revoked token left in a zombie authenticated UI.
- * @param {{code: string|null, status: number|null}|null|undefined} failure as `extractFailureReason` shapes it
- * @returns {boolean}
+ *
+ * <p>`failure` a la forme que lui donne `extractFailureReason`.
  */
-export function isBareAuthFailure(failure) {
+export function isBareAuthFailure(
+  failure: Partial<Pick<FailureReason, 'code' | 'status'>> | null | undefined,
+): boolean {
   // `== null` and not `=== null`: `extractFailureReason` normalises to null, but
   // `classifyReplayFailure` and the interceptor both read raw envelopes too.
   return failure?.code == null && (failure?.status === 401 || failure?.status === 403)
@@ -192,17 +212,16 @@ export function isBareAuthFailure(failure) {
 /**
  * The order of the rules is the contract: the status decides *before* the code,
  * because a code may be absent.
- * @param {object} err an AxiosError, or any rejection from the shared client
- * @returns {'transient' | 'permanent'}
+ *
+ * <p>Accepte une `AxiosError` comme n'importe quel rejet du client partagé.
  */
-export function classifyReplayFailure(err) {
-  const res = err?.response
-  if (!res) return 'transient' // network outage / timeout: no response at all
+export function classifyReplayFailure(err: unknown): ReplayVerdict {
+  if (!apiHasResponse(err)) return 'transient' // network outage / timeout: no response at all
 
-  const { status } = res
-  if (status === 408 || status === 429 || status >= 500) return 'transient'
+  const status = apiErrorStatus(err)
+  if (status === 408 || status === 429 || (status != null && status >= 500)) return 'transient'
 
-  const code = res.data?.code ?? null
+  const code = apiErrorCode(err)
 
   // Session expired: the request is valid again once re-authenticated, so this
   // must never freeze evidence. Shared with the interceptor that ends the
@@ -210,7 +229,7 @@ export function classifyReplayFailure(err) {
   // is a real verdict and is left to the rules below.
   if (isBareAuthFailure({ code, status })) return 'transient'
 
-  if (TRANSIENT_CODES.has(code)) return 'transient'
+  if (code != null && TRANSIENT_CODES.has(code)) return 'transient'
 
   // Coded 4xx, unknown code, or bare 4xx: a client rejection does not repair
   // itself by being replayed.

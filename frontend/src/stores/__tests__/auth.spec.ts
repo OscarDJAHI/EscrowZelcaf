@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
-import { logoutUser } from '@/api/auth'
+import { loginUser, logoutUser, resendVerification } from '@/api/auth'
 import { useAuthStore } from '@/stores/auth'
 
 // Story 1.6 — le logout() du store révoque la session côté serveur.
@@ -8,6 +8,8 @@ vi.mock('@/api/auth', () => ({
   loginUser: vi.fn(),
   registerUser: vi.fn(),
   logoutUser: vi.fn(() => Promise.resolve()),
+  verifyEmail: vi.fn(),
+  resendVerification: vi.fn(),
 }))
 vi.mock('@/api/client', () => ({
   default: { request: vi.fn() },
@@ -74,5 +76,63 @@ describe('auth store logout (Story 1.6)', () => {
     const auth = useAuthStore()
     await auth.logout()
     expect(logoutUser).not.toHaveBeenCalled()
+  })
+})
+
+
+/**
+ * Ce que le store fait d'une erreur d'API — la lacune trouvée pendant la migration.
+ *
+ * <p>Aucune assertion ne couvrait ces deux lectures. Le store est passé de
+ * `err.response?.data?.message` aux fonctions de `utils/apiError.ts`, et une première
+ * version de celles-ci filtrait par `axios.isAxiosError` : tout rejet fabriqué à la main
+ * — donc tout rejet de test — retombait silencieusement sur le repli. La suite serait
+ * restée VERTE avec un message serveur qui ne s'affiche plus, et le compte à rebours de
+ * renvoi de code aurait perdu l'horloge serveur d'AD-11 sans que rien ne le dise.
+ *
+ * <p>La forme des rejets ci-dessous est délibérément celle d'un objet nu, et non d'une
+ * `AxiosError` : c'est ce que produisent les suites, et c'est précisément le cas que le
+ * filtrage cassait.
+ */
+describe('lecture des erreurs d\'API (migration TypeScript)', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    localStorage.clear()
+    vi.clearAllMocks()
+  })
+  afterEach(() => localStorage.clear())
+
+  it('affiche le message du SERVEUR, pas le repli générique', async () => {
+    vi.mocked(loginUser).mockRejectedValueOnce({
+      response: { status: 401, data: { code: 'AUTH_FAILED', message: 'Compte verrouillé pendant 15 minutes.' } },
+    })
+    const auth = useAuthStore()
+
+    expect(await auth.login({ email: 'a@corp.example', password: 'x' })).toBe(false)
+    expect(auth.error).toBe('Compte verrouillé pendant 15 minutes.')
+  })
+
+  it('retombe sur le repli quand la réponse ne porte aucun message', async () => {
+    vi.mocked(loginUser).mockRejectedValueOnce(new Error('panne réseau'))
+    const auth = useAuthStore()
+
+    expect(await auth.login({ email: 'a@corp.example', password: 'x' })).toBe(false)
+    expect(auth.error).toBe('Invalid email or password.')
+  })
+
+  it('lit le délai de renvoi dans l\'en-tête Retry-After du serveur (AD-11)', async () => {
+    vi.mocked(resendVerification).mockRejectedValueOnce({
+      response: { status: 429, headers: { 'retry-after': '42' }, data: {} },
+    })
+    const auth = useAuthStore()
+
+    expect(await auth.resend({ email: 'a@corp.example' })).toEqual({ ok: false, retryAfterSeconds: 42 })
+  })
+
+  it('ne rend jamais un compte à rebours NaN quand l\'en-tête manque', async () => {
+    vi.mocked(resendVerification).mockRejectedValueOnce({ response: { status: 429, headers: {}, data: {} } })
+    const auth = useAuthStore()
+
+    expect(await auth.resend({ email: 'a@corp.example' })).toEqual({ ok: false, retryAfterSeconds: 0 })
   })
 })

@@ -1,19 +1,32 @@
 import { defineStore } from 'pinia'
 import { downloadEvidence, listEvidence, uploadEvidence, withdrawEvidence } from '@/api/evidence'
 import { saveBlob } from '@/utils/download'
+import { apiErrorMessage } from '@/utils/apiError'
+import type { EvidenceItem } from '@/types/domain'
+
+interface EvidenceState {
+  items: EvidenceItem[]
+  loading: boolean
+  error: string | null
+  uploading: boolean
+  /** Which transaction `items` belongs to. `string | number` : l'id vient de la route. */
+  loadedId: string | number | null
+  /** Request token guarding against out-of-order responses. */
+  loadSeq: number
+}
 
 export const useEvidenceStore = defineStore('evidence', {
-  state: () => ({
+  state: (): EvidenceState => ({
     items: [],
     loading: false,
     error: null,
     uploading: false,
-    loadedId: null, // which transaction `items` belongs to
-    loadSeq: 0, // request token guarding against out-of-order responses
+    loadedId: null,
+    loadSeq: 0,
   }),
 
   actions: {
-    async loadEvidence(id) {
+    async loadEvidence(id: string | number): Promise<void> {
       const seq = ++this.loadSeq
       // Switching transactions: drop the previous transaction's evidence
       // immediately so its documents are never shown under another one.
@@ -27,7 +40,7 @@ export const useEvidenceStore = defineStore('evidence', {
         this.loadedId = id
       } catch (err) {
         if (seq !== this.loadSeq) return
-        this.error = err.response?.data?.message || 'Unable to load the evidence for this transaction.'
+        this.error = apiErrorMessage(err) || 'Unable to load the evidence for this transaction.'
       } finally {
         if (seq === this.loadSeq) this.loading = false
       }
@@ -39,7 +52,14 @@ export const useEvidenceStore = defineStore('evidence', {
      * message and keep the form intact. The caller refreshes the list via the
      * `uploaded` event (single fetch — no redundant reload here).
      */
-    async uploadEvidence(id, { files, comment, clientCapturedAt }) {
+    async uploadEvidence(
+      id: string | number,
+      {
+        files,
+        comment,
+        clientCapturedAt,
+      }: { files: File[]; comment?: string | null; clientCapturedAt?: string | null },
+    ): Promise<EvidenceItem[]> {
       this.uploading = true
       try {
         const form = new FormData()
@@ -58,7 +78,10 @@ export const useEvidenceStore = defineStore('evidence', {
      * replaces the matching item in place — the row stays at its chronological
      * position with its badge flipped. Errors propagate to the component.
      */
-    async withdrawEvidence(id, evidenceId) {
+    async withdrawEvidence(
+      id: string | number,
+      evidenceId: string | number,
+    ): Promise<EvidenceItem> {
       const dto = await withdrawEvidence(id, evidenceId)
       // Invalidate any in-flight loadEvidence: its stale response (which predates
       // this withdrawal and would show the piece as ACTIVE) must bail on the
@@ -77,7 +100,7 @@ export const useEvidenceStore = defineStore('evidence', {
      * Fetches the file as a Blob (so the JWT is carried) and triggers a browser
      * save via a synthetic <a download>, revoking the ObjectURL afterwards.
      */
-    async downloadFile(id, item) {
+    async downloadFile(id: string | number, item: EvidenceItem): Promise<void> {
       const blob = await downloadEvidence(id, item.id)
       // The save itself is `utils/download.js` since Story 4.5 gave it a second
       // caller. The fetch above stays here: it is what this action is *for* —

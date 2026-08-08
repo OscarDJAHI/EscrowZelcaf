@@ -8,9 +8,53 @@ import {
 } from '@/api/escrow'
 import { useAuthStore } from './auth'
 import { useOfflineQueueStore } from './offlineQueue'
+import { apiErrorMessage } from '@/utils/apiError'
+import type { AuditLog, DisputeOpened, EscrowEventName, Transaction } from '@/types/domain'
+import type { CreateTransactionPayload } from '@/api/escrow'
+
+/**
+ * Une transaction TELLE QUE L'ÉCRAN LA VOIT — c'est-à-dire pas tout à fait celle que le
+ * serveur envoie.
+ *
+ * <p>Deux écarts, tous deux réels et jusqu'ici tus par l'absence de types :
+ * <ul>
+ *   <li>`id` peut être une CHAÎNE `local-…`. Une création hors ligne pose une carte
+ *       optimiste avant que le serveur n'ait attribué quoi que ce soit. C'est la raison
+ *       pour laquelle tout le fichier compare `String(a) === String(b)` au lieu de `===`,
+ *       et déclarer `id: number` aurait fait passer ces comparaisons pour des maladresses
+ *       à « simplifier ».</li>
+ *   <li>`buyerEmail` est `null` sur cette même carte : l'acheteur, c'est l'utilisateur
+ *       courant, mais c'est le serveur qui le nomme.</li>
+ * </ul>
+ *
+ * <p>Les marqueurs `_queued*` sont posés par le client et ne reviennent jamais du serveur.
+ * `utils/frozenEntry.ts` les détecte PAR PRÉFIXE et non par ce type — délibérément : un
+ * marqueur ajouté plus tard y est attrapé sans qu'on ait à penser à l'y déclarer.
+ */
+export interface DisplayTransaction extends Omit<Transaction, 'id' | 'buyerEmail'> {
+  id: number | string
+  buyerEmail: string | null
+  _queuedOffline?: boolean
+  _queuedEvent?: EscrowEventName
+  _queuedDispute?: boolean
+}
+
+export interface DisplayTransactionDetail {
+  transaction: DisplayTransaction
+  auditLogs: AuditLog[]
+}
+
+interface EscrowState {
+  transactions: DisplayTransaction[]
+  currentDetail: DisplayTransactionDetail | null
+  transactionsFetchedAt: string | null
+  currentDetailFetchedAt: string | null
+  loading: boolean
+  error: string | null
+}
 
 export const useEscrowStore = defineStore('escrow', {
-  state: () => ({
+  state: (): EscrowState => ({
     transactions: [],
     currentDetail: null, // { transaction, auditLogs }
     // When each source was *issued* to the server, not when it landed — see
@@ -24,7 +68,7 @@ export const useEscrowStore = defineStore('escrow', {
   }),
 
   actions: {
-    async loadTransactions() {
+    async loadTransactions(): Promise<void> {
       this.loading = true
       this.error = null
       // Stamped before the call, written only on success. A load issued before a
@@ -41,7 +85,7 @@ export const useEscrowStore = defineStore('escrow', {
       } catch (err) {
         // Stamp untouched on failure: the previous data is still on screen, so
         // the stamp that describes it must stay.
-        this.error = err.response?.data?.message || 'Unable to load your transactions.'
+        this.error = apiErrorMessage(err) || 'Unable to load your transactions.'
       } finally {
         this.loading = false
       }
@@ -52,11 +96,13 @@ export const useEscrowStore = defineStore('escrow', {
      * and an optimistic placeholder card (marked `_queuedOffline`) is shown
      * immediately; it will be replaced by the real record once synced.
      */
-    async createNewTransaction(payload) {
+    async createNewTransaction(
+      payload: CreateTransactionPayload,
+    ): Promise<DisplayTransaction> {
       const offlineQueue = useOfflineQueueStore()
 
       if (!offlineQueue.isOnline) {
-        const optimistic = {
+        const optimistic: DisplayTransaction = {
           id: `local-${Date.now()}`,
           buyerEmail: null,
           sellerEmail: payload.sellerEmail,
@@ -97,7 +143,7 @@ export const useEscrowStore = defineStore('escrow', {
       return created
     },
 
-    async loadTransactionDetail(id) {
+    async loadTransactionDetail(id: string | number): Promise<void> {
       this.loading = true
       this.error = null
       const issuedAt = new Date().toISOString() // before the call — see `loadTransactions`
@@ -105,7 +151,7 @@ export const useEscrowStore = defineStore('escrow', {
         this.currentDetail = await fetchTransactionDetail(id)
         this.currentDetailFetchedAt = issuedAt
       } catch (err) {
-        this.error = err.response?.data?.message || 'Unable to load this transaction.'
+        this.error = apiErrorMessage(err) || 'Unable to load this transaction.'
       } finally {
         this.loading = false
       }
@@ -116,7 +162,10 @@ export const useEscrowStore = defineStore('escrow', {
      * transaction is flagged with `_queuedEvent` so the UI can explain why
      * the state hasn't changed yet.
      */
-    async sendTransactionEvent(id, event) {
+    async sendTransactionEvent(
+      id: string | number,
+      event: EscrowEventName,
+    ): Promise<DisplayTransaction | null> {
       const offlineQueue = useOfflineQueueStore()
 
       if (!offlineQueue.isOnline) {
@@ -126,7 +175,7 @@ export const useEscrowStore = defineStore('escrow', {
           data: { event },
           meta: { type: 'SEND_EVENT', transactionId: id, userId: useAuthStore().user?.id },
         })
-        if (this.currentDetail?.transaction?.id === id) {
+        if (this.currentDetail?.transaction && this.currentDetail.transaction.id === id) {
           this.currentDetail.transaction._queuedEvent = event
         }
         return null
@@ -160,7 +209,10 @@ export const useEscrowStore = defineStore('escrow', {
      * DISPUTED while queued so the user cannot file the same dispute twice
      * (`canOpenDispute` reads `state`), so the marker carries the caveat.
      */
-    async openDispute(id, { files, comment }) {
+    async openDispute(
+      id: string | number,
+      { files, comment }: { files: File[]; comment: string },
+    ): Promise<DisputeOpened | null> {
       const offlineQueue = useOfflineQueueStore()
 
       if (!offlineQueue.isOnline) {

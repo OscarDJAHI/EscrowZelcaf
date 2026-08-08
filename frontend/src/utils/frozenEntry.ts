@@ -15,10 +15,23 @@
  * and not an accident: it makes the rules testable without mounting anything,
  * and it structurally denies a consumer the ability to reach for the network to
  * answer a question this module answers from what it was handed.
+ *
+ * <p>Les types viennent de `types/queue.ts` et non de `stores/offlineQueue.ts` : un
+ * `import type` s'efface à la compilation, mais inscrire cet utilitaire pur dans le
+ * graphe des stores contredirait la phrase ci-dessus.
  */
+import type { QueueEntry, QueueEntryMeta, QueuedActionType } from '@/types/queue'
+import type { EscrowState, Transaction, TransactionDetail, User } from '@/types/domain'
+
+/** Ce que la lecture d'un état de transaction rend à l'appelant. */
+export type RealState =
+  | { kind: 'never-created' }
+  | { kind: 'badge'; state: EscrowState }
+  | { kind: 'link'; id: string }
+  | { kind: 'none' }
 
 /** What was refused, said in the user's terms. Only these three reach the queue. */
-const ACTION_LABELS = {
+const ACTION_LABELS: Record<QueuedActionType, string> = {
   CREATE_TRANSACTION: 'Creating a transaction',
   SEND_EVENT: 'Updating a transaction',
   OPEN_DISPUTE: 'Opening a dispute',
@@ -38,7 +51,11 @@ const ACTION_LABELS = {
  * blocks neither `.add()` nor `.delete()`, so privacy is the only real seal
  * available here.
  */
-const NO_LINK_CODES = new Set(['TRANSACTION_NOT_FOUND', 'NOT_A_PARTY', 'RESOURCE_NOT_FOUND'])
+const NO_LINK_CODES: ReadonlySet<string> = new Set([
+  'TRANSACTION_NOT_FOUND',
+  'NOT_A_PARTY',
+  'RESOURCE_NOT_FOUND',
+])
 
 /**
  * Only the current user's entries, and only while that user holds a session.
@@ -61,11 +78,15 @@ const NO_LINK_CODES = new Set(['TRANSACTION_NOT_FOUND', 'NOT_A_PARTY', 'RESOURCE
  * `String(a) === String(b)`: `auth.user` round-trips through localStorage JSON
  * and `meta.userId` through IndexedDB structured clone, so the same id can come
  * back as a number on one side and a string on the other.
- * @param {object} entry a queued entry
- * @param {object|null|undefined} user `auth.user` — the *session's* user, not the entry's
- * @returns {boolean}
+ *
+ * <p>`user` est celui de la SESSION (`auth.user`), jamais celui de l'entrée. Le type est
+ * volontairement plus large qu'`User` : `offlineQueue.idb.ts` appelle avec un
+ * `{ id }` fabriqué, n'ayant que l'identifiant sous la main.
  */
-export function ownsEntry(entry, user) {
+export function ownsEntry(
+  entry: Pick<QueueEntry, 'meta'> | null | undefined,
+  user: { id?: number | string | null } | User | null | undefined,
+): boolean {
   const userId = user?.id
   if (userId == null) return false
   const owner = entry?.meta?.userId
@@ -78,15 +99,14 @@ export function ownsEntry(entry, user) {
  * `hasOwn`, like `describeFailure`: `meta` round-trips through IndexedDB, and a
  * bare lookup of `constructor` would render a function into the page — `||`
  * cannot catch it, a function being truthy.
- * @param {object|null|undefined} meta the entry's `meta`
- * @returns {string}
  */
-export function describeAction(meta) {
-  return Object.hasOwn(ACTION_LABELS, meta?.type ?? '') ? ACTION_LABELS[meta.type] : 'A queued action'
+export function describeAction(meta: QueueEntryMeta | null | undefined): string {
+  const type = meta?.type
+  return type != null && Object.hasOwn(ACTION_LABELS, type) ? ACTION_LABELS[type] : 'A queued action'
 }
 
 /** True if a row carries any optimistic marker — matched by shape, so a marker added later is caught too. */
-function isOptimistic(row) {
+function isOptimistic(row: object | null | undefined): boolean {
   return Object.keys(row || {}).some((key) => key.startsWith('_queued'))
 }
 
@@ -109,7 +129,11 @@ function isOptimistic(row) {
  * been refused when `at` was stamped, so a load issued that same millisecond
  * still went out after the server's verdict.
  */
-function trustworthy(row, fetchedAt, failureAt) {
+function trustworthy(
+  row: Transaction | null | undefined,
+  fetchedAt: string | null | undefined,
+  failureAt: string | null | undefined,
+): { state: EscrowState; fetchedAt: string } | null {
   if (!row || !fetchedAt || !failureAt) return null
   if (fetchedAt < failureAt) return null
   if (isOptimistic(row)) return null
@@ -128,16 +152,23 @@ function trustworthy(row, fetchedAt, failureAt) {
  *
  * Takes the two sources and their stamps as plain values rather than reading a
  * store: same rule, same answer, on the banner and on the recovery page.
- * @param {{entry: object, transactions: unknown, transactionsFetchedAt: string|null, currentDetail: object|null, currentDetailFetchedAt: string|null}} input
- * @returns {{kind: 'never-created'|'badge'|'link'|'none', state?: string, id?: string}}
  */
+export interface RealStateInput {
+  entry: QueueEntry | null | undefined
+  /** `unknown` assumé : le contrat dit une liste, la valeur reçue peut n'en être pas une. */
+  transactions: unknown
+  transactionsFetchedAt: string | null | undefined
+  currentDetail: TransactionDetail | null | undefined
+  currentDetailFetchedAt: string | null | undefined
+}
+
 export function resolveRealState({
   entry,
   transactions,
   transactionsFetchedAt,
   currentDetail,
   currentDetailFetchedAt,
-}) {
+}: RealStateInput): RealState {
   const id = entry?.meta?.transactionId
   // Keyed on the type, not merely on a missing id: a CREATE_TRANSACTION never
   // carries one, but a malformed SEND_EVENT/OPEN_DISPUTE without an id must not
@@ -151,7 +182,8 @@ export function resolveRealState({
   // the transaction is gone or was never yours, so whatever a row still claims
   // about it, showing that state would have the surface contradict its own
   // sentence one line down.
-  if (NO_LINK_CODES.has(entry?.failure?.code)) return { kind: 'none' }
+  const failureCode = entry?.failure?.code
+  if (failureCode != null && NO_LINK_CODES.has(failureCode)) return { kind: 'none' }
 
   const failureAt = entry?.failure?.at
   const detail = currentDetail?.transaction
@@ -165,13 +197,15 @@ export function resolveRealState({
       // Same reason as the `state` type guard above: the API contract says a
       // list, but the notice renders above `RouterView`, so a payload that is
       // not one must degrade to a link rather than blank every route.
-      (Array.isArray(transactions) ? transactions : []).find((t) => String(t.id) === String(id)),
+      (Array.isArray(transactions) ? (transactions as Transaction[]) : []).find(
+        (t) => String(t.id) === String(id),
+      ),
       transactionsFetchedAt,
       failureAt,
     ),
-  ].filter(Boolean)
+  ].filter((candidate): candidate is { state: EscrowState; fetchedAt: string } => candidate !== null)
 
-  const fallback = { kind: 'link', id: String(id) }
+  const fallback: RealState = { kind: 'link', id: String(id) }
 
   if (candidates.length === 0) return fallback
 

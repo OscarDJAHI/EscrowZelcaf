@@ -1,5 +1,7 @@
 import { openDB } from 'idb'
+import type { IDBPDatabase } from 'idb'
 import { ownsEntry } from '@/utils/frozenEntry'
+import type { QueueEntry } from '@/types/queue'
 
 const DB_NAME = 'escrow-offline'
 // Still 1 after Story 1.9, deliberately. Scoping the queue by owner could have
@@ -16,14 +18,13 @@ const STORE_NAME = 'queue'
 /** Legacy localStorage key: read once by `migrateFromLocalStorage()`, then dropped for good. */
 const LEGACY_STORAGE_KEY = 'escrow_offline_queue'
 
-let dbPromise = null
+let dbPromise: Promise<IDBPDatabase> | null = null
 
 /**
  * Opens (and memoises) the queue database. `keyPath: 'id'` mirrors the id the
  * store generates, so `put` is an upsert and `delete` takes the item id.
- * @returns {Promise<import('idb').IDBPDatabase>}
  */
-function getDB() {
+function getDB(): Promise<IDBPDatabase> {
   if (!dbPromise) {
     dbPromise = openDB(DB_NAME, DB_VERSION, {
       upgrade(db) {
@@ -52,7 +53,7 @@ function getDB() {
  * from localStorage carry no `seq`; they are strictly older, so the timestamp
  * comparison settles them before the tiebreak is ever reached.
  */
-function sortFifo(items) {
+function sortFifo(items: QueueEntry[]): QueueEntry[] {
   return items.sort((a, b) => {
     if (a.timestamp !== b.timestamp) return a.timestamp < b.timestamp ? -1 : 1
     return (a.seq ?? 0) - (b.seq ?? 0)
@@ -66,9 +67,8 @@ function sortFifo(items) {
  * Production code must go through `getAllForUser`: this database is device-
  * global, and handing the whole of it to a caller is exactly the mistake Story
  * 1.9 exists to make impossible to commit by accident.
- * @returns {Promise<object[]>}
  */
-export async function getAll() {
+export async function getAll(): Promise<QueueEntry[]> {
   const db = await getDB()
   return sortFifo(await db.getAll(STORE_NAME))
 }
@@ -88,10 +88,10 @@ export async function getAll() {
  * An entry with no `meta.userId` belongs to nobody (Story 4.5 refused to invent
  * an owner for it) and so is never returned — not to the next person to sign in,
  * not to anyone.
- * @param {string|number|null|undefined} userId
- * @returns {Promise<object[]>}
  */
-export async function getAllForUser(userId) {
+export async function getAllForUser(
+  userId: number | string | null | undefined,
+): Promise<QueueEntry[]> {
   if (userId == null) return []
   const db = await getDB()
   const items = await db.getAll(STORE_NAME)
@@ -101,21 +101,17 @@ export async function getAllForUser(userId) {
 /**
  * Writes one queue item. Blobs inside `files` are stored as-is (structured
  * clone) — never base64. Rejects on failure so the caller can surface it:
- * silently losing binary is the one thing this layer must not do.
- * @param {object} item
- * @returns {Promise<object>} the same item, once durably written
+ * silently losing binary is the one thing this layer must not do. Rend la même entrée,
+ * une fois durablement écrite.
  */
-export async function put(item) {
+export async function put(item: QueueEntry): Promise<QueueEntry> {
   const db = await getDB()
   await db.put(STORE_NAME, item)
   return item
 }
 
-/**
- * Deletes one queue item by id.
- * @param {string} id
- */
-export async function remove(id) {
+/** Deletes one queue item by id. */
+export async function remove(id: string): Promise<void> {
   const db = await getDB()
   await db.delete(STORE_NAME, id)
 }
@@ -135,9 +131,8 @@ export async function remove(id) {
  *
  * One read-write transaction: reading the ids and deleting them in two separate
  * ones would let an enqueue land in between and be swept away.
- * @param {string|number|null|undefined} userId
  */
-export async function clearForUser(userId) {
+export async function clearForUser(userId: number | string | null | undefined): Promise<void> {
   const db = await getDB()
   const tx = db.transaction(STORE_NAME, 'readwrite')
   const items = await tx.store.getAll()
@@ -149,7 +144,7 @@ export async function clearForUser(userId) {
 }
 
 /** Clears every queue item (test/reset helper). */
-export async function clear() {
+export async function clear(): Promise<void> {
   const db = await getDB()
   await db.clear(STORE_NAME)
 }
@@ -159,10 +154,11 @@ export async function clear() {
  * installed PWA. Entries are copied over, then the legacy key is removed so the
  * migration never runs twice. A corrupt payload costs the (unreadable) legacy
  * entries, not a crash at boot: the key is dropped and startup continues.
- * @returns {Promise<number>} how many legacy entries were imported
+ *
+ * <p>Rend le nombre d'entrées héritées importées.
  */
-export async function migrateFromLocalStorage() {
-  let raw
+export async function migrateFromLocalStorage(): Promise<number> {
+  let raw: string | null
   try {
     // Not just `typeof localStorage === 'undefined'`: with cookies blocked or
     // storage partitioned, the accessor itself throws SecurityError. There is
@@ -174,7 +170,7 @@ export async function migrateFromLocalStorage() {
   }
   if (!raw) return 0
 
-  let legacy
+  let legacy: unknown
   try {
     legacy = JSON.parse(raw)
   } catch {
@@ -189,9 +185,12 @@ export async function migrateFromLocalStorage() {
 
   let imported = 0
   for (const item of legacy) {
-    if (!item || typeof item !== 'object' || !item.id) continue
+    // Le contenu de localStorage n'est pas digne de confiance : `legacy` est un
+    // `unknown[]` et chaque élément est vérifié avant d'être écrit. L'assertion qui
+    // suit ne porte donc que sur ce que ces gardes ont déjà établi.
+    if (!item || typeof item !== 'object' || !(item as QueueEntry).id) continue
     // eslint-disable-next-line no-await-in-loop
-    await put(item)
+    await put(item as QueueEntry)
     imported += 1
   }
 
@@ -202,6 +201,6 @@ export async function migrateFromLocalStorage() {
 }
 
 /** Test seam: drops the memoised connection so a fresh DB can be opened. */
-export function resetDBForTests() {
+export function resetDBForTests(): void {
   dbPromise = null
 }

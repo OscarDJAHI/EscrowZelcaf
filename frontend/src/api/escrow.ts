@@ -6,7 +6,15 @@ export function fetchTransactions(): Promise<Transaction[]> {
   return apiClient.get<Transaction[]>('/api/v1/escrow').then((res) => res.data)
 }
 
-export interface CreateTransactionPayload {
+/**
+ * Alias de type, et non `interface` — la nuance est porteuse ici.
+ *
+ * <p>Cette charge utile part aussi dans la file hors ligne, dont le champ `data` est
+ * indexé (`QueuedRequestData`). TypeScript n'accorde d'index implicite qu'aux alias de
+ * type : déclarée en `interface`, la même forme était refusée à l'affectation. Le
+ * changement ne relâche rien — les quatre champs restent exigés à l'identique.
+ */
+export type CreateTransactionPayload = {
   sellerEmail: string
   amount: number
   currency: string
