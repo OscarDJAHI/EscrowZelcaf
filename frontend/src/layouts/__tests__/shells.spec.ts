@@ -8,6 +8,7 @@ import DesktopShell from '@/layouts/DesktopShell.vue'
 import AccessDeniedView from '@/views/AccessDeniedView.vue'
 import fr from '@/i18n/fr.json'
 import en from '@/i18n/en.json'
+import type { Component } from 'vue'
 
 /**
  * AC4 — tests de rendu des shells des trois espaces.
@@ -33,7 +34,7 @@ const router = createRouter({
   ],
 })
 
-const mountShell = (component, props = {}) =>
+const mountShell = (component: Component, props: Record<string, unknown> = {}) =>
   mount(component, {
     props,
     slots: { default: '<p data-testid="contenu">contenu de la page</p>' },
@@ -63,7 +64,7 @@ describe('ClientShell — espace client, mobile-first', () => {
     for (const lien of mountShell(ClientShell).findAll('nav a')) {
       const href = lien.attributes('href')
       expect(href, lien.text()).toBeTruthy()
-      expect(router.resolve(href).matched.length, href).toBeGreaterThan(0)
+      expect(router.resolve(href!).matched.length, href).toBeGreaterThan(0)
     }
   })
 

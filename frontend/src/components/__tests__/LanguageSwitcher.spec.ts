@@ -7,6 +7,7 @@ import {
   createEscrowI18n,
   readStoredLocale,
 } from '@/i18n'
+import type { Locale } from '@/i18n'
 
 /**
  * Le sélecteur de langue est le seul chemin par lequel un utilisateur exerce l'AC3.
@@ -14,7 +15,9 @@ import {
  * gardent est autant visuelle (libellés texte, jamais de drapeaux) que fonctionnelle.
  */
 
-function mountSwitcher(locale = DEFAULT_LOCALE) {
+// `Locale` et non le type inféré de `DEFAULT_LOCALE` : ce dernier vaut le littéral
+// `'en'`, si bien que passer `'fr'` — ce que fait la moitié des tests — était refusé.
+function mountSwitcher(locale: Locale = DEFAULT_LOCALE) {
   // Instance neuve à chaque montage : la langue est un état global mutable, et un test
   // qui la basculerait contaminerait silencieusement les suivants.
   const i18n = createEscrowI18n(locale)

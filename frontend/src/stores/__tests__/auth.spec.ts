@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import { loginUser, logoutUser, resendVerification } from '@/api/auth'
 import { useAuthStore } from '@/stores/auth'
+import { aUser } from '@/test-support/factories'
 
 // Story 1.6 — le logout() du store révoque la session côté serveur.
 vi.mock('@/api/auth', () => ({
@@ -27,7 +28,7 @@ describe('auth store logout (Story 1.6)', () => {
 
   it('vide l\'état local ET révoque la session serveur avec le jeton courant', async () => {
     const auth = useAuthStore()
-    auth.applySession({ token: 'jwt-abc', user: { id: 1, role: 'BUYER' } })
+    auth.applySession({ token: 'jwt-abc', user: aUser({ id: 1, role: 'BUYER' }) })
 
     const pending = auth.logout()
 
@@ -45,10 +46,10 @@ describe('auth store logout (Story 1.6)', () => {
     // le jeton restait accepté côté serveur jusqu'à expiration. C'est l'attente qui
     // rend AC #2 vrai dans le seul parcours réel, pas seulement en test.
     const auth = useAuthStore()
-    auth.applySession({ token: 'jwt-abc', user: { id: 1, role: 'BUYER' } })
+    auth.applySession({ token: 'jwt-abc', user: aUser({ id: 1, role: 'BUYER' }) })
 
-    let resolveRevocation
-    logoutUser.mockReturnValueOnce(new Promise((resolve) => { resolveRevocation = resolve }))
+    let resolveRevocation: (() => void) | undefined
+    vi.mocked(logoutUser).mockReturnValueOnce(new Promise((resolve) => { resolveRevocation = resolve }))
 
     const pending = auth.logout()
     expect(pending).toBeInstanceOf(Promise)
@@ -58,15 +59,15 @@ describe('auth store logout (Story 1.6)', () => {
     await Promise.resolve()
     expect(settled).toBe(false) // toujours en attente du serveur
 
-    resolveRevocation()
+    resolveRevocation!()
     await pending
     expect(settled).toBe(true)
   })
 
   it('résout quand même si la révocation serveur échoue (hors ligne, jeton déjà mort)', async () => {
     const auth = useAuthStore()
-    auth.applySession({ token: 'jwt-abc', user: { id: 1, role: 'BUYER' } })
-    logoutUser.mockRejectedValueOnce(new Error('network down'))
+    auth.applySession({ token: 'jwt-abc', user: aUser({ id: 1, role: 'BUYER' }) })
+    vi.mocked(logoutUser).mockRejectedValueOnce(new Error('network down'))
 
     await expect(auth.logout()).resolves.toBeUndefined()
     expect(auth.token).toBeNull()

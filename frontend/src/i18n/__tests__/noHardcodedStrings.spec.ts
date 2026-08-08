@@ -34,7 +34,7 @@ const NOT_TRANSLATABLE = new Set([
  * balise en deux et fait passer un morceau d'attribut pour du texte rendu. La première
  * version de cette garde rapportait ainsi des faux positifs du genre `0" class="…`.
  */
-function bareTextNodes(source, rel = '?') {
+function bareTextNodes(source: string, rel = '?') {
   // La balise ouvrante peut porter des attributs (`<template lang="pug">`). La première
   // version cherchait `indexOf('<template>')`, qui rend −1 dans ce cas ; `slice(-1)` ne
   // gardait alors qu'UN caractère et le composant entier passait pour conforme. Une garde
@@ -47,7 +47,9 @@ function bareTextNodes(source, rel = '?') {
   // découper de la balise ouvrante jusqu'à la fin du fichier fait entrer un bloc
   // `<style>` — un motif de SFC parfaitement ordinaire — dans le texte « rendu », et la
   // garde se met alors à échouer sur du CSS (constat de la 2e passe de revue).
-  const body = source.slice(opening.index + opening[0].length)
+  // `index` est optionnel sur un résultat de `match` : ici l'appelant a déjà vérifié que
+  // l'ouverture existe, et un `match` réussi porte toujours sa position.
+  const body = source.slice(opening.index! + opening[0].length)
   const closing = body.lastIndexOf('</template>')
   if (closing < 0) {
     throw new Error(`${rel} : balise </template> fermante absente — la garde ne peut pas borner ce fichier`)
@@ -65,12 +67,12 @@ function bareTextNodes(source, rel = '?') {
       .replace(/\{\{[\s\S]*?\}\}/g, '')
       // Tout ce qui est ENTRE deux balises est du texte rendu.
       .split(/<[^>]*>/g)
-      .map((chunk) => chunk.replace(/\s+/g, ' ').trim())
+      .map((chunk: string) => chunk.replace(/\s+/g, ' ').trim())
       .filter(Boolean)
-      .filter((chunk) => !NOT_TRANSLATABLE.has(chunk))
+      .filter((chunk: string) => !NOT_TRANSLATABLE.has(chunk))
       // Deux lettres suffisent : le seuil de trois laissait passer « By », un vrai
       // littéral anglais rendu à l'utilisateur (constat de revue).
-      .filter((chunk) => /\p{L}{2}/u.test(chunk))
+      .filter((chunk: string) => /\p{L}{2}/u.test(chunk))
   )
 }
 
@@ -185,17 +187,17 @@ const PROSE_ALLOWED = new Set([
  * point ou un slash (`bg-warning-surface text-warning`, `application/json`) et ne comptent
  * donc pas deux mots alphabétiques.
  */
-function looksLikeProse(value) {
+function looksLikeProse(value: string): boolean {
   // Diagnostic de console : `[session] …`, `[offlineQueue] …`. Exclu par RÈGLE et non par
   // énumération — ces messages ne sont jamais rendus, et une liste nominative aurait
   // grossi à chaque nouveau log.
   if (/^\[[a-zA-Z][\w-]*\]/.test(value)) return false
   if (/^\p{Lu}\p{Ll}/u.test(value)) return true
-  const words = value.split(/\s+/).filter((w) => /^\p{L}{2,}$/u.test(w))
+  const words = value.split(/\s+/).filter((w: string) => /^\p{L}{2,}$/u.test(w))
   return words.length >= 2
 }
 
-function scriptSource(body, rel) {
+function scriptSource(body: string, rel: string): string {
   const raw = rel.endsWith('.vue')
     ? [...body.matchAll(/<script[^>]*>([\s\S]*?)<\/script>/g)].map((m) => m[1]).join('\n')
     : body
@@ -207,11 +209,11 @@ function scriptSource(body, rel) {
 }
 
 /** Retire les `//` de fin de ligne, en ignorant ceux situés à l'intérieur d'une chaîne. */
-function stripLineComments(code) {
+function stripLineComments(code: string) {
   return code
     .split('\n')
-    .map((line) => {
-      let quote = null
+    .map((line: string) => {
+      let quote: string | null = null
       for (let i = 0; i < line.length; i += 1) {
         const c = line[i]
         if (quote) {

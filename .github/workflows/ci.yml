@@ -84,6 +84,13 @@ jobs:
       # s'accumule — le dépôt en portait déjà six sous forme de directives
       # `eslint-disable` qu'aucun analyseur ne lisait.
       - run: npm run lint
+      # Après le lint, avant les tests : `vue-tsc` attrape une classe de défauts que
+      # ni l'un ni les autres ne voient — un champ lu sur une forme que le serveur
+      # n'envoie pas, une fixture amputée d'un champ requis. La migration en a
+      # trouvé plusieurs sur des suites entièrement vertes.
+      # NB : `npm run build` le relance (le script en dépend) ; le garder ici sert à
+      # rendre le verdict en secondes plutôt qu'après un build complet.
+      - run: npm run type-check
       - run: npm run test
       - run: npm run build
       # APRÈS le build, forcément : ce contrôle lit `dist/`. Il vérifie que la galerie de

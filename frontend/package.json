@@ -7,7 +7,7 @@
   "scripts": {
     "dev": "vite",
     "type-check": "vue-tsc --build",
-    "build": "vite build",
+    "build": "npm run type-check && vite build",
     "verify:no-demo": "node scripts/verify-no-demo.mjs",
     "verify:pwa": "node scripts/verify-pwa.mjs",
     "preview": "vite preview",

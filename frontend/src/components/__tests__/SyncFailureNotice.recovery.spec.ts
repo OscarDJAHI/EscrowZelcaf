@@ -32,7 +32,7 @@ vi.mock('@/api/escrow', () => ({
   openDispute: vi.fn(),
 }))
 
-const USER = { id: 42, email: 'alice@corp.example' }
+const USER = aUser({ id: 42, email: 'alice@corp.example' })
 const FROZE_AT = '2026-01-01T00:05:00.000Z'
 
 interface FrozenOptions {
@@ -107,7 +107,7 @@ beforeEach(() => {
 describe('SyncFailureNotice — every frozen entry has a way out', () => {
   it('links an OPEN_DISPUTE carrying files to its recovery screen', () => {
     useOfflineQueueStore().queue = [
-      frozen({ id: 'e-dispute', type: 'OPEN_DISPUTE', files: [{}, {}] }),
+      frozen({ id: 'e-dispute', type: 'OPEN_DISPUTE', files: [{} as Blob, {} as Blob] }),
     ]
 
     const wrapper = mountNotice(pinia)
@@ -146,7 +146,7 @@ describe('SyncFailureNotice — every frozen entry has a way out', () => {
       // `NO_LINK_CODES` governs the transaction link and nothing else: "it no
       // longer exists" / "it was never yours" is no argument against recovering
       // *your own* files, nor against acknowledging the entry.
-      useOfflineQueueStore().queue = [frozen({ id: 'e-nolink', type: 'OPEN_DISPUTE', code, files: [{}] })]
+      useOfflineQueueStore().queue = [frozen({ id: 'e-nolink', type: 'OPEN_DISPUTE', code, files: [{} as Blob] })]
 
       const wrapper = mountNotice(pinia)
 
@@ -156,7 +156,7 @@ describe('SyncFailureNotice — every frozen entry has a way out', () => {
 
   it('gives every frozen entry its own link when several are listed', () => {
     useOfflineQueueStore().queue = [
-      frozen({ id: 'e-a', type: 'OPEN_DISPUTE', transactionId: '7', files: [{}] }),
+      frozen({ id: 'e-a', type: 'OPEN_DISPUTE', transactionId: '7', files: [{} as Blob] }),
       frozen({ id: 'e-b', type: 'SEND_EVENT', transactionId: '8', code: 'ILLEGAL_TRANSITION' }),
       frozen({ id: 'e-c', type: 'CREATE_TRANSACTION', transactionId: null, code: 'VALIDATION_ERROR' }),
     ]
@@ -171,7 +171,7 @@ describe('SyncFailureNotice — every frozen entry has a way out', () => {
 
   it('labels the link for what the entry actually holds', () => {
     useOfflineQueueStore().queue = [
-      frozen({ id: 'e-files', type: 'OPEN_DISPUTE', files: [{}] }),
+      frozen({ id: 'e-files', type: 'OPEN_DISPUTE', files: [{} as Blob] }),
       frozen({ id: 'e-bare', type: 'SEND_EVENT', transactionId: '8', code: 'ILLEGAL_TRANSITION' }),
     ]
 
@@ -191,7 +191,7 @@ describe('SyncFailureNotice — every frozen entry has a way out', () => {
     // rendering it for the wrong session would hand the next user the door to
     // someone else's binaries.
     const auth = useAuthStore()
-    useOfflineQueueStore().queue = [frozen({ id: 'e-alice', type: 'OPEN_DISPUTE', files: [{}] })]
+    useOfflineQueueStore().queue = [frozen({ id: 'e-alice', type: 'OPEN_DISPUTE', files: [{} as Blob] })]
 
     auth.logout()
     auth.applySession({ token: 'bob-token', user: aUser({ id: 7, email: 'bob@corp.example' }) })

@@ -11,6 +11,8 @@ import type { QueueEntry, QueuedActionType } from '@/types/queue'
 import type { Pinia } from 'pinia'
 import { aTransaction, aUser } from '@/test-support/factories'
 import type { VueWrapper } from '@vue/test-utils'
+import { aQueueEntry } from '@/test-support/factories'
+import type { DisplayTransaction } from '@/stores/escrow'
 
 // Mocked so that "the notice emits no fetch" is an assertion and not a hope: it
 // reads the real state out of the store, and the only load action available
@@ -24,7 +26,7 @@ vi.mock('@/api/escrow', () => ({
   openDispute: vi.fn(),
 }))
 
-const USER = { id: 42, email: 'alice@corp.example' }
+const USER = aUser({ id: 42, email: 'alice@corp.example' })
 
 /**
  * Sentinel instants, never `new Date()`: the freshness rule is an ordering of
@@ -127,7 +129,7 @@ describe('SyncFailureNotice — what it renders at all', () => {
   it('renders nothing when no entry is frozen', () => {
     useOfflineQueueStore().queue = [
       // Still waiting, not refused: `OnlineBanner` owns this one.
-      { id: 'pending', meta: { type: 'SEND_EVENT', transactionId: '7', userId: USER.id } },
+      aQueueEntry({ id: 'pending', meta: { type: 'SEND_EVENT', transactionId: '7', userId: USER.id } }),
     ]
 
     const wrapper = mountNotice(pinia)
@@ -221,7 +223,7 @@ describe('SyncFailureNotice — what it renders at all', () => {
 
   it('mentions kept files only on an entry that carries some', () => {
     useOfflineQueueStore().queue = [
-      frozen({ type: 'OPEN_DISPUTE', transactionId: '7', code: 'DISPUTE_ALREADY_RESOLVED', files: [{}, {}] }),
+      frozen({ type: 'OPEN_DISPUTE', transactionId: '7', code: 'DISPUTE_ALREADY_RESOLVED', files: [{} as Blob, {} as Blob] }),
       frozen({ type: 'SEND_EVENT', transactionId: '8', code: 'ILLEGAL_TRANSITION' }),
     ]
 
@@ -323,7 +325,12 @@ describe('SyncFailureNotice — the notice belongs to one user', () => {
   it('matches an owner stored as a number against a session id read back as a string', () => {
     // `auth.user` round-trips through localStorage JSON, `meta.userId` through
     // IndexedDB structured clone: the two need not come back the same type.
-    useAuthStore().user = { id: '42', email: USER.email }
+    // `id` en CHAÎNE, exprès : `auth.user` fait l'aller-retour par le JSON de
+    // localStorage et `meta.userId` par le clone structuré d'IndexedDB, si bien que le
+    // même identifiant revient nombre d'un côté et chaîne de l'autre. C'est ce que
+    // `ownsEntry` compare avec `String(a) === String(b)`, et l'assertion locale ci-dessous
+    // est la seule façon d'exprimer ce cas sans relâcher `User.id` partout.
+    useAuthStore().user = { ...USER, id: '42' as unknown as number }
     useOfflineQueueStore().queue = [frozen({ userId: 42, code: 'TRANSACTION_TERMINAL' })]
 
     const wrapper = mountNotice(pinia)
@@ -376,7 +383,10 @@ describe('SyncFailureNotice — a state is badged only once it has seen the reje
     useOfflineQueueStore().queue = [frozen({ code: 'DISPUTE_ALREADY_RESOLVED' })]
     escrow.currentDetail = { transaction: aTransaction({ id: 7, state: 'RELEASED' }), auditLogs: [] }
     escrow.currentDetailFetchedAt = AFTER_FREEZE
-    escrow.transactions = [{ id: 7, state: 'DISPUTED', _queuedDispute: true }]
+    escrow.transactions = [aTransaction({ id: 7, state: 'DISPUTED' })].map((t) => ({
+      ...t,
+      _queuedDispute: true,
+    }))
     escrow.transactionsFetchedAt = BEFORE_FREEZE
 
     const wrapper = mountNotice(pinia)
@@ -433,7 +443,10 @@ describe('SyncFailureNotice — a state is badged only once it has seen the reje
     // dispute: fresh is necessary, clean is necessary too.
     const escrow = useEscrowStore()
     useOfflineQueueStore().queue = [frozen({ code: 'DISPUTE_ALREADY_RESOLVED' })]
-    escrow.transactions = [{ id: 7, state: 'DISPUTED', _queuedDispute: true }]
+    escrow.transactions = [aTransaction({ id: 7, state: 'DISPUTED' })].map((t) => ({
+      ...t,
+      _queuedDispute: true,
+    }))
     escrow.transactionsFetchedAt = AFTER_FREEZE
 
     const wrapper = mountNotice(pinia)
@@ -568,7 +581,8 @@ describe('SyncFailureNotice — the fixes review found', () => {
     // `StateBadge` would throw on `undefined.replaceAll` and blank every route.
     useOfflineQueueStore().queue = [frozen({ code: 'DISPUTE_ALREADY_RESOLVED' })]
     const escrow = useEscrowStore()
-    escrow.transactions = [{ id: 7 }]
+    // Une ligne SANS état : `trustworthy` doit dégrader vers un lien plutôt que badger.
+    escrow.transactions = [{ ...aTransaction({ id: 7 }), state: undefined } as unknown as DisplayTransaction]
     escrow.transactionsFetchedAt = AFTER_FREEZE
 
     const wrapper = mountNotice(pinia)
@@ -611,7 +625,9 @@ describe('SyncFailureNotice — the fixes review found', () => {
     // whole app from the component whose job is to be the last thing standing.
     useOfflineQueueStore().queue = [frozen({ code: 'DISPUTE_ALREADY_RESOLVED' })]
     const escrow = useEscrowStore()
-    escrow.transactions = { items: [] } // e.g. a paginated payload
+    // Charge PAGINÉE, donc pas un tableau : le contrat dit une liste, et la vue rend au
+    // dessus de `RouterView` — elle doit dégrader, pas blanchir toutes les routes.
+    escrow.transactions = { items: [] } as unknown as DisplayTransaction[] // e.g. a paginated payload
     escrow.transactionsFetchedAt = AFTER_FREEZE
 
     const wrapper = mountNotice(pinia)
@@ -623,7 +639,12 @@ describe('SyncFailureNotice — the fixes review found', () => {
   it('never renders a prototype member as the refused action', () => {
     // `meta` round-trips through IndexedDB; a bare `ACTION_LABELS[type]` lookup
     // of `constructor` returns a function, which `||` cannot fall back on.
-    useOfflineQueueStore().queue = [frozen({ type: 'constructor', code: 'CONFLICT' })]
+    // `constructor` : une valeur hostile venue d'IndexedDB, que `describeAction` repousse
+    // par `Object.hasOwn`. Assertion LOCALE — élargir `QueuedActionType` affaiblirait le
+    // contrat partout pour un seul test.
+    useOfflineQueueStore().queue = [
+      frozen({ type: 'constructor' as QueuedActionType, code: 'CONFLICT' }),
+    ]
 
     const wrapper = mountNotice(pinia)
 

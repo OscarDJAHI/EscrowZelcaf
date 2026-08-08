@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { HOME_BY_SPACE, SPACES, resolveSpaceAccess, spaceForRole } from '@/router/spaces'
+import type { Space } from '@/router/spaces'
 
 /**
  * AC1 — trois espaces sous une seule authentification, et des guards qui ne DISENT RIEN.
@@ -79,7 +80,7 @@ describe('resolveSpaceAccess — la réponse est UNIFORME (NFR-P9)', () => {
     // de l'égalité profonde. Si un jour l'une porte un motif et l'autre non, l'oracle
     // est rouvert et ce test le dit.
     const interdit = resolveSpaceAccess('BUYER', SPACES.ADMIN)
-    const inexistant = resolveSpaceAccess('BUYER', 'espace-qui-n-existe-pas')
+    const inexistant = resolveSpaceAccess('BUYER', 'espace-qui-n-existe-pas' as Space)
     expect(interdit).toEqual(inexistant)
   })
 

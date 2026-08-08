@@ -6,6 +6,8 @@ import TransactionDetailView from '@/views/TransactionDetailView.vue'
 import { useAuthStore } from '@/stores/auth'
 import { createEscrowI18n } from '@/i18n'
 import { aUser } from '@/test-support/factories'
+import type { DisplayTransactionDetail } from '@/stores/escrow'
+import type { EscrowState } from '@/types/domain'
 
 /**
  * Ce fichier existe parce que la revue a constaté qu'AUCUN test ne montait cette vue,
@@ -35,13 +37,19 @@ vi.mock('@/api/evidence', () => ({
 }))
 
 /** Détail servi par le mock ; réassigné par `renderDetail` avant chaque montage. */
-let detailFixture = null
+// `| null` assumé : la fixture n'existe qu'une fois `renderDetail` appelé, et un test qui
+// monterait sans elle doit échouer bruyamment plutôt que sur un objet vide fabriqué ici.
+let detailFixture: DisplayTransactionDetail | null = null
 
 const BUYER = aUser({ id: 1, email: 'alice@corp.example', role: 'BUYER' })
 
 const router = createRouter({ history: createWebHistory(), routes: [{ path: '/', component: { template: '<div />' } }] })
 
-async function renderDetail({ state = 'SHIPPED', locale = 'en', amount = 12500.5 } = {}) {
+async function renderDetail({
+  state = 'SHIPPED',
+  locale = 'en',
+  amount = 12500.5,
+}: { state?: EscrowState; locale?: string; amount?: number } = {}) {
   setActivePinia(createPinia())
   const auth = useAuthStore()
   auth.user = BUYER
@@ -118,7 +126,13 @@ describe('TransactionDetailView — aucune clé brute nulle part', () => {
     // Rendus indépendants : rien n'impose de les enchaîner, et `no-await-in-loop` est
     // active dans ce dépôt précisément pour qu'on ne sérialise pas par distraction.
     await Promise.all(
-      ['INITIATED', 'FUNDS_LOCKED', 'SHIPPED', 'DISPUTED', 'RELEASED'].map(async (state) => {
+      // `satisfies` plutôt qu'une assertion : la liste reste littérale ET le compilateur
+      // vérifie que ces cinq états existent bien. Un état renommé côté machine ferait
+      // échouer la compilation, au lieu de laisser cette garde tourner à vide sur un nom
+      // qui n'existe plus.
+      (
+        ['INITIATED', 'FUNDS_LOCKED', 'SHIPPED', 'DISPUTED', 'RELEASED'] satisfies EscrowState[]
+      ).map(async (state) => {
         const text = (await renderDetail({ state, locale: 'fr' })).text()
         expect(text, `clé brute rendue en ${state}`).not.toMatch(
           /\b(transaction|common|event|state|role)\.[a-zA-Z]/,

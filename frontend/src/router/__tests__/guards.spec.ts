@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import { useAuthStore } from '@/stores/auth'
 import { aUser } from '@/test-support/factories'
+import type { Role, User } from '@/types/domain'
 
 /**
  * AC1 et AC4 — guards, redirections par rôle, et réponse uniforme.
@@ -13,11 +14,21 @@ import { aUser } from '@/test-support/factories'
  * précédé.
  */
 
-async function navigate(user, path) {
+/**
+ * `user` est un profil PARTIEL et potentiellement trafiqué, pas un `User`.
+ *
+ * <p>C'est ce que la garde reçoit vraiment : `auth.user` est relu de localStorage, que
+ * l'utilisateur peut éditer. Ces tests lui passent exprès un profil sans rôle (la branche
+ * « session incohérente » du routeur) et des rôles inconnus. Exiger un `User` complet
+ * aurait interdit d'exprimer précisément les entrées que la garde existe pour trier.
+ */
+async function navigate(user: Partial<User> | null, path: string) {
   vi.resetModules()
   setActivePinia(createPinia())
   const { default: router } = await import('@/router')
-  if (user) useAuthStore().applySession({ token: 'jeton', user })
+  // Le profil PARTIEL est posé tel quel : c'est exactement ce qu'un localStorage trafiqué
+  // rend, et la garde doit s'en arranger. L'assertion locale dit qu'on le fait exprès.
+  if (user) useAuthStore().applySession({ token: 'jeton', user: user as User })
   await router.push(path).catch(() => {})
   await router.isReady()
   return router.currentRoute.value
@@ -120,8 +131,8 @@ describe('Session incohérente — jeton valide, profil sans rôle', () => {
   // réparer — ni sa session, ni l'accès à ses fichiers de récupération.
   it.each(['constructor', '__proto__', 'toString'])(
     'un rôle « %s » n’enferme pas l’utilisateur hors de la connexion',
-    async (role) => {
-      const route = await navigate({ id: 8, email: 'e@corp.example', role }, '/recovery/entry-1')
+    async (role: string) => {
+      const route = await navigate({ id: 8, email: 'e@corp.example', role: role as Role }, '/recovery/entry-1')
       expect(route.name).toBe('auth')
       expect(route.query.redirect).toBe('/recovery/entry-1')
     },

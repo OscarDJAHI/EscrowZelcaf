@@ -27,7 +27,7 @@ const TRANSACTION = {
   sellerEmail: 'bob@corp.example',
 }
 
-function renderIn(locale) {
+function renderIn(locale: string) {
   setActivePinia(createPinia())
   const wrapper = mount(TransactionCard, {
     props: { transaction: TRANSACTION },

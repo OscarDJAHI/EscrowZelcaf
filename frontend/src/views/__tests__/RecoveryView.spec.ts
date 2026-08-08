@@ -167,14 +167,14 @@ describe('RecoveryView — the nominal recovery', () => {
     const queue = useOfflineQueueStore()
     queue.hydrated = true
     // A bare Blob: structured clone kept the bytes, but there was never a name.
-    queue.queue = [frozen({ files: [{ type: 'image/png', size: 1024 }] })]
-    const anchors = []
+    queue.queue = [frozen({ files: [{ type: 'image/png', size: 1024 } as Blob] })]
+    const anchors: HTMLAnchorElement[] = []
     const realCreate = document.createElement.bind(document)
     vi.spyOn(document, 'createElement').mockImplementation((tag) => {
       const el = realCreate(tag)
       if (tag === 'a') {
         el.click = vi.fn()
-        anchors.push(el)
+        anchors.push(el as HTMLAnchorElement)
       }
       return el
     })
@@ -515,7 +515,7 @@ describe('RecoveryView — nothing is deleted without two deliberate steps', () 
 
     const cancel = wrapper.findAll('button').find((b) => b.text() === 'Cancel')
     expect(cancel).toBeDefined()
-    await cancel.trigger('click')
+    await cancel!.trigger('click')
 
     expect(wrapper.text()).not.toContain('permanently delete')
 

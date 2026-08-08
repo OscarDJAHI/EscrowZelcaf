@@ -15,7 +15,7 @@ import { createEscrowI18n, persistLocale, readStoredLocale } from '@/i18n'
  */
 
 /** Remplace `localStorage` par une propriété dont la LECTURE lève, puis restaure. */
-function withHostileStorage(run) {
+function withHostileStorage<T>(run: () => T): T {
   const original = Object.getOwnPropertyDescriptor(globalThis, 'localStorage')
   Object.defineProperty(globalThis, 'localStorage', {
     configurable: true,
@@ -27,7 +27,7 @@ function withHostileStorage(run) {
     return run()
   } finally {
     if (original) Object.defineProperty(globalThis, 'localStorage', original)
-    else delete globalThis.localStorage
+    else delete (globalThis as { localStorage?: Storage }).localStorage
   }
 }
 

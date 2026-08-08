@@ -155,7 +155,10 @@ const GENERIC_FAILURE_LABEL = 'The server refused this action.'
  * <p>`failure` a la forme que lui donne `extractFailureReason`.
  */
 export function describeFailure(
-  failure: Partial<Pick<FailureReason, 'code' | 'message'>> | null | undefined,
+  // `Partial<FailureReason>` et non un `Pick` des deux champs lus : les appelants — le
+  // bandeau comme la suite — passent l'objet `failure` ENTIER, `status` compris. Un type
+  // plus étroit que la valeur réellement transmise force chaque appelant à la découper.
+  failure: Partial<FailureReason> | null | undefined,
 ): string {
   const code = failure?.code
   const message = failure?.message

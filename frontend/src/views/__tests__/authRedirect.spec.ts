@@ -74,7 +74,9 @@ describe('AuthView resumes only a target it can vouch for', () => {
    * login that succeeds. `login` is stubbed rather than the API mocked: what is
    * under test is where the view goes afterwards, not how it got a session.
    */
-  async function submitFrom(redirect) {
+  // `redirect` est OPTIONNEL : un des cas testés est justement l'absence de cible, où la
+  // vue doit renvoyer au tableau de bord.
+  async function submitFrom(redirect?: string) {
     const router = createRouter({
       history: createWebHistory(),
       routes: [

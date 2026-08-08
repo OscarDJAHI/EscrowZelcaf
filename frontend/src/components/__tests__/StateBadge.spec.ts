@@ -17,7 +17,7 @@ import { createEscrowI18n } from '@/i18n'
  * que rien ne l'annonce.
  */
 
-function render(state, locale = 'fr') {
+function render(state: string, locale = 'fr') {
   return mount(StateBadge, {
     props: { state },
     global: { plugins: [createEscrowI18n(locale)] },

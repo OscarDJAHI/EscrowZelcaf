@@ -28,18 +28,18 @@ function failWith(error: unknown) {
 
 // Le compteur d'événements « session expirée » : posé par un écouteur, donc jamais
 // affecté à l'endroit où il est déclaré — d'où le type explicite.
-let expired: Event[]
+let expired: ReturnType<typeof vi.fn>
 
 beforeEach(() => {
   localStorage.clear()
   resetSessionExpiryLatch()
   expired = vi.fn()
-  window.addEventListener('escrow:session-expired', expired)
+  window.addEventListener('escrow:session-expired', expired as EventListener)
 })
 
 afterEach(() => {
-  window.removeEventListener('escrow:session-expired', expired)
-  delete apiClient.defaults.adapter
+  window.removeEventListener('escrow:session-expired', expired as EventListener)
+  delete (apiClient.defaults as { adapter?: unknown }).adapter
   vi.restoreAllMocks()
 })
 
@@ -167,7 +167,7 @@ describe('client interceptor — a verdict is not an expiry', () => {
 
     await expect(apiClient.get('/api/v1/escrow')).rejects.toThrow()
 
-    expect(seen.headers.Authorization).toBe('Bearer jwt-abc')
+    expect(seen!.headers.Authorization).toBe('Bearer jwt-abc')
     expect(expired).toHaveBeenCalledOnce()
   })
 

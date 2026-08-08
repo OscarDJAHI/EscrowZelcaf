@@ -46,7 +46,7 @@ function readErrorCodeJava() {
 const itWithBackend = it.skipIf(!BACKEND_CHECKED_OUT)
 
 /** Shapes an AxiosError the way `client.js` relays it: `err.response.data` is the envelope. */
-function httpError(status, data) {
+function httpError(status: number, data: unknown) {
   return Object.assign(new Error(`Request failed with status code ${status}`), {
     response: { status, data },
   })

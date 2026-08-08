@@ -5,6 +5,7 @@ import OnlineBanner from '@/components/OnlineBanner.vue'
 import { useOfflineQueueStore } from '@/stores/offlineQueue'
 import { createEscrowI18n } from '@/i18n'
 import { OFFLINE_CLASSES, SYNCING_CLASSES } from '@/utils/stateMachine'
+import { aQueueEntry } from '@/test-support/factories'
 
 /**
  * Ce fichier existe parce que la revue a constaté qu'AUCUN test ne montait ce composant,
@@ -20,7 +21,9 @@ function mountBanner({ isOnline = true, pendingCount = 0, flushing = false }, lo
   setActivePinia(createPinia())
   const queue = useOfflineQueueStore()
   queue.isOnline = isOnline
-  queue.queue = Array.from({ length: pendingCount }, (unused, i) => ({ id: `e${i}` }))
+  queue.queue = Array.from({ length: pendingCount }, (unused: unknown, i: number) =>
+    aQueueEntry({ id: `e${i}` }),
+  )
   queue.flushing = flushing
   return mount(OnlineBanner, { global: { plugins: [createEscrowI18n(locale)] } })
 }
