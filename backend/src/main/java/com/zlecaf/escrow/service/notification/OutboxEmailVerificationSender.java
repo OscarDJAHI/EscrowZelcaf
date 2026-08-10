@@ -4,6 +4,7 @@ import com.zlecaf.escrow.domain.NotificationOutboxEntry;
 import com.zlecaf.escrow.repository.NotificationOutboxRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
 /**
@@ -21,8 +22,15 @@ import org.springframework.stereotype.Component;
  * <p><b>Il n'échoue jamais</b> : l'inscription est déjà persistée quand on l'appelle, et
  * la faire remonter une exception laisserait un compte créé dont l'utilisateur n'apprendrait
  * rien — le cas que l'AC de 8.1 nomme explicitement.
+ *
+ * <p><b>Sélection d'adaptateur.</b> Il reste le DÉFAUT ({@code matchIfMissing}) : une
+ * configuration muette continue de se comporter exactement comme avant. Poser
+ * {@code escrow.mail.transport=smtp} lui substitue {@link SmtpEmailVerificationSender}.
+ * La condition est ce qui empêche les deux d'être candidats au même port en même temps —
+ * sans elle, le contexte échouerait au démarrage sur un bean ambigu.
  */
 @Component
+@ConditionalOnProperty(name = "escrow.mail.transport", havingValue = "outbox", matchIfMissing = true)
 public class OutboxEmailVerificationSender implements EmailVerificationSender {
 
     private static final Logger log = LoggerFactory.getLogger(OutboxEmailVerificationSender.class);

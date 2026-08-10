@@ -37,7 +37,40 @@ spring:
       max-file-size: 15MB
       max-request-size: 60MB
 
+  mail:
+    # Transport SMTP du port EmailVerificationSender. Inerte tant que
+    # escrow.mail.transport vaut `outbox` : rien ne se connecte au démarrage, le
+    # JavaMailSender est construit paresseusement et n'est injecté que dans
+    # l'adaptateur SMTP, lui-même non enregistré dans ce mode.
+    host: ${SPRING_MAIL_HOST:localhost}
+    port: ${SPRING_MAIL_PORT:1025}
+    # Mailpit local n'exige ni authentification ni STARTTLS. Un fournisseur réel
+    # (Story 8.1) les exigera : ces deux clés sont donc paramétrables sans
+    # retoucher le code, l'adaptateur ne connaissant que le protocole.
+    username: ${SPRING_MAIL_USERNAME:}
+    password: ${SPRING_MAIL_PASSWORD:}
+    properties:
+      mail:
+        smtp:
+          auth: ${SPRING_MAIL_SMTP_AUTH:false}
+          starttls:
+            enable: ${SPRING_MAIL_SMTP_STARTTLS:false}
+
 escrow:
+  mail:
+    # Sélection de l'adaptateur du port d'envoi (Story 2.4, décision T0).
+    #   outbox (DÉFAUT) — consigne l'envoi, ne livre rien. Comportement d'origine :
+    #                     une configuration muette ne change pas de sens.
+    #   smtp            — livre par SMTP vers spring.mail.host. En local, le
+    #                     collecteur Mailpit (infra/docker-compose.yml) capte tout et
+    #                     l'OTP se lit sur http://localhost:8025. AUCUN e-mail ne sort
+    #                     de la machine : Mailpit ne relaie pas.
+    #
+    # NE PAS confondre avec le spike 8.1 : celui-ci tranche le FOURNISSEUR de
+    # production et la délivrabilité par corridor ZLECAf. SMTP n'est qu'un protocole.
+    transport: ${ESCROW_MAIL_TRANSPORT:outbox}
+    from: ${ESCROW_MAIL_FROM:no-reply@escrow.local}
+
   jwt:
     # REQUIS — aucun défaut. Must be >= 32 bytes for HS256.
     secret: ${ESCROW_JWT_SECRET}

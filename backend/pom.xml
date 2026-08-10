@@ -70,6 +70,18 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-actuator</artifactId>
         </dependency>
+        <!--
+          Transport SMTP du port EmailVerificationSender (Story 2.4, décision T0 :
+          « port + outbox + adaptateur de développement »). N'IMPOSE AUCUN FOURNISSEUR :
+          SMTP est un protocole, et le spike 8.1 reste seul juge du prestataire de
+          production et de la délivrabilité par corridor ZLECAf.
+          Sans `spring.mail.host`, l'autoconfiguration ne crée aucun bean — cette
+          dépendance est donc inerte tant que `escrow.mail.transport` vaut `outbox`.
+        -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-mail</artifactId>
+        </dependency>
 
         <!-- OpenAPI / Swagger UI -->
         <dependency>

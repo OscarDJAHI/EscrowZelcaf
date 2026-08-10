@@ -149,10 +149,49 @@ services:
     # boucle, jamais healthy) ne dit pas qu'il s'agit de mémoire.
     mem_limit: 2g
 
+  # Collecteur SMTP local (Story 2.4, décision T0 : « adaptateur de développement »).
+  #
+  # POURQUOI IL EXISTE : sans transport, l'OTP d'inscription ne quitte jamais le
+  # processus backend — le parcours est complet côté serveur mais INFINISSABLE dans
+  # l'IHM, faute de pouvoir lire le code. Mailpit capte le message et l'affiche.
+  #
+  # CE QU'IL N'EST PAS : un fournisseur d'e-mail. Il ne RELAIE rien vers l'extérieur ;
+  # tout message entrant reste dans sa boîte en mémoire. Le choix du prestataire de
+  # production appartient au spike 8.1 (délivrabilité par corridor ZLECAf, coûts,
+  # conformité) et n'est en rien préempté ici : SMTP est un protocole.
+  #
+  # LECTURE DE L'OTP : http://localhost:8025 (UI web). C'est la seule voie prévue —
+  # l'interdiction ferme de T0 tient, aucun endpoint de lecture d'OTP n'existe côté
+  # application, et il ne doit jamais en exister, fût-il gardé par un profil.
+  mailpit:
+    image: axllent/mailpit:v1.21
+    environment:
+      # Boîte en mémoire, purgée à l'arrêt : aucune donnée personnelle ne persiste
+      # sur le poste après un `down`, et rien à sauvegarder.
+      MP_MAX_MESSAGES: "500"
+      MP_SMTP_AUTH_ACCEPT_ANY: "true"
+      MP_SMTP_AUTH_ALLOW_INSECURE: "true"
+    ports:
+      # 1025 = SMTP (le backend y écrit) ; 8025 = UI web (vous y lisez le code).
+      - "${MAILPIT_SMTP_PORT:-1025}:1025"
+      - "${MAILPIT_UI_PORT:-8025}:8025"
+    healthcheck:
+      # L'image est distroless : ni wget ni curl. Mailpit embarque sa propre sonde.
+      test: ["CMD", "/mailpit", "readyz"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
   backend:
     build:
       context: ../backend
     environment:
+      # Transport e-mail (Story 2.4). `smtp` ici parce que cette stack est le poste
+      # de développement : c'est ce qui rend l'inscription finissable dans l'IHM.
+      # Le défaut du code reste `outbox` — un déploiement qui ne dit rien ne livre rien.
+      ESCROW_MAIL_TRANSPORT: ${ESCROW_MAIL_TRANSPORT:-smtp}
+      SPRING_MAIL_HOST: mailpit
+      SPRING_MAIL_PORT: "1025"
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/escrow
       SPRING_DATASOURCE_USERNAME: escrow
       SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD manquant}
@@ -208,6 +247,11 @@ services:
       # a un start_period de 120 s — le premier `up` est donc plus long qu'avant,
       # et c'est le prix de l'absence d'interrupteur.
       clamav:
+        condition: service_healthy
+      # Pas fail-closed comme clamav : un transport muet n'échoue PAS l'inscription
+      # (contrat du port), la ligne d'outbox reste simplement non livrée. L'attente
+      # est là pour éviter que les premiers OTP de la session partent dans le vide.
+      mailpit:
         condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:8080/actuator/health | grep -q UP"]
