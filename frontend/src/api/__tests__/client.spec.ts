@@ -4,6 +4,8 @@ import apiClient, { TOKEN_STORAGE_KEY, resetSessionExpiryLatch } from '@/api/cli
 // `localStorage.setItem` en direct. Un test qui écrit à la main dans un substrat que la
 // production n'interroge plus vérifie une mécanique qui n'existe pas.
 import { readCredential, writeCredential } from '@/utils/credentialStorage'
+import { inFlightRequests, readLastActivity, stopIdleWatch } from '@/utils/idleTimeout'
+import type { AxiosResponse } from 'axios'
 
 /**
  * The response interceptor is the single discriminator between "this session is
@@ -40,6 +42,9 @@ beforeEach(() => {
   // defaut). Vider le seul localStorage laisserait fuir une session d'un test au suivant.
   sessionStorage.clear()
   resetSessionExpiryLatch()
+  // Le compteur de requêtes en vol est un état de MODULE : remis à zéro entre les tests,
+  // sans quoi un déséquilibre laissé par l'un se lirait comme un vol en cours chez l'autre.
+  stopIdleWatch()
   expired = vi.fn()
   window.addEventListener('escrow:session-expired', expired as EventListener)
 })
@@ -223,5 +228,69 @@ describe('client interceptor — a verdict is not an expiry', () => {
     await expect(apiClient.get('/api/v1/escrow')).rejects.toThrow()
 
     expect(expired).not.toHaveBeenCalled()
+  })
+})
+
+describe('client interceptor — une requête en vol est de l’activité (Story 2.7, AC2)', () => {
+  /**
+   * LE CÂBLAGE, et pas la fonction. `utils/idleTimeout` est prouvé par sa propre suite, et
+   * cette preuve reste intégralement verte si les intercepteurs cessent de l'alimenter.
+   * Or c'est ici — et uniquement ici — que l'expiration d'inactivité apprend qu'un
+   * versement de preuve de 10 Mo est en cours : sans ce câblage, la session mourrait au
+   * milieu du transfert, en silence.
+   */
+  function succeedWith(observe: () => void) {
+    apiClient.defaults.adapter = (config) => {
+      observe()
+      return Promise.resolve({
+        data: {},
+        status: 200,
+        statusText: 'OK',
+        headers: {},
+        config,
+      } as AxiosResponse)
+    }
+  }
+
+  it('compte la requête PENDANT son vol, et la décompte à son retour', async () => {
+    let pendantLeVol = -1
+    succeedWith(() => {
+      pendantLeVol = inFlightRequests()
+    })
+
+    await apiClient.get('/api/v1/escrow')
+
+    // Sans le premier, une minuterie naïve tuerait un dépôt lent ; sans le second, le
+    // compteur ne redescendrait jamais et la session ne pourrait plus JAMAIS expirer.
+    expect(pendantLeVol).toBe(1)
+    expect(inFlightRequests()).toBe(0)
+  })
+
+  it('décompte aussi une requête qui ÉCHOUE — hors ligne, elles échouent toutes', async () => {
+    failWith(new Error('network down'))
+
+    await expect(apiClient.get('/api/v1/escrow')).rejects.toThrow()
+
+    expect(inFlightRequests()).toBe(0)
+
+    // Contre-épreuve : le compteur fonctionne encore après cet échec, il n'est pas
+    // simplement resté à zéro parce que l'intercepteur ne le touche plus du tout.
+    let pendantLeVol = -1
+    succeedWith(() => {
+      pendantLeVol = inFlightRequests()
+    })
+    await apiClient.get('/api/v1/escrow')
+    expect(pendantLeVol).toBe(1)
+  })
+
+  it('horodate l’activité au passage — c’est ce que lit le contrôle au démarrage', async () => {
+    expect(readLastActivity()).toBeNull()
+
+    failWith(httpError(404, ''))
+    await expect(apiClient.get('/api/v1/escrow/999')).rejects.toThrow()
+
+    // La minuterie meurt avec l'onglet ; l'horodatage persisté, lui, est ce qui reste
+    // pour dire au démarrage suivant que quelque chose s'est passé ici.
+    expect(readLastActivity()).not.toBeNull()
   })
 })

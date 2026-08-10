@@ -2,7 +2,9 @@
 import { reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
+import { takeSessionNotice } from '@/stores/session'
 import { readPersistence, writePersistence } from '@/utils/credentialStorage'
+import { IDLE_TIMEOUT_MINUTES } from '@/utils/idleTimeout'
 
 const router = useRouter()
 const route = useRoute()
@@ -78,6 +80,23 @@ const form = reactive({
  */
 const rememberMe = ref(readPersistence() === 'local')
 
+/**
+ * Le motif de la fin de session précédente (Story 2.7, AC2 — UX-DR28 : motif ET action de
+ * reprise).
+ *
+ * <p>Lu UNE FOIS, à la construction, et la lecture l'efface. Un `computed` relisant le
+ * substrat le trouverait vide au premier recalcul et le message disparaîtrait tout seul ;
+ * un motif non consommé, à l'inverse, réapparaîtrait à chaque retour sur cet écran, y
+ * compris après une déconnexion volontaire, pour expliquer une expiration qui n'a pas eu
+ * lieu.
+ *
+ * <p>Le délai est INTERPOLÉ depuis la constante de production, jamais réécrit dans le
+ * catalogue : un « 15 » gravé dans deux traductions survivrait à l'ajustement du seuil et
+ * annoncerait un délai que la minuterie n'applique plus.
+ */
+const sessionNotice = ref(takeSessionNotice())
+const idleTimeoutMinutes = IDLE_TIMEOUT_MINUTES
+
 const submitting = ref(false)
 
 function setMode(next: 'login' | 'register') {
@@ -127,6 +146,19 @@ async function handleSubmit() {
         <h1 class="text-2xl font-bold text-gray-900">{{ $t('auth.brand') }}</h1>
         <p class="mt-1 text-sm text-gray-500">{{ $t('auth.tagline') }}</p>
       </div>
+
+      <!-- Story 2.7 (AC2) : la session ne disparaît pas sans explication.
+           `role="status"` — donc `aria-live="polite"` implicite — annonce le motif sans
+           voler le focus au champ d'adresse, qui est l'action de reprise. C'est l'idiome
+           déjà employé par `VerifyEmailView` ; on n'ouvre pas un second canal. -->
+      <p
+        v-if="sessionNotice === 'idle'"
+        role="status"
+        data-testid="session-idle-notice"
+        class="mb-6 rounded-lg bg-warning-surface px-3 py-2 text-sm text-warning"
+      >
+        {{ $t('auth.sessionIdleNotice', { minutes: idleTimeoutMinutes }) }}
+      </p>
 
       <div class="mb-6 flex rounded-lg bg-gray-100 p-1 text-sm font-medium">
         <button

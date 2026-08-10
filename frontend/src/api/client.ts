@@ -2,6 +2,7 @@ import axios from 'axios'
 import type { AxiosError } from 'axios'
 import { extractFailureReason, isBareAuthFailure } from '@/utils/replayFailure'
 import { readCredential } from '@/utils/credentialStorage'
+import { noteRequestSettled, noteRequestStarted } from '@/utils/idleTimeout'
 
 export const TOKEN_STORAGE_KEY = 'escrow_token'
 
@@ -18,6 +19,18 @@ const apiClient = axios.create({
 
 // Attach the JWT (if any) to every outgoing request.
 apiClient.interceptors.request.use((config) => {
+  // Story 2.7 (AC2) — UNE REQUÊTE QUI PART EST DE L'ACTIVITÉ, et une requête EN VOL
+  // aussi. C'est ici, et seulement ici, que l'expiration d'inactivité apprend qu'un
+  // versement de preuve de 10 Mo est en cours : l'utilisateur clique « déposer » puis
+  // attend, parfois plus longtemps que le délai lui-même, sans toucher ni clavier ni
+  // pointeur. Une minuterie nourrie des seuls événements d'entrée tuerait la session au
+  // milieu du transfert — en silence, et en détruisant précisément le travail que le
+  // refus de purger la file hors-ligne (décision Q2) existe pour protéger.
+  //
+  // `utils/idleTimeout` et non un store : ce fichier ne peut importer ni store ni
+  // routeur (cycle documenté plus bas), et le module d'inactivité ne connaît lui-même
+  // ni l'un ni l'autre.
+  noteRequestStarted()
   const token = readCredential(TOKEN_STORAGE_KEY)
   if (token) {
     config.headers = config.headers || {}
@@ -116,8 +129,18 @@ function envelopeWasParsed(error: AxiosError): boolean {
  * that `classifyReplayFailure` reads as transient and re-queues forever.
  */
 apiClient.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    noteRequestSettled()
+    return response
+  },
   (error: AxiosError) => {
+    // Décompté sur LES DEUX branches : un échec règle la requête aussi sûrement qu'un
+    // succès. Ne décompter que le succès ferait croître le compteur à chaque appel
+    // rejeté — hors ligne, c'est chaque appel — et la session ne pourrait plus jamais
+    // expirer. Axios enchaîne les intercepteurs de requête et de réponse dans la MÊME
+    // chaîne de promesses : même une requête rejetée avant l'envoi arrive ici, donc le
+    // compteur reste équilibré.
+    noteRequestSettled()
     if (
       typeof window !== 'undefined' &&
       !sessionExpiryAnnounced &&

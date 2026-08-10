@@ -35,7 +35,8 @@
     "consent": "I accept the terms of service and the privacy policy",
     "consentRequired": "Consent is required to create an account.",
     "companyRequired": "Company name is required.",
-    "rememberMe": "Keep me signed in on this device"
+    "rememberMe": "Keep me signed in on this device",
+    "sessionIdleNotice": "Your session ended after {minutes} minutes without activity. Sign in again to pick up where you left off."
   },
   "dashboard": {
     "createFailed": "Failed to create transaction.",

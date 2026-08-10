@@ -3,6 +3,14 @@ import { useEscrowStore } from './escrow'
 import { useEvidenceStore } from './evidence'
 import { useOfflineQueueStore } from './offlineQueue'
 import { resetSessionExpiryLatch } from '@/api/client'
+import { readCredential, removeCredential, writeCredential } from '@/utils/credentialStorage'
+import {
+  forgetActivity,
+  isIdleExpired,
+  markActivity,
+  readLastActivity,
+  startIdleWatch,
+} from '@/utils/idleTimeout'
 import * as idb from './offlineQueue.idb'
 import type { Router } from 'vue-router'
 
@@ -99,7 +107,60 @@ export async function purgeReadCache() {
  * the queue is left on the device, and a rejected revocation must not be the
  * reason the credentials stay in localStorage. Never rejects.
  */
-export type EndSessionReason = 'logout' | 'expired'
+export type EndSessionReason = 'logout' | 'expired' | 'idle'
+
+/**
+ * Les raisons RECONNUES, énumérées en un seul endroit — et c'est le correctif d'un défaut
+ * mécanique, pas une élégance.
+ *
+ * <p>Le test d'origine s'écrivait `!explicit && reason !== 'expired'`. La revue de la
+ * Story 1.9 avait déjà relevé qu'une condition écrite ainsi fait tomber toute raison
+ * NOUVELLE sur le chemin conservateur EN SILENCE ; la Story 2.7 ajoute `'idle'`, ce qui
+ * rouvrait le défaut par le bord opposé — `'idle'` aurait déclenché la plainte « raison
+ * inconnue » à chaque expiration d'inactivité, un diagnostic faux à chaque déclenchement
+ * normal. Une liste que le compilateur relit (`Set<EndSessionReason>`) rend les deux
+ * fautes impossibles : ajouter une raison à l'union sans l'ajouter ici ne compile pas
+ * différemment, mais l'oubli se voit à un seul endroit au lieu de deux conditions
+ * disséminées.
+ */
+const KNOWN_REASONS: ReadonlySet<string> = new Set<EndSessionReason>([
+  'logout',
+  'expired',
+  'idle',
+])
+
+/**
+ * Ce que la personne trouvera écrit sur l'écran d'authentification, et POURQUOI c'est
+ * persisté plutôt que passé en paramètre de route.
+ *
+ * <p>Les deux déclencheurs de l'AC2 n'arrivent pas par le même chemin. La minuterie
+ * navigue elle-même et pourrait porter le motif dans l'URL ; le contrôle au DÉMARRAGE,
+ * lui, s'exécute avant le montage de l'application, sur un onglet qui vient d'être rouvert
+ * — il n'y a ni navigation à décorer, ni mémoire vive à consulter. Un seul mécanisme, écrit
+ * dans le substrat, sert les deux : sans quoi le motif ne s'afficherait que dans le cas où
+ * l'utilisateur était déjà là pour le voir.
+ *
+ * <p>Dans le substrat du jeton, comme l'horodatage : une préférence d'appareil survivrait
+ * à la fermeture de l'onglet et accueillerait un inconnu avec le message destiné au
+ * partant.
+ */
+export const SESSION_NOTICE_STORAGE_KEY = 'escrow_session_notice'
+
+/** Le seul motif affiché à ce jour. Les autres fins de session n'en produisent pas. */
+export type SessionNotice = 'idle'
+
+/**
+ * Lit le motif ET l'efface — un seul appel, jamais deux.
+ *
+ * <p>La lecture destructrice est le contrat : un motif qui survivrait à son affichage
+ * réapparaîtrait à chaque retour sur l'écran d'authentification, y compris après une
+ * déconnexion volontaire, en expliquant une expiration qui n'a pas eu lieu.
+ */
+export function takeSessionNotice(): SessionNotice | null {
+  const raw = readCredential(SESSION_NOTICE_STORAGE_KEY)
+  removeCredential(SESSION_NOTICE_STORAGE_KEY)
+  return raw === 'idle' ? 'idle' : null
+}
 
 /**
  * `reason` est typé LARGE, et c'est le comportement documenté juste en dessous : « Two
@@ -115,17 +176,28 @@ export async function endSession({
   const auth = useAuthStore()
   const explicit = reason === 'logout'
 
-  // Two reasons and no third. An unrecognised one falls through to the RETAINING
-  // path, which is the safe direction — destroying a user's queued evidence
-  // because a mode was added and spelled wrong is not a recoverable mistake —
-  // but it is also the one that leaves data on a shared device, so it must not
-  // be silent. Logged rather than thrown: this runs from an event listener and
-  // the contract above says it never rejects.
-  if (!explicit && reason !== 'expired') {
+  // Three reasons and no fourth. An unrecognised one falls through to the
+  // RETAINING path, which is the safe direction — destroying a user's queued
+  // evidence because a mode was added and spelled wrong is not a recoverable
+  // mistake — but it is also the one that leaves data on a shared device, so it
+  // must not be silent. Logged rather than thrown: this runs from an event
+  // listener and the contract above says it never rejects.
+  if (typeof reason !== 'string' || !KNOWN_REASONS.has(reason)) {
     console.error(
       `[session] unknown end-of-session reason ${JSON.stringify(reason)}; keeping stored data (expiry semantics)`,
     )
   }
+
+  // ÉCRIT AVANT LA PURGE, pendant que le substrat actif est encore celui de la session qui
+  // s'achève. `auth.clearSession()` ne touche que le jeton et le profil, donc l'ordre est
+  // libre aujourd'hui — mais l'écrire ici le met du bon côté de la seule frontière qui
+  // compte dans ce fichier : tout ce qui est local se fait avant l'appel réseau.
+  //
+  // `'idle'` SEULEMENT. L'expiration par 403 nu (`'expired'`) garde le comportement muet
+  // que la Story 1.9 lui a donné : lui ajouter un motif serait un changement d'UX hors du
+  // périmètre de l'AC2, et une story qui élargit son AC en passant est une story dont
+  // personne n'a validé la moitié.
+  if (reason === 'idle') writeCredential(SESSION_NOTICE_STORAGE_KEY, 'idle')
 
   // Read BEFORE anything is cleared. `clearSession()` nulls `user`, and a purge
   // keyed on `undefined` would spare every one of this user's entries and take
@@ -146,6 +218,18 @@ export async function endSession({
     auth.clearSession()
   } catch (err) {
     console.error('[session] could not clear the stored credentials', err)
+  }
+
+  // L'horodatage d'inactivité part avec le jeton, QUELLE QUE SOIT la raison.
+  //
+  // Il décrit la session qui s'achève et rien d'autre. Laissé derrière, il serait lu par
+  // le contrôle au démarrage de la session SUIVANTE comme la fraîcheur de celle-ci : la
+  // personne d'après hériterait du compteur de la précédente — trop frais si elle vient
+  // de partir, périmé si elle est partie hier, et faux dans les deux cas.
+  try {
+    forgetActivity()
+  } catch (err) {
+    console.error('[session] could not clear the idle-activity stamp', err)
   }
 
   // `$reset()` and not a hand-written blanking: these stores gained
@@ -248,6 +332,18 @@ export async function beginSession(userId: string | number | null | undefined): 
     console.error('[session] could not re-arm the session-expiry latch', err)
   }
 
+  // Le compteur d'inactivité part D'ICI et pas de la première frappe : sans cet
+  // horodatage, une session fraîche n'a rien à mesurer, et le contrôle au démarrage la
+  // traiterait comme la session d'avant-hier dont l'horodatage s'est perdu. C'est aussi
+  // la SEULE remise à zéro liée à une connexion — le verrou `sessionExpiryAnnounced`
+  // ci-dessus reste, lui, abaissé par `beginSession` et par rien d'autre (`client.ts:30`) :
+  // la minuterie d'inactivité est un mécanisme DISTINCT et ne le touche jamais.
+  try {
+    markActivity()
+  } catch (err) {
+    console.error('[session] could not stamp the initial activity', err)
+  }
+
   // Belt to `endSession`'s braces, and not redundant with it. `endSession`
   // clears these stores on the way out, but a read issued just before it can
   // land just after: `escrow.loadTransactions` writes `this.transactions =
@@ -323,6 +419,114 @@ export async function beginSession(userId: string | number | null | undefined): 
 }
 
 /**
+ * La cible à rapporter sur l'écran d'authentification (UX-DR32).
+ *
+ * <p>Read before the teardown, not after: nothing below navigates, but the target is the
+ * one piece of state a teardown handler cannot reconstruct.
+ *
+ * <p>No target worth coming back to: already on the sign-in screen (where
+ * `auth?redirect=/auth` would be a small loop written into the URL), or on the dashboard,
+ * which is where the sign-in screen sends people anyway. The second exception mirrors
+ * `router/index.ts` on purpose — the places that build this URL must not disagree about
+ * what deserves a `redirect`. Ils sont désormais DEUX à l'appeler (expiration par 403 nu
+ * et expiration d'inactivité), ce qui est justement la raison de l'extraire : recopié,
+ * l'un des deux aurait fini par écrire `redirect=/`.
+ */
+function signInQuery(router: Router): { redirect?: string } {
+  const from = router.currentRoute?.value
+  const target = from?.name === 'auth' ? null : from?.fullPath
+  return !target || target === '/' ? {} : { redirect: target }
+}
+
+/**
+ * Same `try/catch`-per-effect rule as `endSession`, and here it is not decoration: the
+ * callers are async event listeners and timers, so a rejected navigation (a `beforeEach`
+ * that throws, a lazy route chunk that fails to load) would escape as an unhandled
+ * rejection. The teardown that precedes it has already happened, which is the part that
+ * must not be lost.
+ */
+async function returnToSignIn(router: Router, query: { redirect?: string }): Promise<void> {
+  try {
+    await router.replace({ name: 'auth', query })
+  } catch (err) {
+    console.error('[session] could not return to the sign-in screen', err)
+  }
+}
+
+/**
+ * Le contrôle AU DÉMARRAGE — celui qui attrape l'onglet rouvert (AC2).
+ *
+ * <p><b>Pourquoi la minuterie ne suffit pas, et pourquoi ce contrôle n'est pas une
+ * ceinture de plus.</b> Une minuterie ne vit que dans l'onglet qui la porte. Fermé
+ * l'onglet, la mesure disparaît avec lui : la personne qui rouvre l'application le
+ * lendemain sur un poste où « rester connecté » avait été coché n'a JAMAIS été inactive
+ * du point de vue d'une minuterie — celle-ci n'existait plus. Pire, le shell applicatif
+ * est précaché par le service worker (UX-DR46) : l'interface authentifiée s'affiche AVANT
+ * le premier appel API, donc avant même que le serveur ait pu refuser quoi que ce soit.
+ * Sans ce contrôle, la politique se contourne d'une simple réouverture.
+ *
+ * <p><b>Asynchrone, mais tout ce qui compte se fait AVANT le premier `await`.</b>
+ * `main.ts` ne l'attend pas — il ne peut pas, `app.mount()` n'attend rien. Il n'en a pas
+ * besoin : `endSession` vide les identifiants et les quatre stores de façon SYNCHRONE, et
+ * la sémantique `expired` la fait sortir avant le moindre `await`. Au retour de cet appel,
+ * la session est donc déjà morte et la garde du routeur enverra vers `/auth` à la première
+ * navigation. Cette propriété est load-bearing et elle est asservie par un test qui
+ * n'attend PAS la promesse.
+ *
+ * <p>Rend `true` si elle a mis fin à une session — pour que le fait soit observable
+ * autrement que par ses effets de bord.
+ */
+export async function enforceIdlePolicy(): Promise<boolean> {
+  const auth = useAuthStore()
+  // Personne n'est connecté : rien à expirer. Un horodatage traînant — laissé par un
+  // appel anonyme, le module d'inactivité ne connaissant aucune clé métier — ne doit pas
+  // se transformer en fin de session pour un visiteur qui n'en a pas.
+  if (!auth.isAuthenticated) return false
+
+  // Session sans horodatage : ouverte avant que cette story n'existe, ou horodatage
+  // perdu. L'absence n'établit PAS l'inactivité, et la lire ainsi déconnecterait tout le
+  // monde au déploiement pour un fait que personne n'a constaté. On l'horodate donc
+  // sur-le-champ : elle devient mesurable, au prix d'une seule fenêtre de 15 minutes, une
+  // seule fois. L'écart est nommé plutôt que coché.
+  if (readLastActivity() === null) {
+    markActivity()
+    return false
+  }
+
+  if (!isIdleExpired()) return false
+
+  await endSession({ reason: 'idle' })
+  return true
+}
+
+/**
+ * La minuterie d'inactivité, celle qui attrape l'onglet RESTÉ ouvert (AC2).
+ *
+ * <p>L'autre moitié du dispositif. Elle ne remplace pas le contrôle au démarrage et n'en
+ * est pas remplaçable : celui-ci ne s'exécute qu'une fois, au boot.
+ *
+ * <p>Le garde d'authentification est dans le gestionnaire et non dans la minuterie : la
+ * veille tourne pour la vie de l'onglet, y compris sur l'écran d'authentification, et une
+ * échéance atteinte là-bas ne doit produire ni purge ni navigation — seulement le tour
+ * suivant.
+ */
+export function installIdleTimeout(router: Router): () => void {
+  return startIdleWatch(() => {
+    // Volontairement non attendue : `startIdleWatch` appelle un rappel SYNCHRONE, et
+    // `endSession` ne rejette jamais — il n'y a donc rien à rattraper ici, et rien qui
+    // doive retarder le réarmement de la veille.
+    void expireForIdleTimeout(router)
+  })
+}
+
+async function expireForIdleTimeout(router: Router): Promise<void> {
+  if (!useAuthStore().isAuthenticated) return
+  const query = signInQuery(router)
+  await endSession({ reason: 'idle' })
+  await returnToSignIn(router, query)
+}
+
+/**
  * Turns the `escrow:session-expired` event raised by `api/client.js` into a
  * teardown and a trip back to the sign-in screen, with the user's target kept
  * (UX-DR32).
@@ -337,28 +541,9 @@ export function installSessionExpiryListener(router: Router): () => void {
   if (typeof window === 'undefined') return () => {}
 
   const onExpired = async () => {
-    // Read before the teardown, not after: nothing below navigates, but the
-    // target is the one piece of state this handler cannot reconstruct.
-    const from = router.currentRoute?.value
-    // No target worth coming back to: already on the sign-in screen (where
-    // `auth?redirect=/auth` would be a small loop written into the URL), or on
-    // the dashboard, which is where the sign-in screen sends people anyway. The
-    // second exception mirrors `router/index.js:50` on purpose — the two places
-    // that build this URL must not disagree about what deserves a `redirect`.
-    const target = from?.name === 'auth' ? null : from?.fullPath
-    const query = !target || target === '/' ? {} : { redirect: target }
-
+    const query = signInQuery(router)
     await endSession({ reason: 'expired' })
-    try {
-      await router.replace({ name: 'auth', query })
-    } catch (err) {
-      // Same `try/catch`-per-effect rule as `endSession`, and here it is not
-      // decoration: this is an async event listener, so a rejected navigation
-      // (a `beforeEach` that throws, a lazy route chunk that fails to load)
-      // would escape as an unhandled rejection. The teardown above has already
-      // happened, which is the part that must not be lost.
-      console.error('[session] could not return to the sign-in screen', err)
-    }
+    await returnToSignIn(router, query)
   }
 
   window.addEventListener('escrow:session-expired', onExpired)

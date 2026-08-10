@@ -35,7 +35,8 @@
     "consent": "J'accepte les conditions générales et la politique de confidentialité",
     "consentRequired": "Le consentement est obligatoire pour créer un compte.",
     "companyRequired": "La raison sociale est obligatoire.",
-    "rememberMe": "Rester connecté sur cet appareil"
+    "rememberMe": "Rester connecté sur cet appareil",
+    "sessionIdleNotice": "Votre session a pris fin après {minutes} minutes sans activité. Reconnectez-vous pour reprendre où vous en étiez."
   },
   "dashboard": {
     "createFailed": "La création de la transaction a échoué.",

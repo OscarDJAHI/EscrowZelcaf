@@ -135,14 +135,14 @@ Ne pas écrire « aucune donnée de A ne survit ». L'AC1 de la Story 1.9 disait
   - [x] Dans `AuthView.vue`, mode login uniquement. **Non cochée par défaut.** Clé i18n EN+FR, cible ≥ 44 px, focus visible (UX-DR38).
   - [x] ⚠️ **Ne pas fermer la porte de la Story 2.6** : le TOTP s'insérera **entre** la soumission et l'émission du jeton. Le choix doit être mémorisé **avant** d'avoir un jeton en main.
 
-- [ ] **T3 — Expiration d'inactivité** (AC: 2)
-  - [ ] **Délai = 15 minutes** (tranché par Oscard le 2026-08-10). **Constante nommée et exportée**, jamais un littéral recopié : un seuil présent à deux endroits diverge au premier ajustement, et le test doit lire la même constante que la production.
-  - [ ] Minuterie réarmée sur interaction + **contrôle au démarrage** (`main.ts`). Le contrôle au démarrage est ce qui attrape l'onglet rouvert — et le shell est **précaché** (UX-DR46), donc l'UI authentifiée s'affiche **avant tout appel API**.
-  - [ ] 🔴 **« Inactivité » ≠ « absence de clic ». Un versement de preuve en cours EST de l'activité.** Un dépôt de 10 Mo (`PlatformLimits`) sur une liaison de corridor lente peut dépasser 15 minutes **sans une seule interaction** : l'utilisateur clique « déposer » puis attend. Une minuterie naïve tuerait la session **au milieu du transfert** et détruirait exactement le travail que la décision Q2 protège. La preuve d'activité doit donc inclure **les requêtes en vol**, pas seulement les événements d'entrée. Couvrir ce cas par un test explicite — c'est le scénario le plus coûteux de la story s'il est manqué, et le plus silencieux.
-  - [ ] Horodatage de dernière activité persisté dans le même substrat que le jeton.
-  - [ ] Ajouter le mode `'idle'` à `EndSessionReason` (`session.ts:90`). **Traiter explicitement le mode inconnu** : la revue 1.9 a relevé que `explicit = reason === 'logout'` faisait tomber tout mode nouveau **en silence** sur le chemin conservateur (`spec-1-9:150`). Ajouter un mode rouvre ce défaut mécaniquement.
-  - [ ] Motif affiché : clé i18n EN+FR, **motif ET action de reprise** (UX-DR28), passé par le **canal d'annonces a11y centralisé** (convention Frontend du spine) — ne pas créer un second canal.
-  - [ ] ⚠️ **Ne pas réarmer le verrou `sessionExpiryAnnounced` par minuterie.** `client.ts:30-33` documente que seul `beginSession` l'abaisse. La minuterie d'inactivité est un mécanisme distinct.
+- [x] **T3 — Expiration d'inactivité** (AC: 2)
+  - [x] **Délai = 15 minutes** (tranché par Oscard le 2026-08-10). **Constante nommée et exportée**, jamais un littéral recopié : un seuil présent à deux endroits diverge au premier ajustement, et le test doit lire la même constante que la production.
+  - [x] Minuterie réarmée sur interaction + **contrôle au démarrage** (`main.ts`). Le contrôle au démarrage est ce qui attrape l'onglet rouvert — et le shell est **précaché** (UX-DR46), donc l'UI authentifiée s'affiche **avant tout appel API**.
+  - [x] 🔴 **« Inactivité » ≠ « absence de clic ». Un versement de preuve en cours EST de l'activité.** Un dépôt de 10 Mo (`PlatformLimits`) sur une liaison de corridor lente peut dépasser 15 minutes **sans une seule interaction** : l'utilisateur clique « déposer » puis attend. Une minuterie naïve tuerait la session **au milieu du transfert** et détruirait exactement le travail que la décision Q2 protège. La preuve d'activité doit donc inclure **les requêtes en vol**, pas seulement les événements d'entrée. Couvrir ce cas par un test explicite — c'est le scénario le plus coûteux de la story s'il est manqué, et le plus silencieux.
+  - [x] Horodatage de dernière activité persisté dans le même substrat que le jeton.
+  - [x] Ajouter le mode `'idle'` à `EndSessionReason` (`session.ts:90`). **Traiter explicitement le mode inconnu** : la revue 1.9 a relevé que `explicit = reason === 'logout'` faisait tomber tout mode nouveau **en silence** sur le chemin conservateur (`spec-1-9:150`). Ajouter un mode rouvre ce défaut mécaniquement.
+  - [x] Motif affiché : clé i18n EN+FR, **motif ET action de reprise** (UX-DR28), passé par le **canal d'annonces a11y centralisé** (convention Frontend du spine) — ne pas créer un second canal. → ⚠️ **contradiction remontée** : ce canal centralisé **n'existe pas** dans le code (voir Completion Notes). Idiome existant repris (`role="status"`), aucun second canal créé.
+  - [x] ⚠️ **Ne pas réarmer le verrou `sessionExpiryAnnounced` par minuterie.** `client.ts:30-33` documente que seul `beginSession` l'abaisse. La minuterie d'inactivité est un mécanisme distinct.
 
 - [ ] **T4 — Propagation inter-onglets** (AC: 3)
   - [ ] `BroadcastChannel('escrow-session')`, repli silencieux si absent.
@@ -335,6 +335,25 @@ claude-opus-5 (session interactive, workflow bmad-dev-story)
 
 Restauration vérifiée après chaque mutation : 12/12 verts. Fichier sauvegardé hors dépôt puis réécrit — **jamais** de `git checkout --` (leçon Story 2.1, un correctif détruit par ce geste).
 
+**T3 — mutations de vérification (2026-08-10), obligation AC7.** Dix mutations, chacune la plus proche possible du défaut d'origine ; pour chacune, la suite ENTIÈRE relancée et vérification que ce sont bien les tests visés qui rougissent. Base : 478 verts.
+
+| # | Mutation | Garde visée | Résultat |
+|---|---|---|---|
+| 1 | `void enforceIdlePolicy()` retiré de `main.ts` | le CÂBLAGE du contrôle au démarrage — la fonction reste prouvée, personne ne l'appelle | 🔴 **1 seul** rouge : `un onglet rouvert APRÈS le délai ne restaure aucune session` (477 verts) |
+| 2 | `isIdleExpired` compare à `IDLE_TIMEOUT_MS * 2` | le seuil lui-même. Muter la CONSTANTE serait indétectable — les tests la lisent ; c'est la COMPARAISON qu'il faut muter | 🔴 5 rouges, tous sur le seuil et le démarrage (469 verts) |
+| 2b | `IDLE_TIMEOUT_MINUTES = 60` | la valeur tranchée par le PO, que les tests lisant la constante ne peuvent pas garder | 🔴 **1 seul** rouge : `vaut 15 minutes, et les millisecondes en DÉRIVENT` |
+| 3 | garde `if (inFlight > 0)` retirée de `tick()` | 🔴 le scénario du versement de 10 Mo | 🔴 `un versement en vol tient la session vivante bien au-delà du délai` |
+| 3b | idem, après durcissement du test voisin | — | 🔴 **2** rouges (voir Completion Notes : la mutation a révélé une assertion CREUSE dans mon propre test) |
+| 4 | `installIdleTimeout(router)` retiré de `main.ts` | le câblage de la MINUTERIE, distinct de celui du démarrage | 🔴 **1 seul** rouge : `la minuterie est branchée elle aussi` |
+| 5 | `'idle'` retiré de `KNOWN_REASONS` | le piège de la revue 1.9 : un mode nouveau traité comme inconnu | 🔴 **1 seul** rouge : `« idle » est une raison RECONNUE` |
+| 6 | `explicit = reason === 'logout' \|\| reason === 'idle'` | **décision D-A / Q2** : l'inactivité ne purge NI la file hors-ligne NI le cache de lecture | 🔴 6 rouges, dont `LAISSE la file hors-ligne et le cache` |
+| 7 | `forgetActivity()` retiré d'`endSession` | l'horodatage ne doit pas survivre à la session qu'il décrit | 🔴 **1 seul** rouge : `efface l'horodatage d'inactivité` |
+| 8 | écriture du motif retirée d'`endSession` | AC2 « avec un motif affiché » + UX-DR28 | 🔴 5 rouges, sur la fin de session ET sur l'écran |
+| 9 | `noteRequestStarted()` retiré de l'intercepteur de requête | le CÂBLAGE du compteur : `utils/idleTimeout` reste vert sans lui | 🔴 2 rouges dans `client.spec.ts` |
+| 10 | `noteRequestSettled()` retiré de la branche d'ÉCHEC | hors ligne toutes les requêtes échouent : le compteur ne redescendrait jamais et la session ne pourrait plus jamais expirer | 🔴 **1 seul** rouge : `décompte aussi une requête qui ÉCHOUE` |
+
+Restauration après chaque mutation : fichier sauvegardé **hors du dépôt** puis réécrit, `diff` vérifié vide, suite relancée. **Jamais** de `git checkout --`. État final : **478/478 verts**.
+
 ### Completion Notes List
 
 **T0 — Lire avant d'écrire.** Les cinq fichiers du préalable lus intégralement. Deux avertissements « Story 2.7 réécrira ce fichier » trouvés en place (`session.ts:198-199`, `i18n/index.ts:36-38`) : la décision qu'ils protègent — `escrow_locale` n'est pas une donnée de session — est **conservée**, aucune clé de langue n'entre dans la purge.
@@ -366,4 +385,55 @@ Nouvelle suite `views/__tests__/rememberMe.spec.ts` (6 tests) : elle assère le 
 
 État : **445 tests verts** (427 au départ, +18), `vue-tsc --build` à 0 diagnostic, `npm run lint` propre, garde d'encodage verte.
 
+**T3 — Expiration d'inactivité.** Nouveau module `utils/idleTimeout.ts`, `IDLE_TIMEOUT_MINUTES = 15` comme constante SOURCE dont `IDLE_TIMEOUT_MS` dérive. Les deux déclencheurs de l'AC2 sont livrés et **prouvés séparément** : `enforceIdlePolicy()` appelée depuis `main.ts` avant `app.mount()`, et `installIdleTimeout(router)` qui pose la minuterie.
+
+Choix de conception non dictés par la story, et leurs motifs :
+
+- **Le module vit dans `utils/`, pas dans `stores/`.** Il est importé par `api/client.ts`, à qui le cycle `router → stores/auth → api/auth → api/client` interdit d'importer un store ou le routeur. `utils/` est la seule direction que `client.ts` emprunte déjà. Le module ne connaît donc ni `endSession` ni le routeur : **il mesure et il prévient, `session.ts` décide** — le même partage que `client.ts` / `session.ts` autour de `escrow:session-expired`.
+- **Les requêtes en vol sont comptées à l'ÉMISSION et décomptées au RÈGLEMENT, sur les deux branches.** Ne décompter que le succès aurait fait croître le compteur à chaque appel rejeté — hors ligne, c'est chaque appel — et **la session n'aurait plus jamais pu expirer**. Plancher à zéro sur le décompte : un compteur négatif rendrait `inFlight > 0` faux pendant les requêtes suivantes.
+- **La minuterie recalcule TOUJOURS depuis l'horodatage persisté**, jamais depuis sa seule échéance : un onglet réveillé après une mise en veille reçoit son `setTimeout` en retard, et une conclusion tirée de l'échéance seule serait fausse dans les deux sens.
+- **`startIdleWatch` n'horodate PAS à l'installation.** Sans cette précaution, l'ordre des deux lignes de `main.ts` devenait load-bearing : installée avant le contrôle au démarrage, la veille aurait rafraîchi l'horodatage que ce contrôle doit lire, et **l'onglet rouvert après une heure serait passé pour actif**. Une mesure qu'un réordonnancement innocent supprime n'est pas une mesure.
+- **Événements d'entrée DISCRETS (`pointerdown`, `keydown`), `mousemove`/`scroll` exclus** — des dizaines d'écritures par seconde dans le stockage, et une souris bousculée n'est pas une intention. **L'écart est nommé** : quelqu'un qui lirait un écran quinze minutes sans toucher clavier ni pointeur verrait sa session expirer. C'est le comportement voulu d'une politique d'appareil partagé, et tout appel API déclenché par l'écran réarme de toute façon le compteur.
+- **Horodatage ABSENT ≠ inactivité constatée.** `enforceIdlePolicy` horodate une session non horodatée au lieu de la terminer. La lecture inverse aurait déconnecté **tout le monde au déploiement** pour un fait que personne n'a établi. Écart nommé plutôt que coché : une session d'avant cette story bénéficie d'une seule fenêtre de 15 minutes, une seule fois. Horodatage **illisible** confondu avec absent, parce que `Number('n\'importe quoi')` ne lève pas — il rend `NaN`, qui se compare `false` à tout et aurait fait passer la session pour fraîche.
+- **Le motif est PERSISTÉ, pas passé en paramètre de route.** Les deux déclencheurs n'arrivent pas par le même chemin : la minuterie navigue elle-même, le contrôle au démarrage s'exécute **avant le montage**, sur un onglet qui vient d'être rouvert — ni navigation à décorer, ni mémoire vive à consulter. Un paramètre d'URL n'aurait servi que le cas où l'utilisateur était déjà là pour le voir. Lecture **destructrice** dans `AuthView` : un motif qui survit à son affichage réapparaît après une déconnexion volontaire pour expliquer une expiration qui n'a pas eu lieu.
+- **Le délai est INTERPOLÉ dans le message (`{minutes}`)**, jamais réécrit dans les deux catalogues : un « 15 » gravé en EN et en FR aurait survécu à l'ajustement du seuil et annoncé un délai que la minuterie n'applique plus.
+- **`endSession` efface l'horodatage QUELLE QUE SOIT la raison.** Laissé derrière, il serait lu par le contrôle au démarrage de la session **suivante** comme la fraîcheur de celle-ci.
+- **Le mode inconnu passe par un `Set<EndSessionReason>`** au lieu de conditions disséminées. La condition d'origine (`!explicit && reason !== 'expired'`) rouvrait le défaut de la revue 1.9 **par le bord opposé** : sans traitement, `'idle'` aurait produit la plainte « raison inconnue » à **chaque expiration normale** — un diagnostic faux à chaque déclenchement.
+- **`sessionExpiryAnnounced` n'est jamais touché par la minuterie.** Seul `beginSession` l'abaisse, comme `client.ts` le documente. `beginSession` gagne un `markActivity()`, et le commentaire dit explicitement que les deux mécanismes sont distincts.
+
+**Ce que j'ai trouvé et qui n'était pas prévu :**
+
+1. **⚠️ Le « canal d'annonces a11y centralisé » de T3 n'existe pas.** `grep -rn "aria-live" src` ne rend qu'une occurrence, locale à `VerifyEmailView.vue:148`. Aucun composant de région live partagé, aucun store d'annonces. J'ai donc repris **l'idiome existant** (`role="status"`, qui vaut `aria-live="polite"` implicite) plutôt que d'inventer le canal manquant — le créer aurait été une refonte a11y transverse hors du périmètre de T3, et l'instruction disait précisément de ne pas ouvrir un second canal. **À trancher hors de T3.**
+2. **⚠️ La garde anti-chaîne-en-dur ne scanne plus les modules.** `noHardcodedStrings.spec.ts:236` globe `**/*.{vue,js}` : après la migration TypeScript, le volet « prose dans le code » **ne lit plus aucun `.ts`**, et les six entrées de `PENDING_MIGRATION` (`stores/auth.js`, `utils/replayFailure.js`…) ne désignent plus aucun fichier existant. Le volet gabarit, lui, fonctionne toujours. Aucune entrée ajoutée à `PENDING_MIGRATION` comme demandé ; **la garde elle-même est à réparer** (ajouter `ts` au motif et traiter ce qu'elle révélera) — hors périmètre T3, dette à porter au ledger.
+3. **Une minuterie factice complète SUSPEND fake-indexeddb.** Deux tests ont expiré à 30 s sans diagnostic utile avant que la cause n'apparaisse : `vi.useFakeTimers()` fige aussi `setImmediate`/`setTimeout`, dont fake-indexeddb se sert pour ordonnancer ses transactions. Le patron retenu — et documenté dans les suites — est `toFake: ['Date']` quand seule l'horloge compte, `toFake: ['setTimeout','clearTimeout','Date']` quand il faut faire avancer l'échéance **et** lire IndexedDB, la panoplie complète seulement quand IndexedDB n'est pas touchée. `vi.advanceTimersByTimeAsync` remplace `vi.waitFor`, qui se bloque sous minuteries factices.
+4. **La passe de mutation a trouvé une assertion creuse dans mon propre test.** `l'horodatage persisté reste frais pendant le transfert` restait **vert** avec la garde des requêtes en vol retirée : le chemin « budget consommé » horodate lui aussi avant de prévenir, si bien que l'horodatage seul ne distingue pas les deux chemins. Seule la **notification** les sépare ; le test l'assère désormais et rougit (mutation 3b). C'est exactement le mode d'échec n° 1 des Dev Notes, rencontré à la première occasion.
+5. **Deux câblages étaient hors couverture et le sont maintenant.** `enforceIdlePolicy` et le compteur de requêtes étaient prouvés comme **fonctions** ; rien ne prouvait que `main.ts` appelle l'une ni que `client.ts` alimente l'autre. Deux suites de câblage ont été ajoutées (`src/__tests__/mainIdleStartup.spec.ts` amorce `main.ts` en vrai ; trois tests dans `client.spec.ts` pilotent la vraie instance axios) et les mutations 1, 4, 9 et 10 confirment qu'elles rougissent.
+
+État T3 : **478 tests verts** (445 au départ, **+33**), `vue-tsc --build` à 0 diagnostic, `npm run lint --max-warnings 0` propre, `python3 scripts/check-encoding.py` verte sur 1975 fichiers, `npm run verify:no-demo` verte.
+
 ### File List
+
+_Cumulée T1 → T3. Les tâches T4-T11 ne sont pas commencées._
+
+**Nouveaux — production**
+- `frontend/src/utils/credentialStorage.ts` (T1) — substrat commutable des identifiants
+- `frontend/src/utils/idleTimeout.ts` (T3) — mesure de l'inactivité, compteur de requêtes en vol, minuterie
+
+**Nouveaux — tests**
+- `frontend/src/utils/__tests__/credentialStorage.spec.ts` (T1)
+- `frontend/src/views/__tests__/rememberMe.spec.ts` (T2)
+- `frontend/src/utils/__tests__/idleTimeout.spec.ts` (T3) — seuil, minuterie, requêtes en vol
+- `frontend/src/stores/__tests__/sessionIdle.spec.ts` (T3) — sémantique `idle`, motif, `enforceIdlePolicy`, `installIdleTimeout`
+- `frontend/src/__tests__/mainIdleStartup.spec.ts` (T3) — **câblage** de `main.ts`, amorçage réel
+- `frontend/src/views/__tests__/sessionIdleNotice.spec.ts` (T3) — motif affiché, EN et FR
+
+**Modifiés**
+- `frontend/src/api/client.ts` (T1 : lecture par `readCredential` ; T3 : alimentation du compteur de requêtes en vol)
+- `frontend/src/api/__tests__/client.spec.ts` (T1 ; T3 : 3 tests de câblage du compteur)
+- `frontend/src/stores/auth.ts` (T1)
+- `frontend/src/stores/session.ts` (T1 : `LAST_USER_STORAGE_KEY` exportée ; T3 : mode `'idle'`, `KNOWN_REASONS`, motif persisté, `enforceIdlePolicy`, `installIdleTimeout`, extraction de `signInQuery`/`returnToSignIn`)
+- `frontend/src/main.ts` (T3 : contrôle au démarrage + minuterie, avant `app.mount()`)
+- `frontend/src/views/AuthView.vue` (T2 : case « rester connecté » ; T3 : motif d'expiration)
+- `frontend/src/i18n/en.json`, `frontend/src/i18n/fr.json` (T2 : `auth.rememberMe` ; T3 : `auth.sessionIdleNotice`)
+- `frontend/src/stores/__tests__/session.spec.ts`, `frontend/src/stores/__tests__/escrow.offline.spec.ts` (T1 : `sessionStorage.clear()` en `beforeEach`)
+- `_bmad-output/implementation-artifacts/sprint-status.yaml` (T1)
