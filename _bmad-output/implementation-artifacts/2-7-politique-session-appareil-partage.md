@@ -72,6 +72,8 @@ Aucune source amont ne tranchait les points suivants. Ils sont tranchés **ici**
 
 L'inactivité prend la sémantique **`expired`**. Motif : détruire la file offline parce que quelqu'un est parti déjeuner, c'est perdre du travail non envoyé — **AD-9 interdit la perte silencieuse de fichier**, et **UX-DR32 exige que la file survive à la ré-authentification**. L'hygiène d'appareil partagé est assurée par la mort du jeton et par le fait que la file est **scopée par utilisateur** (B ne peut pas rejouer les entrées de A). Ce qui protège, c'est le scoping, pas la destruction.
 
+> **CONFIRMÉ par Oscard le 2026-08-10** (question Q2, close). Décision normative, à ne pas rouvrir en développement ni en revue sans la reposer explicitement.
+
 Le nouveau mode s'appelle **`'idle'`** et non `'expired'` : il doit être distinguable pour afficher son propre motif (AC2), alors que `'expired'` reste le 403 nu.
 
 ### D-B — `BroadcastChannel` est obligatoire, l'écouteur `storage` ne suffit pas
@@ -130,7 +132,9 @@ Ne pas écrire « aucune donnée de A ne survit ». L'AC1 de la Story 1.9 disait
   - [ ] ⚠️ **Ne pas fermer la porte de la Story 2.6** : le TOTP s'insérera **entre** la soumission et l'émission du jeton. Le choix doit être mémorisé **avant** d'avoir un jeton en main.
 
 - [ ] **T3 — Expiration d'inactivité** (AC: 2)
+  - [ ] **Délai = 15 minutes** (tranché par Oscard le 2026-08-10). **Constante nommée et exportée**, jamais un littéral recopié : un seuil présent à deux endroits diverge au premier ajustement, et le test doit lire la même constante que la production.
   - [ ] Minuterie réarmée sur interaction + **contrôle au démarrage** (`main.ts`). Le contrôle au démarrage est ce qui attrape l'onglet rouvert — et le shell est **précaché** (UX-DR46), donc l'UI authentifiée s'affiche **avant tout appel API**.
+  - [ ] 🔴 **« Inactivité » ≠ « absence de clic ». Un versement de preuve en cours EST de l'activité.** Un dépôt de 10 Mo (`PlatformLimits`) sur une liaison de corridor lente peut dépasser 15 minutes **sans une seule interaction** : l'utilisateur clique « déposer » puis attend. Une minuterie naïve tuerait la session **au milieu du transfert** et détruirait exactement le travail que la décision Q2 protège. La preuve d'activité doit donc inclure **les requêtes en vol**, pas seulement les événements d'entrée. Couvrir ce cas par un test explicite — c'est le scénario le plus coûteux de la story s'il est manqué, et le plus silencieux.
   - [ ] Horodatage de dernière activité persisté dans le même substrat que le jeton.
   - [ ] Ajouter le mode `'idle'` à `EndSessionReason` (`session.ts:90`). **Traiter explicitement le mode inconnu** : la revue 1.9 a relevé que `explicit = reason === 'logout'` faisait tomber tout mode nouveau **en silence** sur le chemin conservateur (`spec-1-9:150`). Ajouter un mode rouvre ce défaut mécaniquement.
   - [ ] Motif affiché : clé i18n EN+FR, **motif ET action de reprise** (UX-DR28), passé par le **canal d'annonces a11y centralisé** (convention Frontend du spine) — ne pas créer un second canal.
@@ -298,16 +302,13 @@ Tests **nouveaux** : test de composant du bouton de déconnexion, test de câbla
 
 ---
 
-## Questions pour Oscard (à trancher avant ou pendant T3)
+## Décisions d'Oscard — 2026-08-10 (les trois questions sont closes)
 
-**Q1 ⚠️ — Quel délai d'inactivité ?**
-**Aucune valeur n'existe dans aucun artefact** — ni PRD, ni spine, ni UX, ni epics. Seul `ttl-seconds: 86400` est cité, comme constat de l'existant. C'est une décision produit. Sans réponse, le dev inventera un nombre et personne ne saura d'où il vient.
+**Q1 → DÉLAI D'INACTIVITÉ = 15 MINUTES.** Valeur normative de cette story. Elle n'existait dans aucun artefact amont ; elle vit désormais ici et doit être **une constante nommée et exportée**, pas un littéral dispersé — un seuil recopié à deux endroits diverge au premier ajustement.
 
-**Q2 ⚠️ — L'expiration d'inactivité purge-t-elle la file offline ?**
-La décision D-A ci-dessus retient **non** (sémantique `expired`) : détruire la file parce que quelqu'un est parti déjeuner, c'est perdre du travail non envoyé, et AD-9 interdit la perte silencieuse de fichier tandis qu'UX-DR32 fait survivre la file à la ré-authentification. L'hygiène est assurée par la mort du jeton et le scoping par utilisateur. **À confirmer** — l'argument inverse (l'appareil partagé justifie la purge complète) est recevable.
+**Q2 → CONFIRMÉ : l'expiration d'inactivité NE PURGE PAS la file offline.** La décision D-A tient telle qu'écrite : sémantique `expired`, mode nommé `'idle'`. L'hygiène d'appareil partagé vient de la mort du jeton et du scoping par utilisateur, pas de la destruction du travail non envoyé (AD-9, UX-DR32).
 
-**Q3 — Le TTL serveur de 24 h reste-t-il hors périmètre ?**
-`application.yml:77` porte `ttl-seconds: 86400`. La politique client le rend moins dangereux mais ne le change pas : un jeton volé reste valide 24 h côté serveur. Le préambule de la story le cite comme constat, aucune AC ne le touche. **Confirmé hors périmètre sauf avis contraire.**
+**Q3 → TTL serveur de 24 h HORS PÉRIMÈTRE.** `application.yml:77` conserve `ttl-seconds: 86400`. Aucune AC ne le touche. Conséquence à ne pas maquiller : **un jeton dérobé reste valide 24 h côté serveur** — la politique client réduit la surface d'exposition sur l'appareil, elle ne raccourcit pas la vie du jeton. À porter au ledger à la clôture de la story, comme dette nommée.
 
 ---
 
