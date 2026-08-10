@@ -53,8 +53,20 @@ export const READ_CACHE_NAME = 'escrow-api-cache'
  * a user their screen — makes it servable to whoever signs in *next* if they do
  * so offline. This marker turns "survives re-authentication" into "survives
  * re-authentication *by the same user*", which is what the sentence meant.
+ *
+ * <p>EXPORTÉE depuis la Story 2.7. Elle était `const` privée, et `session.spec.ts`
+ * redéclarait le littéral `'escrow_last_user'` en dur : un renommage en production aurait
+ * laissé ces assertions VERTES en interrogeant une clé que plus personne n'écrit. C'est la
+ * classe de test creux que la rétrospective de l'Epic 1 a érigée en règle, et les trois
+ * autres clés du dépôt (`TOKEN_STORAGE_KEY`, `USER_STORAGE_KEY`, `READ_CACHE_NAME`) sont
+ * déjà importées depuis leur module par les tests. Celle-ci manquait à l'appel.
+ *
+ * <p>Reste en `localStorage` et NON dans le substrat commutable : c'est un marqueur
+ * d'APPAREIL, pas un identifiant. Il doit survivre à la fermeture de l'onglet, sinon il ne
+ * répond plus à la question qu'il pose — « qui cet appareil a-t-il vu en dernier ? » — et
+ * le cache de lecture du précédent utilisateur ne serait plus jamais purgé.
  */
-const LAST_USER_STORAGE_KEY = 'escrow_last_user'
+export const LAST_USER_STORAGE_KEY = 'escrow_last_user'
 
 /**
  * Drops the 24 h of cached `/api/` responses the departing user leaves behind.

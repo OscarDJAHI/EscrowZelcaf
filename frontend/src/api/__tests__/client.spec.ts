@@ -1,5 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import apiClient, { TOKEN_STORAGE_KEY, resetSessionExpiryLatch } from '@/api/client'
+// Story 2.7 : la session se pose par les primitives de PRODUCTION, jamais par un
+// `localStorage.setItem` en direct. Un test qui écrit à la main dans un substrat que la
+// production n'interroge plus vérifie une mécanique qui n'existe pas.
+import { readCredential, writeCredential } from '@/utils/credentialStorage'
 
 /**
  * The response interceptor is the single discriminator between "this session is
@@ -32,6 +36,9 @@ let expired: ReturnType<typeof vi.fn>
 
 beforeEach(() => {
   localStorage.clear()
+  // Story 2.7 : le jeton vit desormais dans le substrat COMMUTABLE (sessionStorage par
+  // defaut). Vider le seul localStorage laisserait fuir une session d'un test au suivant.
+  sessionStorage.clear()
   resetSessionExpiryLatch()
   expired = vi.fn()
   window.addEventListener('escrow:session-expired', expired as EventListener)
@@ -45,7 +52,7 @@ afterEach(() => {
 
 describe('client interceptor — a dead session is announced exactly once', () => {
   it('announces a bare 403, the status this backend really answers on a revoked token', async () => {
-    localStorage.setItem(TOKEN_STORAGE_KEY, 'jwt-abc')
+    writeCredential(TOKEN_STORAGE_KEY, 'jwt-abc')
     failWith(httpError(403, ''))
 
     await expect(apiClient.get('/api/v1/escrow/42')).rejects.toThrow()
@@ -54,7 +61,7 @@ describe('client interceptor — a dead session is announced exactly once', () =
   })
 
   it('announces a bare 401 too — the day a real AuthenticationEntryPoint is configured', async () => {
-    localStorage.setItem(TOKEN_STORAGE_KEY, 'jwt-abc')
+    writeCredential(TOKEN_STORAGE_KEY, 'jwt-abc')
     failWith(httpError(401, ''))
 
     await expect(apiClient.get('/api/v1/escrow')).rejects.toThrow()
@@ -65,7 +72,7 @@ describe('client interceptor — a dead session is announced exactly once', () =
   it('announces once for a burst of three concurrent failures, not three times', async () => {
     // A screen loading three resources in parallel is the ordinary case, and
     // three teardowns would race three navigations against each other.
-    localStorage.setItem(TOKEN_STORAGE_KEY, 'jwt-abc')
+    writeCredential(TOKEN_STORAGE_KEY, 'jwt-abc')
     failWith(httpError(403, ''))
 
     await Promise.allSettled([
@@ -78,7 +85,7 @@ describe('client interceptor — a dead session is announced exactly once', () =
   })
 
   it('announces again once the latch is lowered — the next session must be protected too', async () => {
-    localStorage.setItem(TOKEN_STORAGE_KEY, 'jwt-abc')
+    writeCredential(TOKEN_STORAGE_KEY, 'jwt-abc')
     failWith(httpError(403, ''))
     await expect(apiClient.get('/api/v1/escrow')).rejects.toThrow()
 
@@ -91,7 +98,7 @@ describe('client interceptor — a dead session is announced exactly once', () =
   })
 
   it('always re-rejects, so the caller still sees its own failure', async () => {
-    localStorage.setItem(TOKEN_STORAGE_KEY, 'jwt-abc')
+    writeCredential(TOKEN_STORAGE_KEY, 'jwt-abc')
     const error = httpError(403, '')
     failWith(error)
 
@@ -101,7 +108,7 @@ describe('client interceptor — a dead session is announced exactly once', () =
 
 describe('client interceptor — a verdict is not an expiry', () => {
   it('says nothing on a coded 403 (NOT_A_PARTY): the view renders the refusal', async () => {
-    localStorage.setItem(TOKEN_STORAGE_KEY, 'jwt-abc')
+    writeCredential(TOKEN_STORAGE_KEY, 'jwt-abc')
     failWith(httpError(403, { code: 'NOT_A_PARTY', message: 'You are not a party' }))
 
     await expect(apiClient.get('/api/v1/escrow/42')).rejects.toThrow()
@@ -109,11 +116,11 @@ describe('client interceptor — a verdict is not an expiry', () => {
     expect(expired).not.toHaveBeenCalled()
     // And the credentials are untouched: this interceptor no longer writes to
     // localStorage at all, the teardown belonging to `stores/session.js`.
-    expect(localStorage.getItem(TOKEN_STORAGE_KEY)).toBe('jwt-abc')
+    expect(readCredential(TOKEN_STORAGE_KEY)).toBe('jwt-abc')
   })
 
   it('says nothing on a coded 401 (AUTH_FAILED): a wrong password keeps the form usable', async () => {
-    localStorage.setItem(TOKEN_STORAGE_KEY, 'jwt-abc')
+    writeCredential(TOKEN_STORAGE_KEY, 'jwt-abc')
     failWith(httpError(401, { code: 'AUTH_FAILED', message: 'Invalid credentials' }))
 
     await expect(apiClient.post('/api/v1/auth/login', {})).rejects.toThrow()
@@ -137,11 +144,11 @@ describe('client interceptor — a verdict is not an expiry', () => {
     // then tears down the *new* session and bounces a user who has just typed
     // their password. `api/auth.js` documents this hazard for `logoutUser` and
     // routes around this interceptor; every other call comes through here.
-    localStorage.setItem(TOKEN_STORAGE_KEY, 'jwt-old')
+    writeCredential(TOKEN_STORAGE_KEY, 'jwt-old')
     apiClient.defaults.adapter = (config) => {
       // Between the send and the failure: teardown, sign-in, new token — and
       // `beginSession()` lowering the latch, which is what leaves the door open.
-      localStorage.setItem(TOKEN_STORAGE_KEY, 'jwt-new')
+      writeCredential(TOKEN_STORAGE_KEY, 'jwt-new')
       resetSessionExpiryLatch()
       return Promise.reject(Object.assign(httpError(403, ''), { config }))
     }
@@ -149,7 +156,7 @@ describe('client interceptor — a verdict is not an expiry', () => {
     await expect(apiClient.get('/api/v1/escrow/42/evidence')).rejects.toThrow()
 
     expect(expired).not.toHaveBeenCalled()
-    expect(localStorage.getItem(TOKEN_STORAGE_KEY)).toBe('jwt-new')
+    expect(readCredential(TOKEN_STORAGE_KEY)).toBe('jwt-new')
   })
 
   it('still announces when the failing request carried the token stored now', async () => {
@@ -158,7 +165,7 @@ describe('client interceptor — a verdict is not an expiry', () => {
     // config axios hands back with the error. Asserted outright — were it to
     // stop being readable the guard would fail open, which is the safe
     // direction but would make the test above pass for the wrong reason.
-    localStorage.setItem(TOKEN_STORAGE_KEY, 'jwt-abc')
+    writeCredential(TOKEN_STORAGE_KEY, 'jwt-abc')
     let seen
     apiClient.defaults.adapter = (config) => {
       seen = config
@@ -179,7 +186,7 @@ describe('client interceptor — a verdict is not an expiry', () => {
     // an ordinary NOT_A_PARTY on a download into a sign-out, the one thing this
     // story's rules forbid outright. Driven through the real request so that the
     // `responseType` the guard reads is the one axios really puts on the config.
-    localStorage.setItem(TOKEN_STORAGE_KEY, 'jwt-abc')
+    writeCredential(TOKEN_STORAGE_KEY, 'jwt-abc')
     apiClient.defaults.adapter = (config) =>
       Promise.reject(Object.assign(httpError(403, new Blob(['{"code":"NOT_A_PARTY"}'])), { config }))
 
@@ -190,14 +197,14 @@ describe('client interceptor — a verdict is not an expiry', () => {
     expect(expired).not.toHaveBeenCalled()
     // And the session is left intact for the JSON call that will follow: a token
     // genuinely dead fails those too, so the teardown is deferred, never lost.
-    expect(localStorage.getItem(TOKEN_STORAGE_KEY)).toBe('jwt-abc')
+    expect(readCredential(TOKEN_STORAGE_KEY)).toBe('jwt-abc')
   })
 
   it('still announces on the same endpoint when the response was parsed as JSON', async () => {
     // The other half: the guard above must key on how the body was requested and
     // not on the URL, or a revoked token that first shows up on the evidence
     // screen would never be announced at all.
-    localStorage.setItem(TOKEN_STORAGE_KEY, 'jwt-abc')
+    writeCredential(TOKEN_STORAGE_KEY, 'jwt-abc')
     apiClient.defaults.adapter = (config) =>
       Promise.reject(Object.assign(httpError(403, ''), { config }))
 
@@ -207,7 +214,7 @@ describe('client interceptor — a verdict is not an expiry', () => {
   })
 
   it('says nothing on a bare 404 or on a network failure', async () => {
-    localStorage.setItem(TOKEN_STORAGE_KEY, 'jwt-abc')
+    writeCredential(TOKEN_STORAGE_KEY, 'jwt-abc')
 
     failWith(httpError(404, ''))
     await expect(apiClient.get('/api/v1/escrow/999')).rejects.toThrow()

@@ -1,6 +1,10 @@
+---
+baseline_commit: c4063040bab3eb3120720f3dd03cb600d2517cdf
+---
+
 # Story 2.7: Politique de session sur appareil partagé (NFR-P8)
 
-Status: ready-for-dev
+Status: in-progress
 
 <!-- Contexte créé le 2026-08-10. Faits vérifiés contre le code à cette date. -->
 
@@ -113,19 +117,19 @@ Ne pas écrire « aucune donnée de A ne survit ». L'AC1 de la Story 1.9 disait
 
 ## Tasks / Subtasks
 
-- [ ] **T0 — Lire avant d'écrire** (préalable bloquant)
-  - [ ] `frontend/src/stores/session.ts` en entier — il porte **deux avertissements « Story 2.7 réécrira ce fichier »** (`:198-199`) et ses commentaires sont *load-bearing*.
-  - [ ] `frontend/src/api/client.ts:19-26` (intercepteur requête), `:35` (verrou `sessionExpiryAnnounced`), `:61` (`concernsCurrentSession`), `:89` (`envelopeWasParsed`), `:111-126` (intercepteur réponse).
-  - [ ] `frontend/src/stores/auth.ts:32` (`loadStoredUser`), `:51` (state), `:63-68` (`persist`), `:181` (`clearSession`), **`:213-224`** (l'avertissement sur `logout()` — chemin hérité, aucun appelant de production).
-  - [ ] `frontend/src/stores/__tests__/session.spec.ts:243-293` — le test d'ordonnancement. **Le comprendre avant de toucher `endSession`.**
-  - [ ] `frontend/src/i18n/index.ts:22-56` — le patron de lecture résiliente du stockage (la simple LECTURE lève sous Safari « bloquer tous les cookies »).
+- [x] **T0 — Lire avant d'écrire** (préalable bloquant)
+  - [x] `frontend/src/stores/session.ts` en entier — il porte **deux avertissements « Story 2.7 réécrira ce fichier »** (`:198-199`) et ses commentaires sont *load-bearing*.
+  - [x] `frontend/src/api/client.ts:19-26` (intercepteur requête), `:35` (verrou `sessionExpiryAnnounced`), `:61` (`concernsCurrentSession`), `:89` (`envelopeWasParsed`), `:111-126` (intercepteur réponse).
+  - [x] `frontend/src/stores/auth.ts:32` (`loadStoredUser`), `:51` (state), `:63-68` (`persist`), `:181` (`clearSession`), **`:213-224`** (l'avertissement sur `logout()` — chemin hérité, aucun appelant de production).
+  - [x] `frontend/src/stores/__tests__/session.spec.ts:243-293` — le test d'ordonnancement. **Le comprendre avant de toucher `endSession`.**
+  - [x] `frontend/src/i18n/index.ts:22-56` — le patron de lecture résiliente du stockage (la simple LECTURE lève sous Safari « bloquer tous les cookies »).
 
-- [ ] **T1 — Substrat de stockage commutable** (AC: 1)
-  - [ ] Créer une indirection **unique** pour le jeton et le profil. Aujourd'hui **3 points de lecture** (`client.ts:20`, `client.ts:62`, `auth.ts:51`) et **2 d'écriture** (`auth.ts:64-65`) accèdent directement à `localStorage`. Aucun ne doit subsister.
-  - [ ] Le choix de substrat est lui-même persisté en `localStorage` (il doit survivre à la fermeture de l'onglet pour que « rester connecté » tienne au retour) sous une clé dédiée. **Il ne contient aucune donnée personnelle.**
-  - [ ] Reproduire la **résilience d'accès** de `i18n/index.ts` pour `sessionStorage` : l'accès à la propriété peut lever, pas seulement la méthode.
-  - [ ] ⚠️ **`client.ts:61` (`concernsCurrentSession`) est un correctif de la Story 1.9, pas un détail de lecture.** Il compare l'en-tête `Authorization` de la requête échouée au jeton **stocké**, pour empêcher un 401/403 nu **retardataire de la session précédente** de détruire la session **neuve** — et il **échoue ouvert**. Si la lecture ne suit pas le changement de substrat, ce correctif redevient inopérant en silence : la garde lira un stockage vide, ne reconnaîtra plus la session courante, et le défaut de 1.9 se rouvre **avec une suite verte**. Migrer cette lecture **et** vérifier par mutation que `client.spec.ts` rougit.
-  - [ ] **Exporter `LAST_USER_STORAGE_KEY`** depuis `session.ts:57` (aujourd'hui `const` privé) et remplacer le littéral dupliqué de `session.spec.ts:55`. Sans cela, un renommage laisserait les assertions vertes.
+- [x] **T1 — Substrat de stockage commutable** (AC: 1)
+  - [x] Créer une indirection **unique** pour le jeton et le profil. Aujourd'hui **3 points de lecture** (`client.ts:20`, `client.ts:62`, `auth.ts:51`) et **2 d'écriture** (`auth.ts:64-65`) accèdent directement à `localStorage`. Aucun ne doit subsister.
+  - [x] Le choix de substrat est lui-même persisté en `localStorage` (il doit survivre à la fermeture de l'onglet pour que « rester connecté » tienne au retour) sous une clé dédiée. **Il ne contient aucune donnée personnelle.**
+  - [x] Reproduire la **résilience d'accès** de `i18n/index.ts` pour `sessionStorage` : l'accès à la propriété peut lever, pas seulement la méthode.
+  - [x] ⚠️ **`client.ts:61` (`concernsCurrentSession`) est un correctif de la Story 1.9, pas un détail de lecture.** Il compare l'en-tête `Authorization` de la requête échouée au jeton **stocké**, pour empêcher un 401/403 nu **retardataire de la session précédente** de détruire la session **neuve** — et il **échoue ouvert**. Si la lecture ne suit pas le changement de substrat, ce correctif redevient inopérant en silence : la garde lira un stockage vide, ne reconnaîtra plus la session courante, et le défaut de 1.9 se rouvre **avec une suite verte**. Migrer cette lecture **et** vérifier par mutation que `client.spec.ts` rougit.
+  - [x] **Exporter `LAST_USER_STORAGE_KEY`** depuis `session.ts:57` (aujourd'hui `const` privé) et remplacer le littéral dupliqué de `session.spec.ts:55`. Sans cela, un renommage laisserait les assertions vertes.
 
 - [ ] **T2 — Case « rester connecté »** (AC: 1)
   - [ ] Dans `AuthView.vue`, mode login uniquement. **Non cochée par défaut.** Clé i18n EN+FR, cible ≥ 44 px, focus visible (UX-DR38).
@@ -316,8 +320,38 @@ Tests **nouveaux** : test de composant du bouton de déconnexion, test de câbla
 
 ### Agent Model Used
 
+claude-opus-5 (session interactive, workflow bmad-dev-story)
+
 ### Debug Log References
 
+**T1 — mutations de vérification (2026-08-10), obligation AC7 :**
+
+| Mutation | Garde visée | Résultat |
+|---|---|---|
+| `readCredential` retombe sur le substrat inactif quand le substrat actif est vide | l'AC1 (« aucune session n'est restaurée ») — un repli ressusciterait la session que la fermeture d'onglet doit tuer | 🔴 `ne lit QUE le substrat actif` **et lui seul** (1 échec / 11 verts) |
+| `removeCredential` ne purge que le substrat actif au lieu des deux | l'hygiène de purge — un identifiant abandonné dans le substrat inactif reste un identifiant sur l'appareil | 🔴 `retire la clé des DEUX substrats` **et lui seul** (1 échec / 11 verts) |
+
+Restauration vérifiée après chaque mutation : 12/12 verts. Fichier sauvegardé hors dépôt puis réécrit — **jamais** de `git checkout --` (leçon Story 2.1, un correctif détruit par ce geste).
+
 ### Completion Notes List
+
+**T0 — Lire avant d'écrire.** Les cinq fichiers du préalable lus intégralement. Deux avertissements « Story 2.7 réécrira ce fichier » trouvés en place (`session.ts:198-199`, `i18n/index.ts:36-38`) : la décision qu'ils protègent — `escrow_locale` n'est pas une donnée de session — est **conservée**, aucune clé de langue n'entre dans la purge.
+
+**T1 — Substrat de stockage commutable.** Nouveau module `utils/credentialStorage.ts`, seul point d'accès aux identifiants. Les **cinq** accès directs à `localStorage` recensés par la story sont migrés : `client.ts:20` (intercepteur de requête), `client.ts:62` (`concernsCurrentSession`), `auth.ts:32` (`loadStoredUser`), `auth.ts:51` (state du store), `auth.ts:64-68` (`persist`). Aucun accès direct ne subsiste sur ces clés.
+
+Choix de conception non dictés par la story, et leurs motifs :
+- **Le profil suit le jeton dans le même substrat.** Laisser `escrow_user` en `localStorage` pendant que le jeton meurt avec l'onglet fabriquerait l'état « incohérent » de l'AC5 **à chaque fermeture d'onglet** — un profil sans jeton — au lieu d'en faire un cas rare.
+- **La préférence vit en `localStorage`, obligatoirement.** En `sessionStorage` elle mourrait avec l'onglet : l'option « rester connecté » serait vraie pendant la session et fausse après. Elle ne porte aucune donnée personnelle et n'entre donc pas dans la purge.
+- **`writeCredential` vide l'autre substrat.** Sans ce second geste, un utilisateur ayant coché « rester connecté » puis un suivant ne l'ayant pas coché laisseraient un jeton abandonné, redevenu lisible à la première bascule de préférence.
+- **`removeCredential` purge les deux substrats**, délibérément asymétrique avec la lecture : elle s'exécute quand on ne veut plus rien laisser derrière soi.
+- **Valeur de préférence non reconnue → `session`.** La direction sûre est la persistance la plus courte.
+
+`LAST_USER_STORAGE_KEY` **exportée** (elle était `const` privée) et le littéral dupliqué de `session.spec.ts:55` remplacé par l'import : un renommage laissait ces assertions vertes en interrogeant une clé que plus personne n'écrit.
+
+**Trois suites ont dû être corrigées, et c'est le harnais qui avait tort, pas la production :**
+- `client.spec.ts` posait la session par `localStorage.setItem` en direct — un test qui écrit dans un substrat que la production n'interroge plus vérifie une mécanique qui n'existe pas. Migré vers `writeCredential`/`readCredential`.
+- `session.spec.ts` et `escrow.offline.spec.ts` faisaient `localStorage.clear()` en `beforeEach`. Ce geste ne vide plus le substrat des identifiants : deux tests « personne n'est connectée » trouvaient l'utilisateur du test précédent. `sessionStorage.clear()` ajouté à côté.
+
+État : **439 tests verts** (427 au départ, +12), `vue-tsc --build` à 0 diagnostic, `npm run lint` propre.
 
 ### File List

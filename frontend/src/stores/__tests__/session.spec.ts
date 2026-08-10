@@ -138,6 +138,11 @@ beforeEach(() => {
   globalThis.indexedDB = new IDBFactory()
   idb.resetDBForTests()
   localStorage.clear()
+  // Story 2.7 : le jeton et le profil vivent dans le substrat COMMUTABLE
+  // (sessionStorage par defaut). Vider le seul localStorage laisserait fuir une
+  // session d'un test au suivant, et les cas « personne n'est connecte » passeraient
+  // en trouvant l'utilisateur du test precedent.
+  sessionStorage.clear()
   setActivePinia(createPinia())
   vi.mocked(apiClient.request).mockReset()
   vi.mocked(apiClient.request).mockResolvedValue({ data: {} })

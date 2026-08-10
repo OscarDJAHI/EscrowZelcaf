@@ -1,6 +1,7 @@
 import axios from 'axios'
 import type { AxiosError } from 'axios'
 import { extractFailureReason, isBareAuthFailure } from '@/utils/replayFailure'
+import { readCredential } from '@/utils/credentialStorage'
 
 export const TOKEN_STORAGE_KEY = 'escrow_token'
 
@@ -17,7 +18,7 @@ const apiClient = axios.create({
 
 // Attach the JWT (if any) to every outgoing request.
 apiClient.interceptors.request.use((config) => {
-  const token = localStorage.getItem(TOKEN_STORAGE_KEY)
+  const token = readCredential(TOKEN_STORAGE_KEY)
   if (token) {
     config.headers = config.headers || {}
     config.headers.Authorization = `Bearer ${token}`
@@ -59,7 +60,13 @@ export function resetSessionExpiryLatch() {
  * an authenticated UI is the defect Story 1.6 made routine.
  */
 function concernsCurrentSession(error: AxiosError): boolean {
-  const currentToken = localStorage.getItem(TOKEN_STORAGE_KEY)
+  // Lue par `readCredential` et non plus par `localStorage` en direct (Story 2.7) : la
+  // comparaison doit interroger le substrat OÙ LE JETON VIT RÉELLEMENT. Restée sur
+  // `localStorage` après la bascule en `sessionStorage`, elle aurait lu un stockage vide,
+  // n'aurait plus jamais reconnu la session courante, et le correctif de la Story 1.9
+  // qu'elle porte — un 401/403 retardataire ne doit pas détruire la session SUIVANTE —
+  // serait redevenu inopérant en silence, avec une suite verte.
+  const currentToken = readCredential(TOKEN_STORAGE_KEY)
   if (!currentToken) return false
 
   const sent = error?.config?.headers?.Authorization

@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { loginUser, registerUser, logoutUser, verifyEmail, resendVerification } from '@/api/auth'
 import type { LoginPayload, RegisterPayload, VerifyEmailPayload } from '@/api/auth'
 import { TOKEN_STORAGE_KEY } from '@/api/client'
+import { readCredential, writeCredential, removeCredential } from '@/utils/credentialStorage'
 import { beginSession } from './session'
 import { apiErrorHeader, apiErrorMessage } from '@/utils/apiError'
 import type { Role, Session, User } from '@/types/domain'
@@ -29,7 +30,7 @@ export const USER_STORAGE_KEY = 'escrow_user'
  */
 function loadStoredUser(): User | null {
   try {
-    const raw = localStorage.getItem(USER_STORAGE_KEY)
+    const raw = readCredential(USER_STORAGE_KEY)
     if (!raw) return null
     const parsed: unknown = JSON.parse(raw)
     if (!parsed || typeof parsed !== 'object') return null
@@ -48,7 +49,7 @@ interface AuthState {
 
 export const useAuthStore = defineStore('auth', {
   state: (): AuthState => ({
-    token: localStorage.getItem(TOKEN_STORAGE_KEY) || null,
+    token: readCredential(TOKEN_STORAGE_KEY) || null,
     user: loadStoredUser(),
     loading: false,
     error: null,
@@ -60,12 +61,21 @@ export const useAuthStore = defineStore('auth', {
   },
 
   actions: {
+    /**
+     * Story 2.7 : passe par le substrat commutable, jamais par `localStorage` en direct.
+     *
+     * <p>Le profil suit le jeton dans le MÊME substrat, et ce n'est pas un détail
+     * d'implémentation : laisser `escrow_user` en `localStorage` pendant que le jeton
+     * meurt avec l'onglet donnerait à la personne suivante un profil sans jeton — l'état
+     * « incohérent » que l'AC5 existe justement pour traiter, fabriqué à chaque
+     * fermeture d'onglet.
+     */
     persist(): void {
-      if (this.token) localStorage.setItem(TOKEN_STORAGE_KEY, this.token)
-      else localStorage.removeItem(TOKEN_STORAGE_KEY)
+      if (this.token) writeCredential(TOKEN_STORAGE_KEY, this.token)
+      else removeCredential(TOKEN_STORAGE_KEY)
 
-      if (this.user) localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(this.user))
-      else localStorage.removeItem(USER_STORAGE_KEY)
+      if (this.user) writeCredential(USER_STORAGE_KEY, JSON.stringify(this.user))
+      else removeCredential(USER_STORAGE_KEY)
     },
 
     /**
