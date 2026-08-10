@@ -131,9 +131,9 @@ Ne pas écrire « aucune donnée de A ne survit ». L'AC1 de la Story 1.9 disait
   - [x] ⚠️ **`client.ts:61` (`concernsCurrentSession`) est un correctif de la Story 1.9, pas un détail de lecture.** Il compare l'en-tête `Authorization` de la requête échouée au jeton **stocké**, pour empêcher un 401/403 nu **retardataire de la session précédente** de détruire la session **neuve** — et il **échoue ouvert**. Si la lecture ne suit pas le changement de substrat, ce correctif redevient inopérant en silence : la garde lira un stockage vide, ne reconnaîtra plus la session courante, et le défaut de 1.9 se rouvre **avec une suite verte**. Migrer cette lecture **et** vérifier par mutation que `client.spec.ts` rougit.
   - [x] **Exporter `LAST_USER_STORAGE_KEY`** depuis `session.ts:57` (aujourd'hui `const` privé) et remplacer le littéral dupliqué de `session.spec.ts:55`. Sans cela, un renommage laisserait les assertions vertes.
 
-- [ ] **T2 — Case « rester connecté »** (AC: 1)
-  - [ ] Dans `AuthView.vue`, mode login uniquement. **Non cochée par défaut.** Clé i18n EN+FR, cible ≥ 44 px, focus visible (UX-DR38).
-  - [ ] ⚠️ **Ne pas fermer la porte de la Story 2.6** : le TOTP s'insérera **entre** la soumission et l'émission du jeton. Le choix doit être mémorisé **avant** d'avoir un jeton en main.
+- [x] **T2 — Case « rester connecté »** (AC: 1)
+  - [x] Dans `AuthView.vue`, mode login uniquement. **Non cochée par défaut.** Clé i18n EN+FR, cible ≥ 44 px, focus visible (UX-DR38).
+  - [x] ⚠️ **Ne pas fermer la porte de la Story 2.6** : le TOTP s'insérera **entre** la soumission et l'émission du jeton. Le choix doit être mémorisé **avant** d'avoir un jeton en main.
 
 - [ ] **T3 — Expiration d'inactivité** (AC: 2)
   - [ ] **Délai = 15 minutes** (tranché par Oscard le 2026-08-10). **Constante nommée et exportée**, jamais un littéral recopié : un seuil présent à deux endroits diverge au premier ajustement, et le test doit lire la même constante que la production.
@@ -331,6 +331,8 @@ claude-opus-5 (session interactive, workflow bmad-dev-story)
 | `readCredential` retombe sur le substrat inactif quand le substrat actif est vide | l'AC1 (« aucune session n'est restaurée ») — un repli ressusciterait la session que la fermeture d'onglet doit tuer | 🔴 `ne lit QUE le substrat actif` **et lui seul** (1 échec / 11 verts) |
 | `removeCredential` ne purge que le substrat actif au lieu des deux | l'hygiène de purge — un identifiant abandonné dans le substrat inactif reste un identifiant sur l'appareil | 🔴 `retire la clé des DEUX substrats` **et lui seul** (1 échec / 11 verts) |
 
+**T2 — mutation de vérification :** `writePersistence` déplacée APRÈS `auth.login` au lieu d'avant → **3 tests rouges sur 6**, dont celui qui porte nommément l'ordre. Restauré, 6/6.
+
 Restauration vérifiée après chaque mutation : 12/12 verts. Fichier sauvegardé hors dépôt puis réécrit — **jamais** de `git checkout --` (leçon Story 2.1, un correctif détruit par ce geste).
 
 ### Completion Notes List
@@ -352,6 +354,16 @@ Choix de conception non dictés par la story, et leurs motifs :
 - `client.spec.ts` posait la session par `localStorage.setItem` en direct — un test qui écrit dans un substrat que la production n'interroge plus vérifie une mécanique qui n'existe pas. Migré vers `writeCredential`/`readCredential`.
 - `session.spec.ts` et `escrow.offline.spec.ts` faisaient `localStorage.clear()` en `beforeEach`. Ce geste ne vide plus le substrat des identifiants : deux tests « personne n'est connectée » trouvaient l'utilisateur du test précédent. `sessionStorage.clear()` ajouté à côté.
 
-État : **439 tests verts** (427 au départ, +12), `vue-tsc --build` à 0 diagnostic, `npm run lint` propre.
+**T2 — Case « rester connecté ».** Ajoutée au formulaire de connexion, **décochée par défaut**, initialisée depuis la préférence déjà enregistrée. Clés i18n EN+FR. Cible tactile 44 px sur le libellé entier (UX-DR38).
+
+Deux choix et leurs motifs :
+- **Hors de `form`.** `form` est la charge envoyée au serveur ; ceci est une préférence d'appareil qui ne quitte jamais le navigateur. Les mélanger finirait par l'expédier dans un corps de requête.
+- **Absente en mode inscription.** L'inscription n'ouvre pas de session (Story 2.4 : c'est `verify` qui le fait) ; offrir le choix là promettrait un effet qui n'aurait pas lieu.
+
+**L'ordre est load-bearing** : `writePersistence` s'exécute AVANT `auth.login`. Après, le jeton partirait dans l'ancien substrat puis on déclarerait l'autre actif — jeton illisible, session en apparence ouverte, premier appel API sans en-tête, **et rien ne lèverait**.
+
+Nouvelle suite `views/__tests__/rememberMe.spec.ts` (6 tests) : elle assère le **substrat de destination du jeton**, pas la seule préférence enregistrée — une assertion sur la préférence passerait aussi bien si `login` écrivait toujours au même endroit. Un défaut du test lui-même a été trouvé et corrigé par le test : le helper ne cochait la case que pour `true` et ne la décochait jamais, si bien que le cas « décoché » sur un poste déjà en `local` vérifiait le contraire de son nom.
+
+État : **445 tests verts** (427 au départ, +18), `vue-tsc --build` à 0 diagnostic, `npm run lint` propre, garde d'encodage verte.
 
 ### File List

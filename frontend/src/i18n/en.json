@@ -34,7 +34,8 @@
     "companyName": "Company name",
     "consent": "I accept the terms of service and the privacy policy",
     "consentRequired": "Consent is required to create an account.",
-    "companyRequired": "Company name is required."
+    "companyRequired": "Company name is required.",
+    "rememberMe": "Keep me signed in on this device"
   },
   "dashboard": {
     "createFailed": "Failed to create transaction.",

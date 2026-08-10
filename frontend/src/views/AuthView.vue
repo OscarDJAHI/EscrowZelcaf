@@ -2,6 +2,7 @@
 import { reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
+import { readPersistence, writePersistence } from '@/utils/credentialStorage'
 
 const router = useRouter()
 const route = useRoute()
@@ -64,6 +65,19 @@ const form = reactive({
   consentAccepted: false,
 })
 
+/**
+ * « Rester connecté » (Story 2.7, AC1) — hors de `form` délibérément.
+ *
+ * <p>`form` est la charge envoyée au serveur ; ceci est une préférence d'APPAREIL qui ne
+ * quitte jamais le navigateur. Les mélanger finirait par l'expédier dans un corps de
+ * requête, où elle n'a rien à faire.
+ *
+ * <p>Initialisée depuis la préférence déjà enregistrée : l'utilisateur d'un poste personnel
+ * qui a coché la case une fois ne doit pas la re-cocher à chaque connexion, sinon l'option
+ * ne tient pas la promesse qui justifie son existence.
+ */
+const rememberMe = ref(readPersistence() === 'local')
+
 const submitting = ref(false)
 
 function setMode(next: 'login' | 'register') {
@@ -74,6 +88,11 @@ function setMode(next: 'login' | 'register') {
 async function handleSubmit() {
   submitting.value = true
   if (mode.value === 'login') {
+    // AVANT `auth.login`, impérativement : c'est `login` qui écrit le jeton, et il l'écrit
+    // dans le substrat que la préférence désigne AU MOMENT de l'écriture. Poser la
+    // préférence après enverrait le jeton dans l'ancien substrat, puis déclarerait l'autre
+    // actif — le jeton deviendrait illisible et la connexion échouerait sans erreur.
+    writePersistence(rememberMe.value ? 'local' : 'session')
     const ok = await auth.login({ email: form.email, password: form.password })
     submitting.value = false
     // `replace`, not `push`: the sign-in screen has no business in the history of
@@ -206,6 +225,26 @@ async function handleSubmit() {
             class="mt-1 min-h-[16px] min-w-[16px]"
           />
           <span>{{ $t('auth.consent') }}</span>
+        </label>
+
+        <!-- Story 2.7 (AC1) : DÉCOCHÉE par défaut, et c'est la décision D4 elle-même.
+             Décochée, le jeton vit en sessionStorage et meurt avec l'onglet — ce qui ferme
+             le mode de défaillance dominant de l'appareil partagé. Cochée, il passe en
+             localStorage pour un appareil personnel. La case ne s'affiche qu'en connexion :
+             l'inscription n'ouvre pas de session (c'est `verify` qui le fait, Story 2.4),
+             donc l'offrir là promettrait un choix sans effet.
+             `min-h-[44px]` : cible tactile de UX-DR38, sur le libellé entier. -->
+        <label
+          v-if="mode === 'login'"
+          class="flex min-h-[44px] items-center gap-2 text-sm text-gray-700"
+        >
+          <input
+            v-model="rememberMe"
+            type="checkbox"
+            data-testid="remember-me"
+            class="min-h-[16px] min-w-[16px]"
+          />
+          <span>{{ $t('auth.rememberMe') }}</span>
         </label>
 
         <p v-if="auth.error" class="text-sm text-red-600">{{ auth.error }}</p>
