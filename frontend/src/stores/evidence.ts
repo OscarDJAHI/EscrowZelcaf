@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { downloadEvidence, listEvidence, uploadEvidence, withdrawEvidence } from '@/api/evidence'
 import { saveBlob } from '@/utils/download'
 import { apiErrorMessage } from '@/utils/apiError'
+import { currentSessionEpoch } from './session'
 import type { EvidenceItem } from '@/types/domain'
 
 interface EvidenceState {
@@ -11,7 +12,19 @@ interface EvidenceState {
   uploading: boolean
   /** Which transaction `items` belongs to. `string | number` : l'id vient de la route. */
   loadedId: string | number | null
-  /** Request token guarding against out-of-order responses. */
+  /**
+   * Request token guarding against out-of-order responses.
+   *
+   * <p><b>Il reste, et il n'est PAS remplacé par l'époque de session</b> (Story 2.7,
+   * AC6). Les deux gardent des courses différentes : `loadSeq` garde les courses
+   * INTRA-session — deux `loadEvidence` concurrents, et surtout `withdrawEvidence` qui
+   * l'incrémente pour invalider une lecture en vol dont la réponse montrerait la pièce
+   * encore ACTIVE. L'époque garde les courses INTER-sessions, que `loadSeq` ne peut pas
+   * voir : vivant dans le `state()`, il est rembobiné à 0 par `$reset()`, si bien qu'une
+   * lecture de A partie avec `seq = 1` redevient égale au `loadSeq = 1` de la première
+   * lecture de B — et passe. L'époque rend ce rembobinage inoffensif ; elle ne le
+   * supprime pas, et supprimer `loadSeq` rouvrirait la course du retrait.
+   */
   loadSeq: number
 }
 
@@ -26,7 +39,17 @@ export const useEvidenceStore = defineStore('evidence', {
   }),
 
   actions: {
+    /**
+     * DEUX jetons de course, et chacun garde ce que l'autre ne voit pas.
+     *
+     * <p>`epoch` est capturée AVANT `loadSeq` sans que l'ordre compte — les deux lectures
+     * sont synchrones et décrivent le même instant d'émission. Ce qui compte est qu'elles
+     * soient relues ENSEMBLE aux trois sorties : une réponse d'une autre session est
+     * écartée même quand son `seq` coïncide, ce qui est exactement le cas que `$reset()`
+     * fabrique.
+     */
     async loadEvidence(id: string | number): Promise<void> {
+      const epoch = currentSessionEpoch()
       const seq = ++this.loadSeq
       // Switching transactions: drop the previous transaction's evidence
       // immediately so its documents are never shown under another one.
@@ -35,14 +58,18 @@ export const useEvidenceStore = defineStore('evidence', {
       this.error = null
       try {
         const data = await listEvidence(id)
+        // `epoch` en premier : une réponse d'une session révolue n'a même pas à être
+        // comparée au compteur d'une session qui n'est pas la sienne.
+        if (epoch !== currentSessionEpoch()) return
         if (seq !== this.loadSeq) return // a newer load superseded this one
         this.items = Array.isArray(data) ? data : []
         this.loadedId = id
       } catch (err) {
+        if (epoch !== currentSessionEpoch()) return
         if (seq !== this.loadSeq) return
         this.error = apiErrorMessage(err) || 'Unable to load the evidence for this transaction.'
       } finally {
-        if (seq === this.loadSeq) this.loading = false
+        if (epoch === currentSessionEpoch() && seq === this.loadSeq) this.loading = false
       }
     },
 

@@ -8,6 +8,7 @@ import {
 } from '@/api/escrow'
 import { useAuthStore } from './auth'
 import { useOfflineQueueStore } from './offlineQueue'
+import { currentSessionEpoch } from './session'
 import { apiErrorMessage } from '@/utils/apiError'
 import type { AuditLog, DisputeOpened, EscrowEventName, Transaction } from '@/types/domain'
 import type { CreateTransactionPayload } from '@/api/escrow'
@@ -68,6 +69,23 @@ export const useEscrowStore = defineStore('escrow', {
   }),
 
   actions: {
+    /**
+     * L'ÉPOQUE DE SESSION, capturée à l'émission et relue à la résolution (Story 2.7,
+     * AC6). Voir `stores/session.ts` pour ce qu'elle est et ce qu'elle ne couvre pas.
+     *
+     * <p>C'est ici que le défaut vivait : `this.transactions = await fetchTransactions()`
+     * n'avait AUCUNE garde de session. La liste de A, émise juste avant sa déconnexion,
+     * s'installait dans le store de B et y restait le temps que la lecture de B aboutisse
+     * — l'horodatage `issuedAt` ajouté depuis date la réponse mais ne compare aucune
+     * session, et n'a jamais rien empêché.
+     *
+     * <p>La comparaison porte sur les TROIS sorties — succès, échec, `finally` — et pas
+     * seulement sur l'écriture des données. Un `error` écrit par la lecture de A afficherait
+     * à B un message d'erreur pour une requête qui n'est pas la sienne ; un `loading = false`
+     * poserait la main sur un store que `$reset()` vient de rendre neuf. Même forme que la
+     * garde `loadSeq` d'`evidence.ts`, délibérément : deux gardes qui se lisent pareil se
+     * relisent pareil.
+     */
     async loadTransactions(): Promise<void> {
       this.loading = true
       this.error = null
@@ -79,15 +97,19 @@ export const useEscrowStore = defineStore('escrow', {
       // out of order stay coherent — the older response overwrites with its own
       // older stamp, so a reader degrades to "unknown" instead of being lied to.
       const issuedAt = new Date().toISOString()
+      const epoch = currentSessionEpoch()
       try {
-        this.transactions = await fetchTransactions()
+        const data = await fetchTransactions()
+        if (epoch !== currentSessionEpoch()) return
+        this.transactions = data
         this.transactionsFetchedAt = issuedAt
       } catch (err) {
+        if (epoch !== currentSessionEpoch()) return
         // Stamp untouched on failure: the previous data is still on screen, so
         // the stamp that describes it must stay.
         this.error = apiErrorMessage(err) || 'Unable to load your transactions.'
       } finally {
-        this.loading = false
+        if (epoch === currentSessionEpoch()) this.loading = false
       }
     },
 
@@ -138,22 +160,39 @@ export const useEscrowStore = defineStore('escrow', {
         return optimistic
       }
 
+      // ÉCART NOMMÉ, PAS COCHÉ (Story 2.7, AC6) : cet `unshift` n'est PAS gardé par
+      // l'époque. L'AC6 parle des réponses de LECTURE, et celle-ci est la réponse à une
+      // écriture — la transaction existe bel et bien côté serveur, si bien que l'écarter
+      // en silence est une décision produit et non une extension mécanique de la garde
+      // (personne ne la verrait avant le prochain rechargement). Le fait est écrit
+      // plutôt que corrigé de mon propre chef : à trancher avec le PO.
+      //
+      // Les deux AUTRES chemins d'écriture de ce store n'ont, eux, besoin de rien, et
+      // c'est vérifié et non supposé : `sendTransactionEvent` et `openDispute` écrivent
+      // via `findIndex(...)` sur `this.transactions` et via `this.currentDetail?.…`.
+      // Après un `$reset()`, la liste est vide — l'index vaut -1 — et `currentDetail` est
+      // nul : leurs écritures sont structurellement sans effet sur le store d'autrui.
       const created = await createTransaction(payload)
       this.transactions.unshift(created)
       return created
     },
 
+    /** Même garde d'époque que `loadTransactions`, et pour la même raison (AC6). */
     async loadTransactionDetail(id: string | number): Promise<void> {
       this.loading = true
       this.error = null
       const issuedAt = new Date().toISOString() // before the call — see `loadTransactions`
+      const epoch = currentSessionEpoch()
       try {
-        this.currentDetail = await fetchTransactionDetail(id)
+        const detail = await fetchTransactionDetail(id)
+        if (epoch !== currentSessionEpoch()) return
+        this.currentDetail = detail
         this.currentDetailFetchedAt = issuedAt
       } catch (err) {
+        if (epoch !== currentSessionEpoch()) return
         this.error = apiErrorMessage(err) || 'Unable to load this transaction.'
       } finally {
-        this.loading = false
+        if (epoch === currentSessionEpoch()) this.loading = false
       }
     },
 

@@ -178,11 +178,12 @@ Ne pas écrire « aucune donnée de A ne survit ». L'AC1 de la Story 1.9 disait
   - [x] Le **routeur a déjà** une branche « session incohérente » (2-3, `router/index.ts:181`). **La file offline ne l'a pas** : `init()`/`hydrate()` lisent `user?.id == null` comme « pas de session », et chaque mise en file estampille `userId: undefined` → entrées orphelines. → `init()` ne prétend plus avoir lu la file, `enqueue()` refuse plutôt que de fabriquer une orpheline. Branche du routeur **non réécrite**, et la raison est écrite sur place.
   - [x] ⚠️ La 2-4 introduit un **quatrième** état — compte non vérifié. La logique de démarrage doit l'accueillir sans réécriture. → repère explicite dans `sessionState`, branches nommées (jamais `!== 'active'`) dans `init()`.
 
-- [ ] **T7 — Époque de session** (AC: 6)
-  - [ ] Compteur monotone porté par `session.ts`, capturé à l'émission, comparé à la résolution. `grep "epoch\|sessionEpoch" frontend/src/stores/session.ts` → **0** aujourd'hui.
-  - [ ] Câbler sur `stores/escrow.ts:83` (`this.transactions = await fetchTransactions()` — **aucune garde de session**, seulement un `issuedAt` horodaté).
-  - [ ] `evidence.ts:25` : `loadSeq: 0` dans le `state()`, donc `$reset()` le rembobine (appelé en `session.ts:149` et `:256`). L'époque doit rendre ce rembobinage inoffensif — **ne pas supprimer `loadSeq`**, il protège aussi des courses intra-session (`withdrawEvidence` l'incrémente en `:89`).
-  - [ ] ⚠️ **L'époque est une garde client complémentaire, jamais un substitut d'AD-3.** L'autorisation reste serveur.
+- [x] **T7 — Époque de session** (AC: 6)
+  - [x] Compteur monotone porté par `session.ts`, capturé à l'émission, comparé à la résolution. → `sessionEpoch` au module (jamais dans un `state()`, qu'un `$reset()` rembobinerait), `currentSessionEpoch()` exportée, `turnSessionEpoch()` privée.
+  - [x] Câbler sur `stores/escrow.ts` (`this.transactions = await fetchTransactions()` — **aucune garde de session**, seulement un `issuedAt` horodaté). → `loadTransactions` **et** `loadTransactionDetail`, sur les TROIS sorties (succès, échec, `finally`).
+  - [x] `evidence.ts` : `loadSeq: 0` dans le `state()`, donc `$reset()` le rembobine. L'époque doit rendre ce rembobinage inoffensif — **ne pas supprimer `loadSeq`**. → `loadSeq` **conservé et désormais testé** (il n'avait aucun test) ; l'époque s'ajoute devant lui sur les trois sorties.
+  - [x] ⚠️ **L'époque est une garde client complémentaire, jamais un substitut d'AD-3.** L'autorisation reste serveur. → écrit dans le module ; aucune décision d'autorisation n'est déplacée vers le client.
+  - [x] Écart D-E **nommé et non coché** : le chemin service worker (E9) n'est pas couvert, écrit dans `session.ts` et dans l'en-tête de `sessionEpoch.spec.ts`.
 
 - [ ] **T8 — Bouton de déconnexion dans les shells** (AC: 3, 7 — voir D-C)
   - [ ] Migrer de `DashboardView.vue:101-106` vers `ClientShell.vue` et `DesktopShell.vue`.
@@ -332,6 +333,22 @@ Tests **nouveaux** : test de composant du bouton de déconnexion, test de câbla
 
 ---
 
+## Change Log
+
+> **Créé rétroactivement le 2026-08-11**, à la demande du PO. La définition de terminé du workflow exige cette section ; elle manquait depuis l'ouverture de la story, et les sept premières tâches ont donc été reconstituées depuis `git log --oneline`. Une ligne par tâche livrée ; les commits qui ne livrent pas de tâche (décisions de spécification, entrées de registre, suivi de sprint) sont rattachés à la tâche qu'ils servent plutôt que d'occuper une ligne à eux.
+
+| Date | Tâche | Résumé | Commit |
+|---|---|---|---|
+| 2026-08-10 | T0 | Lecture préalable des cinq fichiers bloquants (`session.ts`, `client.ts`, `auth.ts`, le test d'ordonnancement, `i18n/index.ts`). Aucun artefact de code : la tâche est une condition d'entrée, consignée avec T1. Contexte et décisions Q1/Q2/Q3 tranchés en amont. | `c406304` |
+| 2026-08-10 | T1 | Substrat de stockage commutable (`utils/credentialStorage.ts`) : les 5 accès directs à `localStorage` migrés, `LAST_USER_STORAGE_KEY` exportée, `concernsCurrentSession` suivie. | `8ba7cb9` |
+| 2026-08-10 | T2 | Case « rester connecté » dans `AuthView`, décochée par défaut, écrite AVANT `auth.login` — l'ordre est load-bearing. | `e9762f6` |
+| 2026-08-10 | T3 | Expiration d'inactivité : `utils/idleTimeout.ts`, `IDLE_TIMEOUT_MINUTES = 15`, minuterie **et** contrôle au démarrage, requêtes en vol comptées comme activité, mode `'idle'`, motif persisté. Deux dettes portées au registre (`ebf2ef2`). | `31b9749` |
+| 2026-08-11 | T4 | Propagation inter-onglets : `utils/sessionBroadcast.ts`, `BroadcastChannel('escrow-session')`, règle d'autorité (émetteur unique de la révocation), repli silencieux. | `19fd712` |
+| 2026-08-11 | T4-bis | Veto du récepteur sur `'idle'` (décision D-F, `46969ee`) : un onglet qui n'est pas lui-même inactif ignore l'annonce. Veto borné à `'idle'`. | `44a40b2` |
+| 2026-08-11 | T5 | Attente bornée sur la révocation : `REVOCATION_WAIT_SECONDS = 3`, `withBudget` sur le seul `await`. `api/auth.ts` inchangé (NEVER 1.9) et désormais asservi. Attente dite à l'écran. | `5e1fdb2` |
+| 2026-08-11 | T6 | Les trois états du jeton (AC5) : `SessionState`, getter `sessionState`, la file hors-ligne ne confond plus « jeton + profil illisible » avec « personne n'est connecté ». Jeton **non** effacé, motif écrit. | `dd66226` |
+| 2026-08-11 | T7 | Époque de session (AC6) : compteur monotone au module, tourné aux deux bouts, comparé à la résolution des trois actions de lecture. `loadSeq` conservé et enfin testé. Écart service worker (D-E) nommé. | _renseigné par le commit suivant : un hash n'existe pas avant son commit_ |
+
 ## Dev Agent Record
 
 ### Agent Model Used
@@ -425,6 +442,24 @@ Restauration après chaque mutation : `session.ts`, `api/auth.ts` et `DashboardV
 Les deux remutations confirment que la garde neuve ne creuse aucune des deux : elle ne se déclenche pas dans l'état `'anonymous'`, qui est celui de ces tests-là.
 
 Restauration après chaque mutation : `stores/auth.ts`, `stores/offlineQueue.ts` et `stores/escrow.ts` sauvegardés **hors du dépôt** puis réécrits, `diff` vérifié **vide**. **Jamais** de `git checkout --`. État final : **512/512 verts**.
+
+**T7 — mutations de vérification (2026-08-11), obligation AC7.** Huit mutations sur trois fichiers de production, plus **trois REMUTATIONS de gardes voisines déjà prouvées**. Base : 527 verts (après les deux tests ajoutés par la passe elle-même, voir ci-dessous).
+
+| # | Mutation | Garde visée | Résultat |
+|---|---|---|---|
+| 1 | `turnSessionEpoch()` retiré d'`endSession` | le tour de FIN de session | 🔴 **3** rouges, dont `ne laisse pas la réponse de A repeupler le store APRÈS sa déconnexion` |
+| 2 | `turnSessionEpoch()` retiré de `beginSession` | le tour de DÉBUT — le seul qui attrape une session commencée SANS qu'aucune ne se termine (branche « session incohérente » du routeur, `auth.verify`) | 🔴 **3** rouges, dont `rejette la LISTE de A quand B se connecte SANS qu'aucune session ne se soit terminée` |
+| 3 | `turnSessionEpoch()` fait `sessionEpoch = 0` | **la MONOTONIE** — le rembobinage de `loadSeq` reproduit dans son propre correctif | 🔴 **11** rouges, la quasi-totalité de T7 (voir Completion Notes pour le seul survivant, et pourquoi) |
+| 4 | garde d'époque retirée de la branche SUCCÈS de `loadTransactions` | le défaut d'origine, à la ligne près (`this.transactions = await fetchTransactions()`) | 🔴 **3** rouges, tous sur la liste |
+| 5 | idem, branche SUCCÈS de `loadTransactionDetail` | le second point d'écriture d'escrow | 🔴 **1 seul** rouge : `rejette le DÉTAIL de A` |
+| 6 | garde retirée de la branche ÉCHEC des lectures d'escrow | le message d'erreur d'une requête qui n'est pas la sienne | 🔴 **1 seul** rouge : `n'affiche pas à B le message d'erreur d'une lecture émise par A` |
+| 7 | garde retirée du `finally` (`this.loading = false` inconditionnel) | le voile de chargement de B éteint par la réponse de A | 🔴 **1 seul** rouge : `ne laisse pas la réponse de A éteindre le drapeau de chargement de B` |
+| 8 | garde d'époque retirée de `loadEvidence`, **`loadSeq` laissé en place** | **LA mutation la plus proche du défaut** : c'est exactement l'état d'avant T7 | 🔴 **1 seul** rouge : `rejette une réponse de A dont le seq COÏNCIDE avec la première lecture de B` — la preuve que `loadSeq` seul ne l'attrape pas |
+| N1 | **remutation voisine** — garde `loadSeq` retirée de `loadEvidence`, devant laquelle ma garde d'époque est désormais placée | les courses INTRA-session de l'Epic 4 | 🔴 **2** rouges : lecture la plus récente + invalidation par le retrait |
+| N2 | **remutation voisine** — révocation serveur déplacée DEVANT les purges persistées d'`endSession`, fonction que T7 modifie | la garde de la Story 1.9 / T5, cassée deux fois en 1.9 | 🔴 `empties the device BEFORE waiting on the network, not after it` **rougit toujours** (+ 3 rouges de la borne) |
+| N3 | **remutation voisine** — `forgetActivity()` retiré d'`endSession` | la garde de T3 (mutation 7), dans la même fonction | 🔴 **1 seul** rouge : `efface l'horodatage d'inactivité` — **inchangé** |
+
+Restauration après chaque mutation : `stores/session.ts`, `stores/escrow.ts` et `stores/evidence.ts` sauvegardés **hors du dépôt** puis réécrits, `diff` vérifié **vide** avant chaque nouvelle mutation et à la fin. **Jamais** de `git checkout --`. État final : **527/527 verts**.
 
 ### Completion Notes List
 
@@ -588,9 +623,34 @@ Choix de conception non dictés par la story, et leurs motifs :
 
 État T6 : **512 tests verts** (505 au départ, **+7**), `vue-tsc --build` à 0 diagnostic, `npm run lint --max-warnings 0` propre, `python3 scripts/check-encoding.py` verte, `npm run verify:no-demo` verte.
 
+**T7 — Époque de session.** Un compteur monotone `sessionEpoch` porté par `stores/session.ts`, tourné aux DEUX bouts d'une session, capturé à l'émission de chaque lecture et relu à sa résolution — dans `escrow.loadTransactions`, `escrow.loadTransactionDetail` et `evidence.loadEvidence`.
+
+Choix de conception non dictés par la story, et leurs motifs :
+
+- **L'époque vit AU MODULE, jamais dans un `state()`.** C'est le point entier. Une époque rangée dans un store serait rembobinée par `$reset()` — c'est-à-dire le défaut de `loadSeq` reproduit à l'identique dans son propre correctif. `session.ts` est de surcroît le seul fichier qui sache quand une session commence et quand elle finit ; l'invariant y tient en une phrase, écrite sur place : **tout `$reset()` qui rembobine `loadSeq` est précédé d'un tour d'époque**, et il y en a exactement deux.
+- **`currentSessionEpoch` est une DÉCLARATION de fonction, pas une `const` fléchée.** `escrow.ts` et `evidence.ts` importent désormais `session.ts`, qui les importe déjà : le cycle existait (`escrow → auth → session → escrow`), ces imports en sont des cordes. Une déclaration de fonction est hissée et initialisée avant l'évaluation du module ; une `const` aurait été en zone morte temporelle et le premier import croisé aurait levé un `ReferenceError` **au démarrage**, pas en test. Le commentaire de tête du fichier posait déjà la règle — aucune traversée du cycle à l'évaluation — et elle est respectée à la lettre.
+- **Le tour d'époque n'est PAS dans un `try/catch`**, à contre-courant de tout ce qui l'entoure. Une incrémentation d'entier ne lève pas, et l'envelopper laisserait croire le contraire. Il est en revanche placé **avant** les effets qui, eux, peuvent échouer : un `$reset()` qui lèverait ne doit pas laisser derrière lui une époque non tournée, c'est-à-dire un store à demi vidé qu'une réponse en vol pourrait repeupler.
+- **La comparaison porte sur les TROIS sorties**, pas seulement sur l'écriture des données. Un `error` écrit par la lecture de A afficherait à B un message pour une requête qui n'est pas la sienne ; un `loading = false` retirerait le voile de chargement de B pendant que sa propre lecture est en vol — un écran vide annoncé comme terminé. Les mutations 6 et 7 prouvent ces deux-là séparément.
+- **`loadSeq` est conservé, et sa raison d'être est réécrite en tête du champ.** Les deux gardes couvrent des courses différentes : `loadSeq` les courses INTRA-session — deux lectures concurrentes, et surtout `withdrawEvidence` qui l'incrémente pour invalider une lecture en vol dont la réponse montrerait la pièce encore ACTIVE ; l'époque les courses INTER-sessions, que `loadSeq` ne peut pas voir. L'époque **rend le rembobinage inoffensif ; elle ne le supprime pas**.
+- **L'époque est lue AVANT `loadSeq` dans `loadEvidence`.** Une réponse d'une session révolue n'a même pas à être comparée au compteur d'une session qui n'est pas la sienne. L'ordre inverse aurait donné le même résultat ; celui-ci se lit dans le sens de la question.
+
+**Ce que la story NE revendique PAS (écarts nommés, pas cochés) :**
+
+1. **Le chemin service worker n'est pas couvert** — décision D-E, entrée E9 du ledger, routée vers la Story 11-3. Une réponse `/api/` en vol au moment de la purge **recrée** `escrow-api-cache` derrière elle : la stratégie `NetworkFirst` de Workbox écrit hors de tout store Pinia, donc hors de portée d'une comparaison qui vit dans les stores. C'est écrit dans `session.ts` et dans l'en-tête de `sessionEpoch.spec.ts`, et aucune assertion ne dit « aucune donnée de A ne survit » : elles disent toutes « ce store-ci ne l'accepte pas ».
+2. **`createNewTransaction` n'est PAS gardée, et c'est une question posée au PO plutôt qu'une décision prise seul.** Son `this.transactions.unshift(created)` en ligne écrit sans comparer l'époque. Ce n'est pas une réponse de lecture — l'AC6 parle des lectures — et l'écarter en silence est une décision produit : la transaction **existe** côté serveur, si bien que la refuser à l'affichage la rend invisible jusqu'au prochain rechargement. L'écart est écrit dans le code, à l'endroit exact. **Les deux autres chemins d'écriture n'ont, eux, besoin de rien, et c'est vérifié et non supposé** : `sendTransactionEvent` et `openDispute` écrivent via `findIndex(...)` (qui rend -1 sur une liste vidée par `$reset()`) et via `this.currentDetail?.…` (nul après le même `$reset()`) — leurs écritures sont structurellement sans effet sur le store d'autrui.
+
+**Ce que j'ai trouvé et qui n'était pas prévu :**
+
+1. **⚠️ La passe de mutation a montré que les DEUX tours d'époque n'étaient gardés que par une assertion sur le COMPTEUR — et elle a fait écrire les deux tests qui manquaient.** Retirer le tour d'`endSession` laissait verts tous les tests du scénario A → B : celui de `beginSession` suffisait à les satisfaire, et réciproquement. Chaque moitié du dispositif était donc « prouvée » par un test qui lisait sa valeur, jamais par un test qui constatait son effet — la définition même de la preuve creuse. Deux tests ont été ajoutés, chacun sur la fenêtre que **seul** son tour ferme : pour `endSession`, la réponse de A qui repeuple le store **après sa déconnexion et avant toute autre session** — sur un appareil qui vient d'être rendu, personne ne le voit à l'écran (la garde du routeur renvoie vers `/auth`) et c'est bien le problème ; pour `beginSession`, une session qui commence **sans qu'aucune ne se soit terminée**, chemin qui n'est pas théorique puisque la branche « session incohérente » du routeur (2.3) et `auth.verify` (2.4) y mènent tous les deux. Les deux mutations rougissent désormais sur un effet.
+2. **La mutation qui casse la MONOTONIE (n° 3) laisse un test vert, et l'explication est instructive.** Avec `sessionEpoch = 0` à chaque tour, `n'affiche pas à B l'erreur d'une lecture émise par A` (côté `evidence`) reste vert : dans ce test-là, B n'a lancé aucune lecture, donc son `loadSeq` vaut 0 quand celui de la réponse d'Alice vaut 1 — **c'est `loadSeq` qui l'attrape**, pas l'époque. C'est la démonstration la plus nette que les deux gardes sont complémentaires et non redondantes, et c'est aussi pourquoi le test du **rembobinage** (où les deux `seq` coïncident) est le seul qui isole vraiment l'époque.
+3. **`loadSeq` n'avait AUCUN test**, alors qu'il garde ce store depuis l'Epic 4 et que `withdrawEvidence` l'incrémente pour une raison de sécurité de la donnée. `stores/__tests__/evidence.spec.ts` n'existait pas ; il existe désormais et couvre les deux courses intra-session avant de couvrir les inter-sessions. La remutation N1 confirme que ces deux-là rougissent — c'est-à-dire que ma garde neuve, placée devant, ne les creuse pas.
+4. **Aucune minuterie, ni factice ni réelle, dans les deux suites.** « La réponse de A arrive après la connexion de B » est obtenue par des promesses différées que le test résout lui-même : c'est une propriété du montage, pas un pari sur un délai. C'est la leçon de T4 (trois assertions négatives flaky démasquées par la mutation) appliquée d'emblée, et elle évite au passage le piège `vi.useFakeTimers()` / fake-indexeddb, puisque `endSession` et `beginSession` touchent IndexedDB.
+
+État T7 : **527 tests verts** (512 au départ, **+15** — 13 écrits d'emblée, 2 ajoutés par la passe de mutation), `vue-tsc --build` à 0 diagnostic, `npm run lint --max-warnings 0` propre, `python3 scripts/check-encoding.py` verte sur 1982 fichiers, `npm run verify:no-demo` verte.
+
 ### File List
 
-_Cumulée T1 → T6. Les tâches T7-T11 ne sont pas commencées._
+_Cumulée T1 → T7. Les tâches T8-T11 ne sont pas commencées._
 
 **Nouveaux — production**
 - `frontend/src/utils/credentialStorage.ts` (T1) — substrat commutable des identifiants
@@ -610,6 +670,8 @@ _Cumulée T1 → T6. Les tâches T7-T11 ne sont pas commencées._
 - `frontend/src/api/__tests__/authLogout.spec.ts` (T5) — ce que `logoutUser` envoie : `keepalive`, aucun `signal`, jeton explicite
 - `frontend/src/views/__tests__/logoutBoundedWait.spec.ts` (T5) — l'attente est dite (UX-DR26), EN et FR, bouton neutralisé
 - `frontend/src/stores/__tests__/sessionState.spec.ts` (T6) — les trois états, le mensonge d'`hydrated`, l'entrée orpheline (7 tests)
+- `frontend/src/stores/__tests__/evidence.spec.ts` (T7) — **`loadSeq` n'avait aucun test** : courses intra-session (lecture périmée, retrait) puis inter-sessions, dont le rembobinage par `$reset()` (6 tests)
+- `frontend/src/stores/__tests__/sessionEpoch.spec.ts` (T7) — le compteur (deux tours, monotonie) et les lectures d'escrow (9 tests)
 
 **Modifiés**
 - `frontend/src/api/client.ts` (T1 : lecture par `readCredential` ; T3 : alimentation du compteur de requêtes en vol)
@@ -617,7 +679,9 @@ _Cumulée T1 → T6. Les tâches T7-T11 ne sont pas commencées._
 - `frontend/src/stores/auth.ts` (T1 : substrat commutable ; T6 : `SessionState`, getter `sessionState`)
 - `frontend/src/stores/offlineQueue.ts` (T6 : `init()` ne prétend plus avoir lu, `enqueue()` refuse l'orpheline)
 - `frontend/src/router/index.ts` (T6 : renvoi croisé vers `sessionState` — la branche « session incohérente » n'est PAS réécrite, et le pourquoi est écrit sur place)
-- `frontend/src/stores/session.ts` (T1 : `LAST_USER_STORAGE_KEY` exportée ; T3 : mode `'idle'`, `KNOWN_REASONS`, motif persisté, `enforceIdlePolicy`, `installIdleTimeout`, extraction de `signInQuery`/`returnToSignIn` ; T4 : `EndSessionSource`, émission, règle d'autorité, `installSessionBroadcastListener` ; T4-bis : veto du récepteur sur `'idle'`)
+- `frontend/src/stores/session.ts` (T1 : `LAST_USER_STORAGE_KEY` exportée ; T3 : mode `'idle'`, `KNOWN_REASONS`, motif persisté, `enforceIdlePolicy`, `installIdleTimeout`, extraction de `signInQuery`/`returnToSignIn` ; T4 : `EndSessionSource`, émission, règle d'autorité, `installSessionBroadcastListener` ; T4-bis : veto du récepteur sur `'idle'` ; T5 : `REVOCATION_WAIT_SECONDS`, `withBudget` ; T7 : `sessionEpoch`, `currentSessionEpoch`, les deux tours d'époque)
+- `frontend/src/stores/escrow.ts` (T7 : garde d'époque sur `loadTransactions` et `loadTransactionDetail`, écart nommé sur `createNewTransaction`)
+- `frontend/src/stores/evidence.ts` (T7 : garde d'époque sur `loadEvidence`, `loadSeq` conservé et documenté)
 - `frontend/src/stores/__tests__/sessionBroadcast.spec.ts` (T4-bis : 4 tests du veto, et `alsoIdle()` sur les deux tests dont le veto aurait creusé la garde)
 - `frontend/src/main.ts` (T3 : contrôle au démarrage + minuterie, avant `app.mount()` ; T4 : écouteur inter-onglets)
 - `frontend/src/api/auth.ts` — **inchangé** (NEVER 1.9), désormais couvert par `authLogout.spec.ts`

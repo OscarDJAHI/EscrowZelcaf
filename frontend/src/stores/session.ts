@@ -53,6 +53,61 @@ import type { Router } from 'vue-router'
 export const READ_CACHE_NAME = 'escrow-api-cache'
 
 /**
+ * L'ÉPOQUE DE SESSION (Story 2.7, AC6) — le numéro de la session en cours dans cet onglet.
+ *
+ * <p><b>Le défaut qu'elle ferme.</b> Une lecture émise pendant la session de A peut se
+ * résoudre APRÈS la connexion de B. `escrow.loadTransactions` écrivait
+ * `this.transactions = await fetchTransactions()` sans la moindre garde : la liste de A
+ * s'installait dans le store de B et y restait jusqu'à ce que la lecture de B aboutisse.
+ * `evidence.loadEvidence` se protégeait, elle, par un compteur monotone `loadSeq` — mais
+ * `loadSeq: 0` vit dans le `state()`, donc <b>`$reset()` le REMBOBINE</b>. Une lecture de
+ * A partie avec `seq = 1` redevient égale au `loadSeq = 1` de la première lecture de B, et
+ * la garde l'accepte. Le compteur était bon ; c'est sa remise à zéro qui le trahissait.
+ *
+ * <p><b>Pourquoi ici et pas dans un store.</b> Une époque qui vit dans un `state()` est
+ * une époque que `$reset()` rembobine — c'est le défaut lui-même, reproduit dans le
+ * correctif. Elle vit donc au module, dans le seul fichier qui sache quand une session
+ * commence et quand elle finit. L'invariant tient en une phrase : <b>tout `$reset()` qui
+ * rembobine `loadSeq` est accompagné d'un tour d'époque</b> — les deux seuls sont dans
+ * `endSession` et dans `beginSession`, et le tour est écrit juste au-dessus de chacun.
+ *
+ * <p><b>Ce qu'elle n'est PAS.</b> Une garde CLIENT complémentaire, jamais un substitut
+ * d'AD-3. L'autorisation reste entièrement serveur : cette comparaison ne décide de rien
+ * d'autre que de la question « cette réponse appartient-elle encore à la session qui l'a
+ * demandée ». Aucune décision d'autorisation n'est déplacée vers le client.
+ *
+ * <p><b>Ce qu'elle ne couvre pas</b> (décision D-E, écart nommé et non coché) : le chemin
+ * du service worker. Une réponse `/api/` en vol au moment de la purge RECRÉE
+ * `escrow-api-cache` derrière elle — la stratégie `NetworkFirst` de Workbox écrit hors de
+ * tout store Pinia, donc hors de portée de cette comparaison. C'est l'entrée E9 du ledger,
+ * routée vers la Story 11-3. Il ne faut donc pas écrire « aucune donnée de A ne survit ».
+ */
+let sessionEpoch = 0
+
+/**
+ * L'époque en cours. Capturée à l'ÉMISSION d'une lecture, relue à sa RÉSOLUTION.
+ *
+ * <p>Déclarée en `function` et non en `const` fléchée, et ce n'est pas un goût : ce module
+ * est déjà dans un cycle d'imports avec `escrow.ts` et `evidence.ts`, qui l'appellent
+ * désormais. Une déclaration de fonction est hissée et initialisée avant l'évaluation du
+ * module ; une `const` serait en zone morte temporelle, et le premier import croisé
+ * lèverait un `ReferenceError` au démarrage. Même règle que celle du commentaire de tête :
+ * aucune traversée du cycle à l'évaluation, seulement dans des corps de fonction.
+ */
+export function currentSessionEpoch(): number {
+  return sessionEpoch
+}
+
+/**
+ * Tourne la page. Monotone et STRICTEMENT croissante : jamais remise à zéro, jamais
+ * décrémentée — c'est la seule propriété qui fait la différence avec `loadSeq`, dont le
+ * rembobinage est précisément le défaut.
+ */
+function turnSessionEpoch(): void {
+  sessionEpoch += 1
+}
+
+/**
  * Which user this device last saw signed in — an opaque id and nothing else,
  * where the `escrow_user` key carries a whole profile.
  *
@@ -327,6 +382,20 @@ export async function endSession({
     console.error('[session] could not clear the idle-activity stamp', err)
   }
 
+  // ON TOURNE LA PAGE (Story 2.7, AC6), et AVANT les deux `$reset()` qui suivent.
+  //
+  // Toute lecture émise pendant la session qui s'achève a capturé l'époque précédente ;
+  // à partir de cette ligne, aucune ne peut plus écrire dans un store. C'est ce qui rend
+  // le rembobinage de `loadSeq` par le `$reset()` d'en dessous INOFFENSIF : le compteur
+  // repart bien de zéro, mais la lecture de A ne se compare plus à lui.
+  //
+  // Aucun `try/catch` ici, contrairement à tout ce qui l'entoure : une incrémentation
+  // d'entier ne lève pas, et l'envelopper laisserait croire le contraire. Elle est en
+  // revanche placée AVANT les effets qui, eux, peuvent échouer — un `$reset()` qui lève ne
+  // doit pas laisser derrière lui une époque non tournée, c'est-à-dire un store à demi
+  // vidé qu'une réponse en vol pourrait repeupler.
+  turnSessionEpoch()
+
   // `$reset()` and not a hand-written blanking: these stores gained
   // `transactionsFetchedAt` / `currentDetailFetchedAt` after they were written,
   // and a field list here would have to be maintained in step with them.
@@ -451,15 +520,34 @@ export async function beginSession(userId: string | number | null | undefined): 
     console.error('[session] could not stamp the initial activity', err)
   }
 
+  // ON TOURNE LA PAGE ICI AUSSI (Story 2.7, AC6) — LES DEUX BOUTS, PAS UN SEUL.
+  //
+  // Le tour de `endSession` ne suffit pas, et pour une raison de CÂBLAGE : toutes les
+  // entrées en session ne passent pas par une sortie. Une connexion sur un onglet neuf,
+  // une inscription vérifiée (`auth.verify`), un `applySession` posé par une story à
+  // venir — aucun de ces chemins n'appelle `endSession`, et le `$reset()` juste en
+  // dessous rembobinerait alors `loadSeq` sans qu'aucune époque n'ait tourné. La règle
+  // qui tient à elle seule : TOUT `$reset()` qui rembobine `loadSeq` est précédé d'un
+  // tour d'époque. Il y en a exactement deux dans ce fichier, et les voici tous les deux.
+  //
+  // Tourner deux fois entre deux sessions (sortie puis entrée) ne coûte rien : seule
+  // l'INÉGALITÉ est lue, jamais l'écart.
+  turnSessionEpoch()
+
   // Belt to `endSession`'s braces, and not redundant with it. `endSession`
   // clears these stores on the way out, but a read issued just before it can
-  // land just after: `escrow.loadTransactions` writes `this.transactions =
+  // land just after: `escrow.loadTransactions` wrote `this.transactions =
   // await fetchTransactions()` with no session guard, so a response in flight
-  // when the user signed out re-populates the store behind the teardown. Nothing
-  // would then clear it, and the next person to sign in renders the previous
-  // one's transaction list for as long as their own fetch takes. Resetting at
+  // when the user signed out re-populated the store behind the teardown. Nothing
+  // would then clear it, and the next person to sign in rendered the previous
+  // one's transaction list for as long as their own fetch took. Resetting at
   // the *start* of a session closes that window whatever happened at the end of
   // the last one, and costs nothing: nobody has anything worth keeping here yet.
+  //
+  // <p>Story 2.7 : ce `$reset()` reste la ceinture, l'époque est la bretelle — et les
+  // deux ne font pas le même travail. Le `$reset()` efface ce qui a DÉJÀ atterri ;
+  // l'époque empêche ce qui atterrit ENSUITE. Sans elle, une réponse de A arrivant après
+  // cette ligne repeuplait le store de B, et rien ne repassait derrière.
   try {
     useEscrowStore().$reset()
   } catch (err) {
