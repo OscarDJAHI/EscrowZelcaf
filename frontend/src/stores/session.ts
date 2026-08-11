@@ -78,6 +78,56 @@ export const READ_CACHE_NAME = 'escrow-api-cache'
 export const LAST_USER_STORAGE_KEY = 'escrow_last_user'
 
 /**
+ * LE PLAFOND D'ATTENTE DE LA RÉVOCATION SERVEUR (Story 2.7, AC4).
+ *
+ * <p><b>Ce que ce plafond borne, et ce qu'il ne borne surtout PAS.</b> Il borne l'ATTENTE,
+ * jamais la requête. `logoutUser` reste un `fetch` avec `keepalive: true` (décision de la
+ * revue 1.6, NEVER de la spec 1.9) : aucun `signal`, aucun `AbortController`. Un
+ * `AbortSignal` posé ici ANNULERAIT la révocation au lieu de cesser de l'attendre, et
+ * détruirait précisément la garantie que `keepalive` apporte — que la requête aboutisse
+ * même après que l'onglet a navigué, voire s'est fermé. C'est cette garantie-là qui rend
+ * l'abandon de l'attente acceptable : on cesse de regarder, le navigateur continue.
+ *
+ * <p><b>Pourquoi il fallait un plafond.</b> Sans lui, `endSession` attendait
+ * indéfiniment : sur un portail captif ou avec un DNS suspendu, la requête ne se règle
+ * jamais, et `DashboardView` attend `endSession` avant de naviguer. L'utilisateur restait
+ * sur un tableau de bord VIDÉ — les stores sont déjà remis à zéro à ce stade — sans issue
+ * et sans explication. La déconnexion avait bel et bien eu lieu ; il n'en voyait rien.
+ *
+ * <p>Les SECONDES sont la constante source et les millisecondes en dérivent : l'attente
+ * est annoncée à l'écran (UX-DR26) et mesurée ici, et un « 3 » écrit dans les deux
+ * catalogues i18n à côté d'un `3000` ici aurait divergé au premier ajustement.
+ *
+ * <p>Trois secondes : le temps qu'une liaison de corridor honnête met à répondre, pas le
+ * temps qu'un portail captif met à ne pas répondre. Dépasser le plafond ne coûte rien
+ * d'autre qu'une navigation plus tôt — rien de local n'en dépend, tout est déjà purgé.
+ */
+export const REVOCATION_WAIT_SECONDS = 3
+export const REVOCATION_WAIT_MS = REVOCATION_WAIT_SECONDS * 1000
+
+/**
+ * Attend `promise`, et jamais plus de `ms`.
+ *
+ * <p>La promesse d'origine n'est ni annulée ni abandonnée : elle poursuit sa vie, et son
+ * éventuel rejet reste réglé par le gestionnaire que `Promise.race` lui a posé — sans
+ * quoi une révocation qui échouerait APRÈS l'expiration du budget remonterait en rejet
+ * non traité, un bruit de console pour un événement parfaitement normal hors ligne.
+ *
+ * <p>La minuterie est TOUJOURS éteinte au règlement, y compris quand c'est la promesse qui
+ * gagne la course : une déconnexion ordinaire laisserait sinon derrière elle une minuterie
+ * de trois secondes par déconnexion, et un onglet fermé entre-temps la tiendrait vivante.
+ */
+function withBudget(promise: Promise<unknown>, ms: number): Promise<void> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const budget = new Promise<void>((resolve) => {
+    timer = setTimeout(resolve, ms)
+  })
+  return Promise.race([promise.then(() => undefined), budget]).finally(() => {
+    if (timer !== undefined) clearTimeout(timer)
+  })
+}
+
+/**
  * Drops the 24 h of cached `/api/` responses the departing user leaves behind.
  *
  * `caches` is absent in jsdom and in a non-secure context, and the whole point
@@ -340,12 +390,24 @@ export async function endSession({
   // ne pas ajouter `escrow_locale` à la purge sans rouvrir la décision.
 
   try {
-    // Awaited nonetheless (revue 1.6): navigating away used to abort the
-    // request in flight, leaving the token accepted server-side until it
-    // expired. `keepalive` is the second line of defence; awaiting is what
-    // makes it deterministic. Nothing above depends on the outcome, and by the
-    // time this hangs there is nothing left — on screen or on disk — to leak.
-    await auth.revokeOnServer(revokedToken)
+    // ATTENDUE, MAIS PLUS INDÉFINIMENT (Story 2.7, AC4).
+    //
+    // L'attente reste (revue 1.6) : elle rend le comportement déterministe dans le cas
+    // ordinaire, où le serveur répond en quelques dizaines de millisecondes et où la
+    // navigation qui suit part sur un jeton dont on SAIT qu'il est révoqué. Ce qui
+    // disparaît, c'est l'attente sans fin : `logoutUser` est un `fetch` que rien ne borne,
+    // et `DashboardView` attend cette fonction avant de naviguer — sur un portail captif,
+    // l'utilisateur restait sur un tableau de bord déjà vidé, sans issue.
+    //
+    // Le plafond ne touche PAS la requête : pas de `signal`, pas d'`AbortController`,
+    // `keepalive` inchangé. On cesse d'attendre, le navigateur mène la révocation à terme
+    // — y compris après la navigation, y compris après la fermeture de l'onglet. C'est
+    // exactement ce que `keepalive` promet, et c'est ce qui rend l'abandon acceptable.
+    //
+    // Rien au-dessus ne dépend de l'issue, et quand ce plafond est atteint il ne reste
+    // plus rien à fuir — ni à l'écran ni sur le disque. C'est la raison pour laquelle
+    // cette étape, et elle seule, peut être abandonnée en cours de route.
+    await withBudget(auth.revokeOnServer(revokedToken), REVOCATION_WAIT_MS)
   } catch (err) {
     // `revokeOnServer` already swallows its own failures; this is the belt to
     // its braces, so that a client left offline still signs out locally.

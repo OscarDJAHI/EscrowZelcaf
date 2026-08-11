@@ -10,6 +10,7 @@
     "download": "Télécharger",
     "downloading": "Téléchargement…",
     "logout": "Se déconnecter",
+    "loggingOut": "Déconnexion en cours… ({seconds} s au plus)",
     "pleaseWait": "Veuillez patienter…",
     "sending": "Envoi…",
     "tryAgain": "Réessayer"

@@ -166,12 +166,12 @@ Ne pas écrire « aucune donnée de A ne survit ». L'AC1 de la Story 1.9 disait
   - [x] ⚠️ Écart nommé, **pas coché** : la propagation est LOCALE À L'APPAREIL. Une révocation déclenchée côté serveur depuis un autre appareil (Story 2.6 / NFR-P5) ne produit aucun message ; elle se détecte par le 403 nu au prochain appel, chemin qui existe déjà.
   - [x] **T4-bis — Veto du récepteur (décision D-F, 2026-08-11)** : un onglet qui n'est pas lui-même inactif ignore une annonce `'idle'` et poursuit sa session. Veto **borné à `'idle'`** — `'logout'` et `'expired'` traversent toujours. Primitive de T3 réutilisée (`isIdleExpired()`), aucun calcul de seuil recopié.
 
-- [ ] **T5 — Attente bornée sur la révocation** (AC: 4)
-  - [ ] Borner l'attente de `auth.revokeOnServer` / `logoutUser` (`api/auth.ts:77-80`, aujourd'hui `fetch` + `keepalive`, **aucun `signal`**).
-  - [ ] ⚠️ **NEVER (spec 1.9:47) : ne pas remplacer `logoutUser` par un appel axios.** Le `fetch` + `keepalive` est une décision de la revue 1.6. `keepalive` est précisément ce qui garantit que la requête aboutit après la navigation.
-  - [ ] ⚠️ **Ce changement peut casser `session.spec.ts:243-293`** : borner l'attente change le nombre d'`await` devant la révocation. C'est exactement ce qui a fait virer la suite au rouge en passe 3 de la Story 1.9, avec un correctif pourtant bon. Vérifier ce test avant/après et le réparer sur `vi.waitFor`, jamais sur un nombre fixe de macrotâches.
-  - [ ] `DashboardView.vue:53-63` porte un **commentaire justificatif périmé** (« la navigation avortait la requête en vol » — vrai de `window.location.href`, faux de `router.replace`). Le corriger ou le supprimer : *« une justification périmée est ce qui fait reconduire une attente non bornée pour toujours »*.
-  - [ ] L'attente visible est libellée avec son délai annoncé (UX-DR26).
+- [x] **T5 — Attente bornée sur la révocation** (AC: 4)
+  - [x] Borner l'attente de `auth.revokeOnServer` / `logoutUser` (`api/auth.ts:77-80`, aujourd'hui `fetch` + `keepalive`, **aucun `signal`**). → plafond `REVOCATION_WAIT_SECONDS = 3` porté par `stores/session.ts`, appliqué par `withBudget` sur le seul `await` de la révocation.
+  - [x] ⚠️ **NEVER (spec 1.9:47) : ne pas remplacer `logoutUser` par un appel axios.** Le `fetch` + `keepalive` est une décision de la revue 1.6. `keepalive` est précisément ce qui garantit que la requête aboutit après la navigation. → `api/auth.ts` **inchangé**, et désormais **asservi** par `api/__tests__/authLogout.spec.ts` (`keepalive: true`, aucun `signal`).
+  - [x] ⚠️ **Ce changement peut casser `session.spec.ts:243-293`** → il ne l'a PAS cassé, et pour une raison qui mérite d'être écrite : ce test observe sur `vi.waitFor(() => expect(logoutUser).toHaveBeenCalled())`, pas sur un nombre de macrotâches. La leçon de la passe 3 de la 1.9 avait déjà été appliquée à ce test ; c'est elle qui l'a rendu insensible à l'`await` supplémentaire. **Vérifié par mutation** : il rougit toujours quand on remet la révocation devant les purges.
+  - [x] `DashboardView.vue:53-63` porte un **commentaire justificatif périmé** → réécrit : la phrase fausse (« la navigation avortait la requête en vol ») est supprimée, les deux raisons qui tiennent sont écrites, et le report au ledger qu'il annonçait est déclaré clos.
+  - [x] L'attente visible est libellée avec son délai annoncé (UX-DR26) → `common.loggingOut` EN+FR, délai **interpolé** depuis `REVOCATION_WAIT_SECONDS`, bouton `:disabled` + `aria-busy`.
 
 - [ ] **T6 — Trois états du jeton** (AC: 5)
   - [ ] `loadStoredUser()` (`auth.ts:32`) rend `null` sur échec de `JSON.parse` alors que le jeton survit. Distinguer **trois** états : jeton absent / jeton + profil lisible / jeton + profil illisible.
@@ -397,6 +397,20 @@ Restauration après chaque mutation : les trois fichiers de production sauvegard
 
 Restauration : `session.ts` sauvegardé hors dépôt puis réécrit, `diff` vérifié **vide** après chaque mutation. **Jamais** de `git checkout --`. État final : **494/494 verts**.
 
+**T5 — mutations de vérification (2026-08-11), obligation AC7.** Sept mutations sur trois fichiers de production. Base : 505 verts.
+
+| # | Mutation | Garde visée | Résultat |
+|---|---|---|---|
+| 1 | `await auth.revokeOnServer(revokedToken)` — plafond retiré | **la borne elle-même**, à la ligne près du défaut d'origine | 🔴 **2** rouges, tous deux dans `sessionRevocationBudget.spec.ts` (503 verts) |
+| 2 | `REVOCATION_WAIT_SECONDS = 0` — le plafond gagne toujours | la borne est un **PLAFOND, pas un délai** : abandonner d'emblée supprimerait la garantie de la revue 1.6 | 🔴 **3** rouges, dont `attend pour de bon quand le réseau répond` |
+| 3 | révocation déplacée AVANT les purges persistées | **l'ordre purge-avant-réseau**, cassé deux fois en Story 1.9 | 🔴 `empties the device BEFORE waiting on the network, not after it` **rougit toujours** + 2 rouges de la borne |
+| 4 | `signal: AbortSignal.timeout(3000)` ajouté au `fetch` | **le NEVER de la spec 1.9** : borner l'ATTENTE, jamais la requête — un abandon laisserait le jeton vivant 24 h côté serveur | 🔴 **1 seul** rouge : `porte keepalive et AUCUN moyen d'interrompre la requête` |
+| 4b | `keepalive: true` retiré | la garantie qui rend l'abandon de l'attente acceptable | 🔴 **1 seul** rouge : le même |
+| 5 | libellé d'attente retiré du gabarit (`common.logout` en toutes circonstances) | **UX-DR26** : motif ET délai annoncé | 🔴 **2** rouges, EN et FR |
+| 6 | `:disabled="signingOut"` retiré du bouton | la neutralisation du bouton pendant l'attente — la seule chose qui empêche une seconde terminaison | 🔴 **2** rouges, dont `n'a lancé qu'UNE terminaison` |
+
+Restauration après chaque mutation : `session.ts`, `api/auth.ts` et `DashboardView.vue` sauvegardés **hors du dépôt** puis réécrits, `diff` vérifié **vide** avant chaque nouvelle mutation et à la fin. **Jamais** de `git checkout --`. État final : **505/505 verts**.
+
 ### Completion Notes List
 
 **T0 — Lire avant d'écrire.** Les cinq fichiers du préalable lus intégralement. Deux avertissements « Story 2.7 réécrira ce fichier » trouvés en place (`session.ts:198-199`, `i18n/index.ts:36-38`) : la décision qu'ils protègent — `escrow_locale` n'est pas une donnée de session — est **conservée**, aucune clé de langue n'entre dans la purge.
@@ -500,6 +514,32 @@ Choix et motifs :
 
 État T4-bis : **494 tests verts** (490 au départ, **+4**), `vue-tsc --build` à 0 diagnostic, `npm run lint --max-warnings 0` propre, `python3 scripts/check-encoding.py` verte sur 1978 fichiers.
 
+**T5 — Attente bornée sur la révocation.** `endSession` n'attend plus la révocation serveur au-delà de `REVOCATION_WAIT_SECONDS = 3` (constante SOURCE exportée par `session.ts`, dont `REVOCATION_WAIT_MS` dérive), via un `withBudget` privé qui fait courir la promesse contre une minuterie.
+
+Choix de conception non dictés par la story, et leurs motifs :
+
+- **La borne porte sur l'ATTENTE, jamais sur la requête — et c'est tout le correctif.** La façon apparemment naturelle de « borner » un `fetch` est d'y poser un `AbortSignal` ; c'est précisément celle qu'il ne fallait pas prendre. Elle ANNULE la révocation au lieu de cesser de l'attendre, et le jeton reste accepté côté serveur pour les 24 h de son TTL (Q3, hors périmètre). `api/auth.ts` n'est donc pas touché d'une ligne : `keepalive` mène la requête à terme après la navigation, y compris après la fermeture de l'onglet, et c'est exactement ce qui rend acceptable d'arrêter de regarder.
+- **Le plafond vit dans `session.ts` et non dans `logoutUser`.** C'est `endSession` que `DashboardView` attend avant de naviguer ; c'est donc cette attente-là qu'il faut borner. Borner `logoutUser` aurait changé le contrat d'une fonction dont la revue 1.6 a fixé la forme, et pour un seul de ses appelants.
+- **Trois secondes.** Le temps qu'une liaison de corridor honnête met à répondre, pas le temps qu'un portail captif met à ne pas répondre. Dépasser le plafond ne coûte qu'une navigation plus tôt : rien de local n'en dépend, tout est déjà purgé — c'est bien parce que la révocation est la dernière étape, et la seule dont l'issue ne conditionne rien, qu'elle est abandonnable.
+- **La minuterie est éteinte dans un `finally`.** Sans cela, une déconnexion ordinaire — celle où le réseau gagne la course — laisserait derrière elle une minuterie de trois secondes, une par déconnexion.
+- **Le rejet tardif reste traité.** `Promise.race` a posé son gestionnaire sur la promesse de révocation avant même que le plafond échoie : un échec réseau arrivant après l'abandon ne remonte pas en rejet non traité. (`revokeOnServer` avale déjà ses échecs ; ceci est la ceinture de sa bretelle.)
+- **L'attente est DITE (UX-DR26).** Une attente bornée reste une attente, et pendant ces secondes-là les stores sont déjà remis à zéro : l'utilisateur regardait un tableau de bord qui perd son contenu et un bouton qui ne répond plus. Le bouton porte désormais `common.loggingOut` (EN+FR), `:disabled` et `aria-busy`. Le délai est **interpolé** depuis `REVOCATION_WAIT_SECONDS` et jamais écrit dans les catalogues — même règle que le `{minutes}` de T3, pour la même raison.
+- **Périmètre tenu :** la place du bouton, sa tokenisation, `type="button"` et sa cible tactile restent à **T8** ; le test livré ici n'assère rien de tout cela, pour ne pas rougir à la migration du bouton pour une raison étrangère à ce qu'il prouve.
+
+**Le commentaire périmé de `DashboardView.vue` est réécrit**, pas raboté : la phrase fausse — « la navigation avortait la requête en vol », vraie de `window.location.href`, fausse de `router.replace` — est supprimée ; les deux raisons qui tiennent (l'appareil doit être propre avant la navigation ; l'attente est bornée) sont écrites ; et le report au ledger qu'il annonçait est déclaré clos, puisque c'est cette story qui le solde.
+
+**Ce que j'ai trouvé et qui n'était pas prévu :**
+
+1. **`session.spec.ts` n'a PAS rougi — et c'est un résultat, pas une chance.** La story annonçait ce test comme la victime probable du changement. Il a tenu parce qu'il observe sur `vi.waitFor(() => expect(logoutUser).toHaveBeenCalled())` : la leçon de la passe 3 de la Story 1.9 — « le correctif de code était bon, sa preuve ne l'était plus » — y avait déjà été appliquée, et c'est elle qui l'a rendu insensible à un `await` de plus. La mutation n° 3 confirme qu'il garde toujours ce qu'il nomme : remettre la révocation devant les purges le fait rougir.
+2. **⚠️ Une garde livrée était improuvable, et la mutation l'a montrée AVANT la revue.** Le gestionnaire portait un `if (signingOut.value) return` en plus du `:disabled` du bouton. Aucune mutation d'une seule ligne ne les distinguait — chacune rattrapait le cas de l'autre — si bien que la condition du gestionnaire était du code que la suite ne pouvait pas falsifier. Elle est **retirée** : une garde improuvable en double d'une garde prouvée n'est pas de la défense en profondeur, c'est une preuve creuse en attente d'être citée. `:disabled` reste, et la mutation n° 6 le fait rougir.
+3. **⚠️ Deux défauts de preuve dans mon propre test du second clic, trouvés par la même mutation.** D'abord `trigger()` de `@vue/test-utils` **refuse de cliquer un élément désactivé** : le second clic n'atteignait jamais le gestionnaire, et le test restait vert la garde retirée. Ensuite l'oracle lui-même était **faux** : à la seconde entrée, le jeton a déjà quitté la mémoire et `revokeOnServer(null)` rend une promesse résolue **sans appeler `logoutUser`** — le compte serait resté à 1 dans les deux hypothèses. Ce qu'une seconde terminaison rejoue réellement, c'est la PURGE (un second tour d'IndexedDB, un second effacement du cache, une seconde annonce aux autres onglets) ; `caches.delete` en est le témoin, et c'est lui qu'on compte désormais.
+4. **`logoutUser` n'avait AUCUN test.** Ses deux garanties — `keepalive: true` et rien qui puisse interrompre la requête — étaient des commentaires, pas des propriétés, alors que ce sont elles qui rendent la borne acceptable. `api/__tests__/authLogout.spec.ts` les asservit désormais (3 tests), et les mutations 4 et 4b montrent qu'il rougit.
+5. **`vi.getTimerCount()` n'est pas un oracle absolu utilisable ici** : `fake-indexeddb` pose ses propres minuteries pendant la purge qui précède la révocation. Le compte est pris en DIFFÉRENTIEL, l'instant de référence étant capturé **pendant** l'attente — sinon on mesure le ménage du harnais plutôt que le sien.
+
+État T5 : **505 tests verts** (494 au départ, **+11**), `vue-tsc --build` à 0 diagnostic, `npm run lint --max-warnings 0` propre, `python3 scripts/check-encoding.py` verte sur 1978 fichiers, `npm run verify:no-demo` et `npm run verify:pwa` vertes.
+
+**Écart nommé, pas coché :** le TTL serveur reste de 24 h (`application.yml:77`, décision Q3). La borne rend la main à l'utilisateur ; elle ne raccourcit pas la vie du jeton, et une révocation qui n'aboutirait vraiment jamais — appareil éteint pendant le `keepalive` — laisse ce jeton valide jusqu'à son expiration naturelle. À porter au ledger à la clôture de la story, comme la Q3 le prévoit déjà.
+
 ### File List
 
 _Cumulée T1 → T4-bis. Les tâches T6-T11 ne sont pas commencées._
@@ -518,6 +558,9 @@ _Cumulée T1 → T4-bis. Les tâches T6-T11 ne sont pas commencées._
 - `frontend/src/views/__tests__/sessionIdleNotice.spec.ts` (T3) — motif affiché, EN et FR
 - `frontend/src/stores/__tests__/sessionBroadcast.spec.ts` (T4) — émission, réception, non-ré-émission, absence d'appel réseau, motif, repli
 - `frontend/src/__tests__/mainSessionBroadcast.spec.ts` (T4) — **câblage** de `main.ts`, amorçage réel
+- `frontend/src/stores/__tests__/sessionRevocationBudget.spec.ts` (T5) — le plafond d'attente : abandon borné, attente réelle quand le réseau répond, minuterie éteinte, signature de la révocation
+- `frontend/src/api/__tests__/authLogout.spec.ts` (T5) — ce que `logoutUser` envoie : `keepalive`, aucun `signal`, jeton explicite
+- `frontend/src/views/__tests__/logoutBoundedWait.spec.ts` (T5) — l'attente est dite (UX-DR26), EN et FR, bouton neutralisé
 
 **Modifiés**
 - `frontend/src/api/client.ts` (T1 : lecture par `readCredential` ; T3 : alimentation du compteur de requêtes en vol)
@@ -526,7 +569,9 @@ _Cumulée T1 → T4-bis. Les tâches T6-T11 ne sont pas commencées._
 - `frontend/src/stores/session.ts` (T1 : `LAST_USER_STORAGE_KEY` exportée ; T3 : mode `'idle'`, `KNOWN_REASONS`, motif persisté, `enforceIdlePolicy`, `installIdleTimeout`, extraction de `signInQuery`/`returnToSignIn` ; T4 : `EndSessionSource`, émission, règle d'autorité, `installSessionBroadcastListener` ; T4-bis : veto du récepteur sur `'idle'`)
 - `frontend/src/stores/__tests__/sessionBroadcast.spec.ts` (T4-bis : 4 tests du veto, et `alsoIdle()` sur les deux tests dont le veto aurait creusé la garde)
 - `frontend/src/main.ts` (T3 : contrôle au démarrage + minuterie, avant `app.mount()` ; T4 : écouteur inter-onglets)
+- `frontend/src/api/auth.ts` — **inchangé** (NEVER 1.9), désormais couvert par `authLogout.spec.ts`
+- `frontend/src/views/DashboardView.vue` (T5 : commentaire justificatif périmé réécrit, état d'attente visible et libellé)
 - `frontend/src/views/AuthView.vue` (T2 : case « rester connecté » ; T3 : motif d'expiration)
-- `frontend/src/i18n/en.json`, `frontend/src/i18n/fr.json` (T2 : `auth.rememberMe` ; T3 : `auth.sessionIdleNotice`)
+- `frontend/src/i18n/en.json`, `frontend/src/i18n/fr.json` (T2 : `auth.rememberMe` ; T3 : `auth.sessionIdleNotice` ; T5 : `common.loggingOut`)
 - `frontend/src/stores/__tests__/session.spec.ts`, `frontend/src/stores/__tests__/escrow.offline.spec.ts` (T1 : `sessionStorage.clear()` en `beforeEach`)
 - `_bmad-output/implementation-artifacts/sprint-status.yaml` (T1)

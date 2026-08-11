@@ -10,6 +10,7 @@
     "download": "Download",
     "downloading": "Downloading…",
     "logout": "Log out",
+    "loggingOut": "Signing out… ({seconds} s at most)",
     "pleaseWait": "Please wait…",
     "sending": "Sending…",
     "tryAgain": "Try again"
