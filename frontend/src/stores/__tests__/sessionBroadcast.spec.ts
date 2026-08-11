@@ -15,8 +15,13 @@ import {
   takeSessionNotice,
 } from '@/stores/session'
 import { SESSION_CHANNEL_NAME, closeSessionBroadcast } from '@/utils/sessionBroadcast'
-import { readCredential } from '@/utils/credentialStorage'
-import { stopIdleWatch } from '@/utils/idleTimeout'
+import { readCredential, writeCredential } from '@/utils/credentialStorage'
+import {
+  IDLE_TIMEOUT_MS,
+  LAST_ACTIVITY_STORAGE_KEY,
+  markActivity,
+  stopIdleWatch,
+} from '@/utils/idleTimeout'
 import * as idb from '@/stores/offlineQueue.idb'
 import { aTransaction, anEvidenceItem, aUser } from '@/test-support/factories'
 import type { QueueEntry } from '@/types/queue'
@@ -103,6 +108,31 @@ function signIn(user: User) {
   return auth
 }
 
+/**
+ * CET onglet-ci vient d'agir : il n'est PAS inactif, et le veto du récepteur (D-F) le
+ * protège d'une annonce `'idle'` venue d'ailleurs.
+ *
+ * <p>Horloge RÉELLE, comme partout dans ce fichier : `markActivity()` écrit `Date.now()`
+ * et `isIdleExpired()` relit le même horodatage. Aucune minuterie factice n'est nécessaire
+ * pour fabriquer « actif » ou « inactif » — il suffit d'écrire un instant, et une horloge
+ * figée aurait suspendu la livraison des messages.
+ */
+function stillActive() {
+  markActivity()
+}
+
+/**
+ * CET onglet-ci n'a rien vu passer depuis plus longtemps que le délai : il est inactif LUI
+ * AUSSI, donc l'appareil est réellement abandonné et le veto ne s'applique pas.
+ *
+ * <p>Le seuil est LU depuis la production (`IDLE_TIMEOUT_MS`) et jamais recopié : un « 15
+ * minutes » écrit ici resterait vert après un ajustement du seuil, en prouvant une
+ * politique que la production n'applique plus.
+ */
+function alsoIdle() {
+  writeCredential(LAST_ACTIVITY_STORAGE_KEY, String(Date.now() - IDLE_TIMEOUT_MS - 1000))
+}
+
 /** Un routeur réduit à ce que le gestionnaire lit vraiment. */
 function fakeRouter(fullPath: string, name = 'escrow-detail') {
   return {
@@ -157,6 +187,13 @@ function otherTab() {
  * honoré. Le marqueur choisi est le MOTIF (`'idle'` en écrit un, `'logout'` non) : il
  * distingue les deux messages là où le jeton, la navigation et les comptes d'appels sont
  * identiques dans les deux hypothèses.
+ *
+ * <p>⚠️ Depuis le veto du récepteur (D-F), ce marqueur n'a de valeur QUE sur un onglet
+ * lui-même inactif : sur un onglet actif, une annonce `'idle'` honorée ne laisserait plus
+ * aucun motif, et l'assertion serait satisfaite par le veto au lieu de l'être par la garde
+ * qu'elle nomme. Les deux tests qui s'en servent appellent donc `alsoIdle()` — sans quoi
+ * l'ajout du veto aurait creusé DEUX gardes déjà prouvées par mutation en T4 (le
+ * discriminant de message et le garde d'authentification).
  */
 const IGNORED_BUT_IDLE = { type: 'session-end', reason: 'idle' }
 
@@ -243,6 +280,10 @@ describe('L’émission — l’onglet où l’action a lieu annonce aux autres'
     const router = fakeRouter('/escrow/42')
     installSessionBroadcastListener(router)
     signIn(ALICE)
+    // Cet onglet-ci est inactif lui aussi : sans cela le veto du récepteur (D-F) écarterait
+    // l'annonce `'idle'` ci-dessous et il n'y aurait plus de terminaison dont observer la
+    // ré-émission. Le veto est prouvé pour lui-même plus bas.
+    alsoIdle()
 
     // La raison reçue (`'idle'`) est DIFFÉRENTE de celle qu'on émettra ensuite
     // (`'logout'`) : c'est ce qui rend une ré-émission reconnaissable. Deux `'logout'`
@@ -351,6 +392,8 @@ describe('La réception — terminaison locale, sans intervention et observable'
     const router = fakeRouter('/escrow/42')
     installSessionBroadcastListener(router)
     signIn(ALICE)
+    // Inactif lui aussi — c'est le cas où l'annonce `'idle'` traverse (voir le veto, D-F).
+    alsoIdle()
 
     other.announce('idle')
     await vi.waitFor(() => expect(router.replace).toHaveBeenCalled())
@@ -373,6 +416,10 @@ describe('La réception — terminaison locale, sans intervention et observable'
     installSessionBroadcastListener(router)
     // Ouvert APRÈS le canal de production : voir `witness`.
     const seen = witness()
+    // Inactif AUSSI, et c'est load-bearing : le message porte `'idle'`, et sur un onglet
+    // actif le veto (D-F) l'écarterait AVANT que le garde d'authentification ait à se
+    // prononcer — l'assertion ci-dessous serait alors satisfaite par la mauvaise garde.
+    alsoIdle()
 
     // Personne n'est connecté dans cet onglet-ci : un `replace` vers `auth` depuis `auth`
     // serait une navigation visible et sans objet, qui écraserait au passage le
@@ -401,6 +448,10 @@ describe('Le message — ce que le canal accepte, et ce qu’il ignore', () => {
     const router = fakeRouter('/escrow/42')
     installSessionBroadcastListener(router)
     const auth = signIn(ALICE)
+    // Inactif, pour la même raison que ci-dessus : le marqueur des messages ignorés est le
+    // motif de `'idle'`, et sur un onglet actif c'est le veto (D-F) qui les écarterait —
+    // le discriminant de message ne serait plus prouvé par rien.
+    alsoIdle()
 
     // Le canal porte un nom générique ; une story ultérieure pourrait y faire transiter
     // autre chose. Sans discriminant, chacun de ces messages déconnecterait tout le monde.
@@ -445,6 +496,113 @@ describe('Le message — ce que le canal accepte, et ce qu’il ignore', () => {
     expect(complain).not.toHaveBeenCalledWith(
       expect.stringContaining('unknown end-of-session reason'),
     )
+  })
+})
+
+describe('Le VETO DU RÉCEPTEUR — l’inactivité d’un onglet n’est pas celle des autres (D-F)', () => {
+  /**
+   * <p><b>Le défaut que ces quatre tests gardent.</b> L'horodatage d'inactivité vit dans le
+   * substrat du jeton, donc en `sessionStorage` par défaut : il est propre à chaque onglet.
+   * Un onglet laissé en arrière-plan atteint son échéance, annonce `'idle'`, et tuait la
+   * session d'un onglet où quelqu'un travaillait. Le veto rend la main au récepteur — pour
+   * cette raison-là, et pour elle seule.
+   */
+
+  it('un onglet ACTIF ignore l’annonce d’inactivité et poursuit sa session', async () => {
+    stubCaches()
+    const router = fakeRouter('/escrow/42')
+    installSessionBroadcastListener(router)
+    const auth = signIn(ALICE)
+    stillActive()
+    // Ouvert APRÈS le canal de production : quand le témoin reçoit, la production a déjà
+    // reçu. C'est ce qui distingue « le message a été IGNORÉ » de « le message n'est pas
+    // encore arrivé » — une attente de vingt millisecondes ne le distinguerait pas, et
+    // c'est le défaut de preuve que la passe de mutation de T4 a démasqué.
+    const seen = witness()
+
+    other.announce('idle')
+    await seen.delivered(1)
+
+    // La session tient : en mémoire, dans le substrat de cet onglet, et à l'écran.
+    expect(auth.token).toBe('alice@corp.example-token')
+    expect(readCredential(TOKEN_STORAGE_KEY)).toBe('alice@corp.example-token')
+    expect(router.replace).not.toHaveBeenCalled()
+    expect(takeSessionNotice()).toBeNull()
+
+    // Appariée, et indispensable : sans ce second temps, un écouteur jamais installé — ou
+    // un canal mort — satisferait les quatre assertions ci-dessus à la perfection.
+    other.announce('logout')
+    await vi.waitFor(() => expect(auth.token).toBeNull())
+    expect(router.replace).toHaveBeenCalledTimes(1)
+
+    seen.close()
+  })
+
+  it('un onglet lui-même INACTIF meurt de la même annonce — NFR-P8 est intact', async () => {
+    // L'appareil réellement abandonné : tous les onglets sont inactifs, donc tous
+    // terminent. C'est le scénario de la story, et le veto ne le touche pas.
+    stubCaches()
+    const router = fakeRouter('/escrow/42')
+    installSessionBroadcastListener(router)
+    const auth = signIn(ALICE)
+    alsoIdle()
+
+    other.announce('idle')
+    await vi.waitFor(() => expect(router.replace).toHaveBeenCalled())
+
+    expect(auth.token).toBeNull()
+    expect(readCredential(TOKEN_STORAGE_KEY)).toBeNull()
+    expect(readCredential(USER_STORAGE_KEY)).toBeNull()
+    expect(router.replace).toHaveBeenCalledWith({ name: 'auth', query: { redirect: '/escrow/42' } })
+    // Et il l'explique : le motif est celui de l'inactivité, pas le silence d'un logout.
+    expect(takeSessionNotice()).toBe('idle')
+  })
+
+  it('une DÉCONNEXION traverse le veto — actif ou non, le geste ne se discute pas', async () => {
+    // Un veto qui s'appliquerait à `'logout'` laisserait un onglet actif authentifié sur un
+    // appareil que son propriétaire vient de rendre. Ce serait un défaut de sécurité, pas
+    // une amélioration de confort.
+    stubCaches()
+    const router = fakeRouter('/escrow/42')
+    installSessionBroadcastListener(router)
+
+    const auth = signIn(ALICE)
+    stillActive()
+    other.announce('logout')
+    await vi.waitFor(() => expect(auth.token).toBeNull())
+    expect(router.replace).toHaveBeenCalledTimes(1)
+
+    // Le même message sur un onglet inactif : il traverse aussi, évidemment. Les deux cas
+    // dans le même test, parce que ce qu'on prouve est précisément que l'état d'activité
+    // n'entre PAS en ligne de compte pour cette raison-là.
+    signIn(ALICE)
+    alsoIdle()
+    other.announce('logout')
+    await vi.waitFor(() => expect(router.replace).toHaveBeenCalledTimes(2))
+    expect(auth.token).toBeNull()
+  })
+
+  it('un 403 nu (« expired ») traverse le veto — c’est un verdict du serveur', async () => {
+    // Le jeton est déjà refusé côté serveur : un onglet qui se déclarerait « actif »
+    // continuerait d'afficher une interface authentifiée avec un jeton mort.
+    stubCaches()
+    const router = fakeRouter('/escrow/42')
+    installSessionBroadcastListener(router)
+
+    const auth = signIn(ALICE)
+    stillActive()
+    other.announce('expired')
+    await vi.waitFor(() => expect(auth.token).toBeNull())
+    expect(router.replace).toHaveBeenCalledTimes(1)
+    // Un 403 nu reste muet : c'est le comportement que la Story 1.9 lui a donné, et
+    // l'assertion le verrouille ici aussi.
+    expect(takeSessionNotice()).toBeNull()
+
+    signIn(ALICE)
+    alsoIdle()
+    other.announce('expired')
+    await vi.waitFor(() => expect(router.replace).toHaveBeenCalledTimes(2))
+    expect(auth.token).toBeNull()
   })
 })
 

@@ -586,13 +586,13 @@ async function expireForIdleTimeout(router: Router): Promise<void> {
  * via `endSession`), une déconnexion volontaire n'en écrit aucun — l'utilisateur l'a
  * voulue, il n'y a rien à lui expliquer.
  *
- * <p><b>Écart nommé.</b> La raison `'idle'` est mesurée PAR ONGLET quand le substrat est
- * `sessionStorage` (le défaut) : chaque onglet a son propre horodatage. Un onglet resté en
- * arrière-plan quinze minutes met donc fin aussi à la session d'un onglet où l'on
- * travaillait. C'est la lecture littérale de l'AC3 — « les autres onglets terminent leur
- * session » — et non un effet de bord ; en mode « rester connecté » l'horodatage est
- * partagé et le cas ne se présente pas. À rouvrir avec le PO si le coût d'usage se
- * confirme, pas à corriger en silence ici.
+ * <p><b>Le veto du récepteur (décision D-F, tranchée par le PO le 2026-08-11).</b> La
+ * raison `'idle'` est mesurée PAR ONGLET quand le substrat est `sessionStorage` (le
+ * défaut) : chaque onglet a son propre horodatage. Livrée telle quelle, la propagation
+ * laissait donc un onglet resté en arrière-plan quinze minutes mettre fin à la session
+ * d'un onglet où l'utilisateur était en train de travailler. Un onglet qui n'est pas
+ * lui-même inactif IGNORE désormais une annonce `'idle'` — voir
+ * `endSessionFromAnotherTab` ci-dessous, où la règle est écrite et bornée.
  */
 export function installSessionBroadcastListener(router: Router): () => void {
   return subscribeSessionEnd((reason) => {
@@ -609,6 +609,31 @@ async function endSessionFromAnotherTab(router: Router, reason: string | undefin
   // vers l'écran d'authentification à chaque annonce — une navigation visible, sans objet,
   // qui écraserait au passage le paramètre `redirect` que l'utilisateur venait d'obtenir.
   if (!useAuthStore().isAuthenticated) return
+
+  // LE VETO DU RÉCEPTEUR (décision D-F, tranchée par le PO le 2026-08-11).
+  //
+  // Le défaut qu'il ferme : l'horodatage d'inactivité vit dans le substrat du jeton, donc
+  // en `sessionStorage` par défaut (AC1) — il est PROPRE À CHAQUE ONGLET. Un onglet laissé
+  // en arrière-plan atteint son échéance au bout de quinze minutes, annonce `'idle'`, et
+  // détruisait jusqu'ici la session d'un onglet où quelqu'un était en train de travailler.
+  //
+  // La règle : un onglet qui n'est pas LUI-MÊME inactif poursuit sa session. On relit donc
+  // la primitive de T3 — `isIdleExpired()`, jamais un calcul recopié : un seuil à deux
+  // endroits diverge au premier ajustement, et c'est le même horodatage que lit le
+  // contrôle au démarrage. NFR-P8 est intact : un appareil réellement abandonné a TOUS ses
+  // onglets inactifs, donc tous terminent. Un horodatage absent rend `false`, ce qui range
+  // l'onglet du côté « pas de fait constaté, on ne termine pas » — la même lecture que
+  // `enforceIdlePolicy`, qui horodate au lieu de déconnecter.
+  //
+  // ⚠️ LE VETO NE VAUT QUE POUR `'idle'`, et l'élargir serait un DÉFAUT DE SÉCURITÉ, pas
+  // une amélioration. `'logout'` est un geste délibéré — la personne rend l'appareil — et
+  // `'expired'` est un verdict du serveur sur un jeton qu'il refuse déjà. Ni l'un ni
+  // l'autre ne se discute au niveau du récepteur : un onglet actif qui les vétoerait
+  // resterait authentifié sur un poste rendu, ou avec un jeton mort. Seule l'inactivité
+  // est une DÉDUCTION locale, et c'est la seule chose qu'un onglet soit en droit de
+  // contredire — parce qu'il en sait plus que l'émetteur sur sa propre activité.
+  if (reason === 'idle' && !isIdleExpired()) return
+
   const query = signInQuery(router)
   await endSession({ reason, source: 'another-tab' })
   await returnToSignIn(router, query)

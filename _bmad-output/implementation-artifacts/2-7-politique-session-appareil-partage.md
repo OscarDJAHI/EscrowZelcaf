@@ -164,6 +164,7 @@ Ne pas écrire « aucune donnée de A ne survit ». L'AC1 de la Story 1.9 disait
   - [x] Pas de rechargement brutal — la convention Frontend du spine interdit le reload silencieux ; l'onglet doit terminer sa session de façon **observable**.
   - [x] Documenter la règle d'autorité **dans le code**, en commentaire load-bearing.
   - [x] ⚠️ Écart nommé, **pas coché** : la propagation est LOCALE À L'APPAREIL. Une révocation déclenchée côté serveur depuis un autre appareil (Story 2.6 / NFR-P5) ne produit aucun message ; elle se détecte par le 403 nu au prochain appel, chemin qui existe déjà.
+  - [x] **T4-bis — Veto du récepteur (décision D-F, 2026-08-11)** : un onglet qui n'est pas lui-même inactif ignore une annonce `'idle'` et poursuit sa session. Veto **borné à `'idle'`** — `'logout'` et `'expired'` traversent toujours. Primitive de T3 réutilisée (`isIdleExpired()`), aucun calcul de seuil recopié.
 
 - [ ] **T5 — Attente bornée sur la révocation** (AC: 4)
   - [ ] Borner l'attente de `auth.revokeOnServer` / `logoutUser` (`api/auth.ts:77-80`, aujourd'hui `fetch` + `keepalive`, **aucun `signal`**).
@@ -385,6 +386,17 @@ Restauration après chaque mutation : fichier sauvegardé **hors du dépôt** pu
 
 Restauration après chaque mutation : les trois fichiers de production sauvegardés **hors du dépôt** puis réécrits, `diff` vérifié vide avant chaque nouvelle mutation et à la fin. **Jamais** de `git checkout --`. État final : **490/490 verts**, confirmé sur **10 exécutions complètes consécutives**.
 
+**T4-bis — veto du récepteur (2026-08-11), obligation AC7.** Quatre mutations sur la seule ligne livrée. Base : 494 verts.
+
+| # | Mutation | Garde visée | Résultat |
+|---|---|---|---|
+| 1 | `if (reason === 'idle' && !isIdleExpired()) return` **retiré** | le veto lui-même — le défaut d'origine, à la ligne près | 🔴 **1 seul** rouge : `un onglet ACTIF ignore l'annonce d'inactivité` (493 verts) |
+| 2 | `if (!isIdleExpired()) return` — le veto s'applique à **toutes** les raisons | **la LIMITATION à `'idle'`** : un onglet actif qui vétoerait un `'logout'` resterait authentifié sur un appareil rendu | 🔴 **10** rouges, tous sur un récepteur qui doit honorer un message (dont les **2** de `mainSessionBroadcast.spec.ts`) |
+| 2b | veto étendu à `'logout'` **seulement** — la mutation la plus proche du défaut de sécurité | idem, isolée | 🔴 **9** rouges ; `un 403 nu (« expired ») traverse le veto` redevient **vert**, ce qui montre que les deux raisons sont gardées séparément |
+| 3 | comparaison **inversée** : `reason === 'idle' && isIdleExpired()` | le SENS de la lecture — un veto qui protégerait l'onglet inactif et sacrifierait l'actif | 🔴 **4** rouges, tous sur le chemin `'idle'`, dont `un onglet lui-même INACTIF meurt` (NFR-P8) |
+
+Restauration : `session.ts` sauvegardé hors dépôt puis réécrit, `diff` vérifié **vide** après chaque mutation. **Jamais** de `git checkout --`. État final : **494/494 verts**.
+
 ### Completion Notes List
 
 **T0 — Lire avant d'écrire.** Les cinq fichiers du préalable lus intégralement. Deux avertissements « Story 2.7 réécrira ce fichier » trouvés en place (`session.ts:198-199`, `i18n/index.ts:36-38`) : la décision qu'ils protègent — `escrow_locale` n'est pas une donnée de session — est **conservée**, aucune clé de langue n'entre dans la purge.
@@ -471,9 +483,26 @@ Choix de conception non dictés par la story, et leurs motifs :
 
 État T4 : **490 tests verts** (478 au départ, **+12**), `vue-tsc --build` à 0 diagnostic, `npm run lint --max-warnings 0` propre, `python3 scripts/check-encoding.py` verte sur 1978 fichiers.
 
+**T4-bis — Veto du récepteur (décision D-F).** L'écart n° 2 nommé ci-dessus — « la raison `'idle'` est mesurée PAR ONGLET » — a été porté au PO, qui l'a tranché : **veto du récepteur**. Une ligne dans `endSessionFromAnotherTab`, et le paragraphe de `session.ts` qui documentait l'écart comme un comportement assumé est réécrit — une justification périmée est ce qui fait reconduire un défaut pour toujours.
+
+Choix et motifs :
+
+- **Le veto vit chez le RÉCEPTEUR, pas dans le message.** L'émetteur ne sait rien de l'activité des autres onglets ; c'est précisément l'asymétrie d'information qui fabrique le défaut. Le seul module en droit de contredire une déduction d'inactivité est celui qui détient l'horodatage concerné.
+- **`isIdleExpired()` réutilisée telle quelle, jamais un calcul recopié.** Le veto lit le MÊME horodatage et le MÊME seuil que le contrôle au démarrage et que la minuterie. Un `Date.now() - last > 15 * 60 * 1000` écrit ici aurait divergé au premier ajustement, et la divergence n'aurait rougi nulle part.
+- **Horodatage ABSENT ⇒ l'onglet n'est PAS inactif ⇒ il survit.** Même lecture qu'`enforceIdlePolicy`, qui horodate au lieu de déconnecter : l'absence n'établit aucun fait. La direction est ici la conservatrice au sens de l'usage, et elle ne coûte rien à NFR-P8 — un appareil vraiment abandonné voit chacun de ses onglets atteindre sa propre échéance et terminer de lui-même, sans avoir besoin d'un message.
+- **Le veto est placé APRÈS le garde d'authentification** et non avant : un onglet déjà déconnecté n'a rien à vétoer, et l'ordre garde chaque test sur la garde qu'il nomme.
+
+**Ce que j'ai trouvé et qui n'était pas prévu :**
+
+1. **⚠️ Le veto allait CREUSER deux gardes déjà prouvées par mutation en T4.** `sessionBroadcast.spec.ts` prouve le discriminant de message (T4/M6) et le garde d'authentification (T4/M5) en postant un message `'idle'` qui doit être ignoré, et en lisant le MOTIF comme témoin — `'idle'` en écrit un, `'logout'` non. Sur un onglet actif, le veto écarte désormais ce message **avant** que la garde nommée ait à se prononcer : les deux tests seraient restés **verts** avec leur garde retirée. Les deux tabs sont donc explicitement rendus inactifs (`alsoIdle()`), ce qui rétablit la mutation. C'est le mode d'échec « une assertion satisfaite par la mauvaise garde », trouvé non par la suite mais en relisant ce que chaque test prouve avant d'y toucher.
+2. **Aucune minuterie factice n'a été nécessaire.** « Actif » et « inactif » s'écrivent en posant un instant dans le substrat (`markActivity()` / `Date.now() - IDLE_TIMEOUT_MS - 1000`) sur l'horloge RÉELLE. Figer l'horloge dans ce fichier aurait suspendu la livraison des messages `BroadcastChannel` — le piège que T3 a payé et que T4 documente.
+3. **L'assertion « l'onglet actif survit » est une négative**, et elle est ancrée sur le `witness()` de T4 (ordre de création des canaux) plutôt que sur un délai : « rien n'a bougé » et « le message n'est pas encore arrivé » sont indiscernables sur une attente fixe. Appariée à une positive dans le même test : le `'logout'` qui suit termine bel et bien la session.
+
+État T4-bis : **494 tests verts** (490 au départ, **+4**), `vue-tsc --build` à 0 diagnostic, `npm run lint --max-warnings 0` propre, `python3 scripts/check-encoding.py` verte sur 1978 fichiers.
+
 ### File List
 
-_Cumulée T1 → T4. Les tâches T5-T11 ne sont pas commencées._
+_Cumulée T1 → T4-bis. Les tâches T6-T11 ne sont pas commencées._
 
 **Nouveaux — production**
 - `frontend/src/utils/credentialStorage.ts` (T1) — substrat commutable des identifiants
@@ -494,7 +523,8 @@ _Cumulée T1 → T4. Les tâches T5-T11 ne sont pas commencées._
 - `frontend/src/api/client.ts` (T1 : lecture par `readCredential` ; T3 : alimentation du compteur de requêtes en vol)
 - `frontend/src/api/__tests__/client.spec.ts` (T1 ; T3 : 3 tests de câblage du compteur)
 - `frontend/src/stores/auth.ts` (T1)
-- `frontend/src/stores/session.ts` (T1 : `LAST_USER_STORAGE_KEY` exportée ; T3 : mode `'idle'`, `KNOWN_REASONS`, motif persisté, `enforceIdlePolicy`, `installIdleTimeout`, extraction de `signInQuery`/`returnToSignIn` ; T4 : `EndSessionSource`, émission, règle d'autorité, `installSessionBroadcastListener`)
+- `frontend/src/stores/session.ts` (T1 : `LAST_USER_STORAGE_KEY` exportée ; T3 : mode `'idle'`, `KNOWN_REASONS`, motif persisté, `enforceIdlePolicy`, `installIdleTimeout`, extraction de `signInQuery`/`returnToSignIn` ; T4 : `EndSessionSource`, émission, règle d'autorité, `installSessionBroadcastListener` ; T4-bis : veto du récepteur sur `'idle'`)
+- `frontend/src/stores/__tests__/sessionBroadcast.spec.ts` (T4-bis : 4 tests du veto, et `alsoIdle()` sur les deux tests dont le veto aurait creusé la garde)
 - `frontend/src/main.ts` (T3 : contrôle au démarrage + minuterie, avant `app.mount()` ; T4 : écouteur inter-onglets)
 - `frontend/src/views/AuthView.vue` (T2 : case « rester connecté » ; T3 : motif d'expiration)
 - `frontend/src/i18n/en.json`, `frontend/src/i18n/fr.json` (T2 : `auth.rememberMe` ; T3 : `auth.sessionIdleNotice`)
