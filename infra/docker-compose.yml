@@ -195,6 +195,10 @@ services:
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/escrow
       SPRING_DATASOURCE_USERNAME: escrow
       SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD manquant}
+      # Observabilité (Story 11.4). L'endpoint OTLP est INJECTÉ et non codé en dur :
+      # sans cette variable, le défaut d'application.yml vise localhost, ce qui est juste
+      # pour un `mvn spring-boot:run` et faux dans un conteneur.
+      ESCROW_OTLP_ENDPOINT: http://jaeger:4318/v1/traces
       SPRING_RABBITMQ_HOST: rabbitmq
       SPRING_RABBITMQ_PORT: "5672"
       SPRING_RABBITMQ_USERNAME: ${RABBITMQ_DEFAULT_USER:-escrow}
@@ -276,6 +280,43 @@ services:
     depends_on:
       backend:
         condition: service_healthy
+
+  # ════════════════════════════════════════════════════════════════════════════
+  # OBSERVABILITÉ (Story 11.4) — POSTE DE DÉVELOPPEMENT UNIQUEMENT
+  #
+  # Écart NOMMÉ, décision Q1 du 2026-08-11 : le déploiement de cette pile en
+  # PRODUCTION appartient à la Story 11.3, qui tranche la cible d'hébergement
+  # (spike AR-P5). Ce qui est ici sert le poste de développement et rend l'AC3
+  # (« une alerte de test est délivrée ») démontrable dès maintenant.
+  #
+  # AUCUN de ces services n'est joignable depuis l'extérieur : ils ne publient
+  # de port que sur la boucle locale (127.0.0.1), à la différence des services
+  # applicatifs. La 11.3 devra faire le même choix — ou mieux — derrière son
+  # reverse-proxy : ni Prometheus ni Jaeger ne s'authentifient.
+  # ════════════════════════════════════════════════════════════════════════════
+  prometheus:
+    image: prom/prometheus:v3.1.0
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+    volumes:
+      - ./observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    ports:
+      # 9090 est libre : 9000/9001 sont pris par MinIO, 5432/5672/15672/8081/5050
+      # par le reste de la pile. Lié à la boucle locale, jamais à 0.0.0.0.
+      - "127.0.0.1:${PROMETHEUS_PORT:-9090}:9090"
+    depends_on:
+      backend:
+        condition: service_healthy
+
+  jaeger:
+    # Collecteur OTLP ET interface de consultation dans une seule image : l'AC2
+    # demande une trace « consultable », pas une pile de collecte complète. Un
+    # collecteur OpenTelemetry séparé s'ajoutera si la 11.3 en a besoin.
+    image: jaegertracing/all-in-one:1.62.0
+    environment:
+      COLLECTOR_OTLP_ENABLED: "true"
+    ports:
+      - "127.0.0.1:${JAEGER_UI_PORT:-16686}:16686"
 
 volumes:
   pgdata:

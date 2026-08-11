@@ -1,0 +1,16 @@
+# Configuration de scraping (Story 11.4, AC1) — POSTE DE DÉVELOPPEMENT.
+#
+# Versionnée dans le dépôt et montée en lecture seule : une configuration qui ne
+# vivrait que dans un volume Docker disparaîtrait au premier `compose down -v`, et
+# ne serait ni relisible ni révisable. Même raison que pour les tableaux de bord.
+global:
+  scrape_interval: 15s
+
+scrape_configs:
+  - job_name: escrow-backend
+    # Le PORT DE MANAGEMENT (9091), jamais le port applicatif (8080). C'est la
+    # troisième couche du cantonnement décrit dans SecurityConfig : le scraper
+    # atteint les métriques par un port que le reverse-proxy ne publie pas.
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ["backend:9091"]

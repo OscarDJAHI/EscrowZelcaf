@@ -4,6 +4,7 @@ import com.zlecaf.escrow.security.crypto.SecretCipher;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import io.micrometer.observation.ObservationRegistry;
 import org.testcontainers.containers.MinIOContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -69,7 +70,7 @@ class MinioEvidenceStorageTest {
                 .region(Region.US_EAST_1)
                 .build();
         s3Client.createBucket(CreateBucketRequest.builder().bucket(BUCKET).build());
-        storage = new MinioEvidenceStorage(s3Client, BUCKET, new SecretCipher(V1, "v1"));
+        storage = new MinioEvidenceStorage(s3Client, BUCKET, new SecretCipher(V1, "v1"), ObservationRegistry.NOOP);
     }
 
     /** Lecture BRUTE de l'objet, sans passer par l'adaptateur : la vue de l'attaquant. */
@@ -184,7 +185,7 @@ class MinioEvidenceStorageTest {
                 .forcePathStyle(true)
                 .region(Region.US_EAST_1)
                 .build();
-        MinioEvidenceStorage brokenStorage = new MinioEvidenceStorage(broken, BUCKET, new SecretCipher(V1, "v1"));
+        MinioEvidenceStorage brokenStorage = new MinioEvidenceStorage(broken, BUCKET, new SecretCipher(V1, "v1"), ObservationRegistry.NOOP);
 
         assertThatThrownBy(() -> brokenStorage.store(1L, fixedBytes(16), "application/pdf"))
                 .isInstanceOf(EvidenceStorageException.class);
@@ -251,7 +252,7 @@ class MinioEvidenceStorageTest {
         // Trousseau élargi + clé active basculée : v1 reste au trousseau, c'est
         // précisément la condition de lisibilité rappelée par le runbook.
         MinioEvidenceStorage rotated = new MinioEvidenceStorage(s3Client, BUCKET,
-                new SecretCipher(V1 + "," + V2, "v2"));
+                new SecretCipher(V1 + "," + V2, "v2"), ObservationRegistry.NOOP);
 
         try (InputStream in = rotated.load(storageKey)) {
             assertThat(in.readAllBytes()).isEqualTo(content);

@@ -9,6 +9,10 @@ import org.springframework.stereotype.Component;
 import software.amazon.awssdk.core.ResponseInputStream;
 import software.amazon.awssdk.core.exception.SdkException;
 import software.amazon.awssdk.core.sync.RequestBody;
+import java.util.function.Supplier;
+
+import io.micrometer.observation.Observation;
+import io.micrometer.observation.ObservationRegistry;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
@@ -53,17 +57,51 @@ public class MinioEvidenceStorage implements EvidenceStorage {
      */
     private static final long MAX_OBJECT_BYTES = EvidenceService.MAX_FILE_SIZE + 4_096L;
 
+    /**
+     * Nom d'observation du franchissement du stockage objet (Story 11.4, AC2).
+     *
+     * <p>STABLE et sans donnée variable : la clé de stockage, l'identifiant de transaction
+     * et le nom du seau n'y entrent PAS. Un nom construit à l'exécution ferait exploser la
+     * cardinalité des séries — chaque objet créerait sa propre métrique, et le système de
+     * métriques tomberait avant de rendre le moindre service. Ce qui varie va dans un tag
+     * à faible cardinalité, et il n'y en a qu'un : l'opération.
+     */
+    public static final String STORAGE_OBSERVATION = "escrow.evidence.storage";
+
     private final S3Client s3Client;
     private final String bucket;
     private final SecretCipher cipher;
+    private final ObservationRegistry observations;
 
     public MinioEvidenceStorage(
             S3Client s3Client,
             @Value("${escrow.storage.bucket}") String bucket,
-            SecretCipher cipher) {
+            SecretCipher cipher,
+            ObservationRegistry observations) {
         this.s3Client = s3Client;
         this.bucket = bucket;
         this.cipher = cipher;
+        this.observations = observations;
+    }
+
+    /**
+     * Exécute l'appel réseau au stockage objet SOUS une observation.
+     *
+     * <p><b>Pourquoi cette instrumentation existe.</b> Le SDK AWS v2 n'est pas instrumenté
+     * par Micrometer : sans ce passage, une trace de requête s'arrête à la couche web et le
+     * temps passé dans le stockage objet — le poste le plus lent du versement de preuve, et
+     * le premier suspect d'un incident sur corridor lent — reste invisible. L'AC2 demande
+     * une trace « du contrôleur au stockage objet » ; voici le second bout.
+     *
+     * <p><b>Ce que l'observation englobe, et ce qu'elle exclut.</b> L'appel S3, et lui seul.
+     * Le chiffrement d'enveloppe (`SecretCipher`) reste dehors : c'est du calcul local, et
+     * l'inclure ferait passer un ralentissement de CPU pour une lenteur réseau — exactement
+     * le contresens qu'une trace est censée éviter.
+     */
+    private <T> T observed(String operation, Supplier<T> call) {
+        return Observation.createNotStarted(STORAGE_OBSERVATION, observations)
+                .lowCardinalityKeyValue("operation", operation)
+                .observe(call);
     }
 
     @Override
@@ -97,7 +135,7 @@ public class MinioEvidenceStorage implements EvidenceStorage {
                 .contentType(contentType)
                 .build();
         try {
-            s3Client.putObject(request, RequestBody.fromBytes(sealed));
+            observed("put", () -> s3Client.putObject(request, RequestBody.fromBytes(sealed)));
         } catch (SdkException e) {
             // Infra failure (outage/timeout/protocol) — surface a storage-neutral
             // exception so the service/web layer never sees an S3 type (502).
