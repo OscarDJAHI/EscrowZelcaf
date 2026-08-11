@@ -88,6 +88,20 @@ Mécanisme retenu : **`BroadcastChannel('escrow-session')`**, avec repli silenci
 
 **Règle d'autorité entre onglets (AC3) :** l'onglet où l'action a lieu est l'**émetteur unique** de la révocation serveur. Les onglets récepteurs exécutent une terminaison **purement locale** — ils n'appellent ni `logoutUser` ni aucun endpoint. Motif : **NFR-P2** rate-limite `/auth/*` ; N onglets produisant N révocations transformeraient une déconnexion en rafale anti-bruteforce contre l'utilisateur lui-même.
 
+### D-F — Veto du récepteur sur `'idle'` (tranchée par Oscard le 2026-08-11)
+
+Défaut trouvé EN livrant T4, pas prévu par les AC. L'horodatage d'inactivité vit dans le substrat du jeton, donc dans `sessionStorage` par défaut : il est **propre à chaque onglet**. Un onglet laissé en arrière-plan expire au bout de 15 minutes, diffuse `'idle'`, et **tue la session d'un onglet où l'utilisateur est en train de travailler**.
+
+Deux aggravants : le cas ne se produit **pas** en mode « rester connecté » (horodatage partagé en `localStorage`), donc la politique se comporte différemment selon le mode de stockage ; et c'est le genre de défaut qui remonte comme bug le lendemain de la mise en service.
+
+**Décision : veto du récepteur.** À la réception d'un message `'idle'`, un onglet qui **n'est pas lui-même inactif** ignore le message et poursuit sa session.
+
+- Appareil réellement abandonné → tous les onglets sont inactifs → tous terminent. NFR-P8 est intact, c'est le scénario de la story.
+- Onglet actif → il survit. L'utilisateur n'est pas puni d'avoir laissé un second onglet ouvert.
+- **Le veto ne vaut QUE pour `'idle'`.** `'logout'` et `'expired'` traversent toujours : la déconnexion est un geste délibéré et le 403 nu est un verdict serveur — ni l'un ni l'autre ne se discute au niveau du récepteur.
+
+Motif du choix contre l'horodatage partagé entre onglets, qui serait conceptuellement plus juste : il rouvrirait une décision de T3 déjà livrée et prouvée, pour un gain que le veto obtient sans toucher au substrat.
+
 ### D-C — Le bouton de déconnexion migre dans les shells
 
 `sprint-status.yaml:206` affirme « 2-3 done, le bouton de déconnexion a sa place définitive ». **Cette affirmation est fausse et vérifiée fausse** : `ClientShell.vue` et `DesktopShell.vue` ne portent aucune déconnexion (`grep -rn "logout\|endSession" frontend/src/layouts` → 0). Le bouton est resté dans `views/DashboardView.vue:101-106`.
