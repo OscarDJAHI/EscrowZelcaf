@@ -11,6 +11,7 @@ import {
   readLastActivity,
   startIdleWatch,
 } from '@/utils/idleTimeout'
+import { publishSessionEnd, subscribeSessionEnd } from '@/utils/sessionBroadcast'
 import * as idb from './offlineQueue.idb'
 import type { Router } from 'vue-router'
 
@@ -163,6 +164,19 @@ export function takeSessionNotice(): SessionNotice | null {
 }
 
 /**
+ * D'OÙ vient l'ordre de terminer la session (Story 2.7, AC3).
+ *
+ * <p>`'this-tab'` — l'utilisateur a agi ici, ou c'est ici que le jeton s'est fait refuser.
+ * `'another-tab'` — un autre onglet du même appareil vient de l'annoncer par
+ * `BroadcastChannel`.
+ *
+ * <p>Ce n'est pas une nuance de journalisation : c'est la RÈGLE D'AUTORITÉ de l'AC3, et
+ * elle décide de trois choses à elle seule — voir les trois emplacements où
+ * `fromAnotherTab` est lu ci-dessous.
+ */
+export type EndSessionSource = 'this-tab' | 'another-tab'
+
+/**
  * `reason` est typé LARGE, et c'est le comportement documenté juste en dessous : « Two
  * reasons and no third. An unrecognised one falls through to the RETAINING branch. » Une
  * raison inconnue n'est donc pas une erreur d'appel, c'est un cas TRAITÉ — celui qui
@@ -172,9 +186,26 @@ export function takeSessionNotice(): SessionNotice | null {
  */
 export async function endSession({
   reason,
-}: { reason?: EndSessionReason | (string & {}) } = {}): Promise<void> {
+  source = 'this-tab',
+}: { reason?: EndSessionReason | (string & {}); source?: EndSessionSource } = {}): Promise<void> {
   const auth = useAuthStore()
-  const explicit = reason === 'logout'
+  const fromAnotherTab = source === 'another-tab'
+
+  // RÈGLE D'AUTORITÉ ENTRE ONGLETS (AC3), CONSÉQUENCE N° 1 SUR 3.
+  //
+  // `explicit` commande TOUT le bloc du bas : purge IndexedDB de l'utilisateur, cache de
+  // lecture, marqueur `escrow_last_user`, révocation serveur. Ces quatre effets portent
+  // sur de l'état PARTAGÉ PAR L'APPAREIL ou sur le réseau, et l'onglet où l'action a eu
+  // lieu vient de les traiter selon la raison — il est l'émetteur unique. Les rejouer ici
+  // serait au mieux N tours d'IndexedDB pour un travail déjà fait, au pire N révocations
+  // sur `/auth/*`, que NFR-P2 limite en débit : une déconnexion ordinaire se
+  // transformerait en rafale anti-bruteforce dirigée contre l'utilisateur lui-même.
+  //
+  // Ce qui reste à faire ici, et que personne d'autre ne peut faire, est au-dessus de la
+  // ligne : les identifiants de CET onglet. Par l'AC1 ils vivent en `sessionStorage`,
+  // cloisonné par onglet, donc la purge de l'émetteur ne les atteint pas. C'est la raison
+  // d'être du canal.
+  const explicit = reason === 'logout' && !fromAnotherTab
 
   // Three reasons and no fourth. An unrecognised one falls through to the
   // RETAINING path, which is the safe direction — destroying a user's queued
@@ -187,6 +218,20 @@ export async function endSession({
       `[session] unknown end-of-session reason ${JSON.stringify(reason)}; keeping stored data (expiry semantics)`,
     )
   }
+
+  // RÈGLE D'AUTORITÉ, CONSÉQUENCE N° 2 : LE RÉCEPTEUR NE RÉ-ÉMET PAS.
+  //
+  // Sans cette condition, A annonce à B, B annonce à A, et deux onglets se renvoient une
+  // fin de session pour la vie de la page. Une seule condition ferme la boucle, à
+  // l'endroit où l'information « d'où vient l'ordre » existe encore.
+  //
+  // ÉMIS TÔT, avant la moindre purge et surtout avant l'attente réseau. La révocation du
+  // bas de cette fonction est un `fetch` sans délai d'expiration : sur un portail captif
+  // elle peut pendre des minutes, et annoncer APRÈS laisserait les autres onglets afficher
+  // une interface authentifiée pendant tout ce temps — c'est-à-dire exactement le défaut
+  // que l'AC3 ferme. Rien dans la terminaison de cet onglet-ci n'est un préalable à celle
+  // des autres : elles sont indépendantes et doivent courir en parallèle.
+  if (!fromAnotherTab) publishSessionEnd(reason)
 
   // ÉCRIT AVANT LA PURGE, pendant que le substrat actif est encore celui de la session qui
   // s'achève. `auth.clearSession()` ne touche que le jeton et le profil, donc l'ordre est
@@ -523,6 +568,49 @@ async function expireForIdleTimeout(router: Router): Promise<void> {
   if (!useAuthStore().isAuthenticated) return
   const query = signInQuery(router)
   await endSession({ reason: 'idle' })
+  await returnToSignIn(router, query)
+}
+
+/**
+ * LA PROPAGATION INTER-ONGLETS, CÔTÉ RÉCEPTEUR (AC3).
+ *
+ * <p>Un autre onglet du même appareil vient d'annoncer la fin de la session. Celui-ci
+ * termine la sienne « sans intervention », et de façon OBSERVABLE : il navigue vers
+ * l'écran d'authentification, exactement comme le fait déjà `installSessionExpiryListener`
+ * pour un 403 nu. Surtout pas de `location.reload()` — la convention Frontend du spine
+ * interdit le rechargement silencieux, et un rechargement ferait de surcroît perdre à
+ * l'utilisateur la saisie en cours d'un onglet qu'il n'a peut-être même pas regardé.
+ *
+ * <p>La raison VOYAGE avec le message, pour que l'onglet récepteur affiche le motif que
+ * l'onglet émetteur affiche : une expiration d'inactivité y écrit le même motif (`'idle'`,
+ * via `endSession`), une déconnexion volontaire n'en écrit aucun — l'utilisateur l'a
+ * voulue, il n'y a rien à lui expliquer.
+ *
+ * <p><b>Écart nommé.</b> La raison `'idle'` est mesurée PAR ONGLET quand le substrat est
+ * `sessionStorage` (le défaut) : chaque onglet a son propre horodatage. Un onglet resté en
+ * arrière-plan quinze minutes met donc fin aussi à la session d'un onglet où l'on
+ * travaillait. C'est la lecture littérale de l'AC3 — « les autres onglets terminent leur
+ * session » — et non un effet de bord ; en mode « rester connecté » l'horodatage est
+ * partagé et le cas ne se présente pas. À rouvrir avec le PO si le coût d'usage se
+ * confirme, pas à corriger en silence ici.
+ */
+export function installSessionBroadcastListener(router: Router): () => void {
+  return subscribeSessionEnd((reason) => {
+    // Non attendue, comme le rappel de la minuterie : `endSessionFromAnotherTab` ne
+    // rejette pas (tout y est déjà gardé), et l'émetteur du message n'attend personne.
+    void endSessionFromAnotherTab(router, reason)
+  })
+}
+
+async function endSessionFromAnotherTab(router: Router, reason: string | undefined): Promise<void> {
+  // RÈGLE D'AUTORITÉ, CONSÉQUENCE N° 3 : un onglet qui n'a rien à terminer ne fait RIEN.
+  //
+  // Sans ce garde, un onglet déjà posé sur l'écran d'authentification se ferait renvoyer
+  // vers l'écran d'authentification à chaque annonce — une navigation visible, sans objet,
+  // qui écraserait au passage le paramètre `redirect` que l'utilisateur venait d'obtenir.
+  if (!useAuthStore().isAuthenticated) return
+  const query = signInQuery(router)
+  await endSession({ reason, source: 'another-tab' })
   await returnToSignIn(router, query)
 }
 

@@ -144,11 +144,12 @@ Ne pas écrire « aucune donnée de A ne survit ». L'AC1 de la Story 1.9 disait
   - [x] Motif affiché : clé i18n EN+FR, **motif ET action de reprise** (UX-DR28), passé par le **canal d'annonces a11y centralisé** (convention Frontend du spine) — ne pas créer un second canal. → ⚠️ **contradiction remontée** : ce canal centralisé **n'existe pas** dans le code (voir Completion Notes). Idiome existant repris (`role="status"`), aucun second canal créé.
   - [x] ⚠️ **Ne pas réarmer le verrou `sessionExpiryAnnounced` par minuterie.** `client.ts:30-33` documente que seul `beginSession` l'abaisse. La minuterie d'inactivité est un mécanisme distinct.
 
-- [ ] **T4 — Propagation inter-onglets** (AC: 3)
-  - [ ] `BroadcastChannel('escrow-session')`, repli silencieux si absent.
-  - [ ] Récepteurs : terminaison **locale seule**, aucun appel réseau (voir D-B, motif NFR-P2).
-  - [ ] Pas de rechargement brutal — la convention Frontend du spine interdit le reload silencieux ; l'onglet doit terminer sa session de façon **observable**.
-  - [ ] Documenter la règle d'autorité **dans le code**, en commentaire load-bearing.
+- [x] **T4 — Propagation inter-onglets** (AC: 3)
+  - [x] `BroadcastChannel('escrow-session')`, repli silencieux si absent.
+  - [x] Récepteurs : terminaison **locale seule**, aucun appel réseau (voir D-B, motif NFR-P2).
+  - [x] Pas de rechargement brutal — la convention Frontend du spine interdit le reload silencieux ; l'onglet doit terminer sa session de façon **observable**.
+  - [x] Documenter la règle d'autorité **dans le code**, en commentaire load-bearing.
+  - [x] ⚠️ Écart nommé, **pas coché** : la propagation est LOCALE À L'APPAREIL. Une révocation déclenchée côté serveur depuis un autre appareil (Story 2.6 / NFR-P5) ne produit aucun message ; elle se détecte par le 403 nu au prochain appel, chemin qui existe déjà.
 
 - [ ] **T5 — Attente bornée sur la révocation** (AC: 4)
   - [ ] Borner l'attente de `auth.revokeOnServer` / `logoutUser` (`api/auth.ts:77-80`, aujourd'hui `fetch` + `keepalive`, **aucun `signal`**).
@@ -354,6 +355,22 @@ Restauration vérifiée après chaque mutation : 12/12 verts. Fichier sauvegard�
 
 Restauration après chaque mutation : fichier sauvegardé **hors du dépôt** puis réécrit, `diff` vérifié vide, suite relancée. **Jamais** de `git checkout --`. État final : **478/478 verts**.
 
+**T4 — mutations de vérification (2026-08-11), obligation AC7.** Neuf mutations, chacune la plus proche possible du défaut d'origine ; pour chacune, la suite ENTIÈRE relancée et vérification que ce sont bien les tests visés qui rougissent. Base : 490 verts.
+
+| # | Mutation | Garde visée | Résultat |
+|---|---|---|---|
+| 1 | `publishSessionEnd(reason)` retiré d'`endSession` | l'ÉMISSION — sans elle, aucun autre onglet n'apprend jamais rien | 🔴 3 rouges, tous sur une émission attendue (487 verts) |
+| 2 | `installSessionBroadcastListener(router)` retiré de `main.ts` | le CÂBLAGE : la fonction reste prouvée, personne ne l'appelle | 🔴 **les 2** tests de `mainSessionBroadcast.spec.ts`, et eux seuls (488 verts) |
+| 3 | `if (!fromAnotherTab)` retiré devant `publishSessionEnd` | la NON-RÉ-ÉMISSION : A annonce à B, B annonce à A, sans fin | 🔴 **1 seul** rouge : `le récepteur ne RÉ-ÉMET pas` |
+| 4 | `explicit = reason === 'logout'` (règle d'autorité retirée) | **NFR-P2** : N onglets = N révocations sur `/auth/*`, rate-limité | 🔴 **2** rouges : `n'appelle AUCUN endpoint` + `ne retouche pas l'état PARTAGÉ` |
+| 5 | `if (!useAuthStore().isAuthenticated) return` retiré du récepteur | l'onglet déjà déconnecté ne doit pas naviguer ni écrire de motif | 🔴 **1 seul** rouge : `un onglet qui n'a rien à terminer ne navigue pas` |
+| 6 | `if (message.type !== SESSION_END) return` retiré | le DISCRIMINANT : sans lui, tout message sur le canal déconnecte | 🔴 **1 seul** rouge : `un message étranger ne détruit aucune session` |
+| 7 | garde `typeof` **ET** `try/catch` retirés d'`openChannel` | le REPLI SILENCIEUX quand `BroadcastChannel` manque | 🔴 **1 seul** rouge : `la propagation dégrade, la déconnexion aboutit` |
+| 7a | garde `typeof` **seule** retirée | — | 🟢 **490 verts** — voir Completion Notes : le repli est DOUBLEMENT implémenté, aucune mutation d'une seule ligne ne le détecte |
+| 8 | `endSession({ source: 'another-tab' })` — la raison n'est plus transmise | contrainte « le message porte la raison, pour le bon motif » | 🔴 **2** rouges : `le MOTIF voyage` + `une annonce sans raison lisible` |
+
+Restauration après chaque mutation : les trois fichiers de production sauvegardés **hors du dépôt** puis réécrits, `diff` vérifié vide avant chaque nouvelle mutation et à la fin. **Jamais** de `git checkout --`. État final : **490/490 verts**, confirmé sur **10 exécutions complètes consécutives**.
+
 ### Completion Notes List
 
 **T0 — Lire avant d'écrire.** Les cinq fichiers du préalable lus intégralement. Deux avertissements « Story 2.7 réécrira ce fichier » trouvés en place (`session.ts:198-199`, `i18n/index.ts:36-38`) : la décision qu'ils protègent — `escrow_locale` n'est pas une donnée de session — est **conservée**, aucune clé de langue n'entre dans la purge.
@@ -411,13 +428,43 @@ Choix de conception non dictés par la story, et leurs motifs :
 
 État T3 : **478 tests verts** (445 au départ, **+33**), `vue-tsc --build` à 0 diagnostic, `npm run lint --max-warnings 0` propre, `python3 scripts/check-encoding.py` verte sur 1975 fichiers, `npm run verify:no-demo` verte.
 
+**T4 — Propagation inter-onglets.** Nouveau module `utils/sessionBroadcast.ts`, `BroadcastChannel('escrow-session')`, branché dans `main.ts` par `installSessionBroadcastListener(router)` à côté de l'écouteur d'expiration existant. `endSession` gagne un paramètre `source: 'this-tab' | 'another-tab'`.
+
+Choix de conception non dictés par la story, et leurs motifs :
+
+- **UN SEUL objet `BroadcastChannel` par onglet, partagé par l'émission et la réception.** La spécification garantit qu'un canal ne reçoit jamais SES PROPRES messages, mais elle ne garantit rien entre deux objets du même onglet : vérifié dans ce runtime, deux canaux ouverts côte à côte reçoivent tous deux le message d'un troisième. Avec deux instances, l'onglet émetteur s'entendrait lui-même, déclencherait sa propre terminaison en pleine terminaison, et le garde d'authentification ne serait plus qu'une question de calendrier. L'instance unique transforme la propriété « on ne s'écoute pas soi-même » en garantie de la plateforme au lieu d'une course gagnée.
+- **`source` plutôt que trois drapeaux.** Un seul paramètre commande les TROIS conséquences de la règle d'autorité — ne pas ré-émettre, ne pas révoquer, ne pas retoucher l'état partagé de l'appareil — parce que ce sont trois faces d'un même fait : cet onglet n'est pas celui où l'action a eu lieu. Trois booléens auraient permis d'en oublier un, et le compilateur n'aurait rien dit.
+- **Le récepteur exécute la sémantique CONSERVATRICE, quelle que soit la raison reçue.** `explicit = reason === 'logout' && !fromAnotherTab`. Ce qui reste au récepteur — les identifiants de SON onglet — est précisément ce que personne d'autre ne peut faire à sa place : par l'AC1 ils vivent en `sessionStorage`, cloisonné par onglet. Ce qu'il ne refait pas — IndexedDB, cache de lecture, marqueur d'appareil, révocation — est partagé ou distant, et l'émetteur vient de le traiter selon la raison. Rejouer coûterait N tours d'IndexedDB **concurrents** de ceux de l'émetteur, et N révocations sur `/auth/*` que **NFR-P2** limite en débit.
+- **Émission TÔT, avant la moindre purge.** La révocation en fin d'`endSession` est un `fetch` sans délai d'expiration : sur un portail captif elle pend des minutes (c'est l'objet même de l'AC4/T5). Annoncer après aurait laissé les autres onglets afficher une interface authentifiée pendant toute cette attente — le défaut que l'AC3 ferme. Les terminaisons des différents onglets sont indépendantes et doivent courir en parallèle.
+- **Un discriminant `type: 'session-end'` dans le message.** Le canal porte un nom générique ; une story ultérieure qui y ferait transiter une synchronisation de langue verrait ses messages lus comme des fins de session par tous les onglets ouverts. Coût : un champ. Prouvé par mutation 6.
+- **Une raison NON RECONNUE termine quand même la session.** Le canal est de même origine : seule notre propre application y écrit, donc une raison qu'on ne comprend pas vient d'une version plus récente de l'application dans un autre onglet — la session y a bel et bien pris fin. On termine, sur le chemin conservateur d'`endSession`, et le diagnostic « raison inconnue » existant s'affiche. Ignorer aurait été la direction non sûre.
+- **Un garde d'authentification côté récepteur.** Un onglet déjà posé sur `/auth` se serait fait renvoyer vers `/auth` à chaque annonce — navigation visible, sans objet, qui écrase au passage le `redirect` que l'utilisateur venait d'obtenir.
+- **Terminaison OBSERVABLE par navigation de routeur**, jamais `location.reload()` : la convention Frontend du spine interdit le rechargement silencieux, et un rechargement ferait perdre la saisie en cours d'un onglet que l'utilisateur n'a peut-être même pas regardé. Même chemin que `installSessionExpiryListener`, `signInQuery`/`returnToSignIn` réutilisés — troisième appelant, et c'est la raison pour laquelle T3 les avait extraits.
+- **`closeSessionBroadcast()` sans appelant de production.** Un onglet vivant garde son canal ouvert pour la durée de sa vie, comme ses écouteurs `pointerdown`. C'est la suite qui en a besoin : sans elle, chaque fichier laisserait derrière lui des canaux entendant les messages du suivant. Même rôle que `stopIdleWatch`.
+
+**Ce que la story NE revendique PAS (écarts nommés, pas cochés) :**
+
+1. **La propagation est LOCALE À L'APPAREIL.** `BroadcastChannel` ne franchit ni l'origine ni la machine. Une révocation déclenchée côté serveur depuis un AUTRE appareil — changement de mot de passe, Story 2.6 / NFR-P5 — ne produit aucun message ; elle se détecte par le 403 nu au prochain appel API, chemin `escrow:session-expired` qui existe déjà. Écrit dans le module et dans les tâches.
+2. **La raison `'idle'` est mesurée PAR ONGLET** quand le substrat est `sessionStorage` (le défaut) : chaque onglet a son propre horodatage. Un onglet resté en arrière-plan quinze minutes met donc fin aussi à la session d'un onglet où l'on travaillait. C'est la lecture littérale de l'AC3 — « les autres onglets terminent leur session » — combinée à la contrainte « le message porte la raison, pour que le récepteur affiche le bon motif », qui n'aurait aucun sens si `'idle'` ne se propageait pas. En mode « rester connecté » l'horodatage est partagé et le cas ne se présente pas. **À rouvrir avec le PO si le coût d'usage se confirme** — corriger en silence aurait voulu dire ajouter au récepteur une condition que l'AC ne demande pas.
+3. **Aucune nouvelle clé i18n.** Le motif du récepteur est celui que `endSession` écrit déjà (`auth.sessionIdleNotice`), et une déconnexion volontaire n'en produit aucun — ni ici ni dans l'onglet émetteur. Inventer un message « vous avez été déconnecté depuis un autre onglet » aurait élargi l'AC en passant.
+
+**Ce que j'ai trouvé et qui n'était pas prévu :**
+
+1. **⚠️ La passe de mutation a démasqué une assertion négative FLAKY dans mes propres tests — et c'est la mutation, pas la suite, qui l'a vue.** Trois tests s'écrivaient « on poste le message douteux, on attend 20 ms, on constate que rien n'a bougé ». Avec le discriminant retiré (mutation 6), le test correspondant **rougissait lancé seul et restait VERT dans la suite complète** : sous charge, les 20 ms s'écoulaient avant que le message ne soit livré, et l'assertion était satisfaite par le vide. Une preuve qui dépend de la charge de la machine n'est pas une preuve. Les trois tests s'appuient désormais sur deux garanties de la spécification plutôt que sur l'horloge — **l'ordre de livraison** (on fait suivre le message douteux d'un message bien formé et on attend l'effet du second, donc le premier est nécessairement traité), et **l'ordre de création des canaux** (un témoin ouvert APRÈS le canal de production : quand il reçoit, la production a déjà reçu). Le marqueur qui distingue « c'est le premier qui a agi » de « c'est le second » est le MOTIF, seul témoin différent entre `'idle'` et `'logout'` là où le jeton, la navigation et les comptes d'appels sont identiques dans les deux hypothèses. Ordre de création vérifié dans ce runtime sur 200 messages et deux canaux : zéro inversion.
+2. **⚠️ Le repli silencieux est DOUBLEMENT implémenté, et aucune mutation d'une seule ligne ne le détecte** (mutation 7a : 490/490 verts). La garde `typeof BroadcastChannel === 'undefined'` et le `try/catch` autour du constructeur couvrent deux causes DIFFÉRENTES — API absente d'un côté, constructeur qui lève de l'autre (stockage cloisonné, contexte non sécurisé) — mais chacune rattrape le cas de l'autre. La redondance est justifiée et commentée ; le fait est **consigné plutôt que maquillé**, parce qu'une couverture qui ne se prouve qu'en retirant deux lignes à la fois n'est pas la même chose qu'une couverture ligne à ligne.
+3. **`BroadcastChannel` EXISTE dans jsdom 29 + Vitest 4** (implémentation Node) — aucun double n'a donc été nécessaire, et `vitest.setup.ts` n'a pas été touché. Deux comportements vérifiés avant d'écrire quoi que ce soit : la livraison est **asynchrone** (d'où les minuteries réelles dans tout le fichier — `vi.useFakeTimers()` aurait suspendu la suite au lieu de la faire rougir, exactement le piège que T3 a payé), et un canal **ne reçoit pas ses propres messages**, ce sur quoi repose toute la simulation de « l'autre onglet ».
+4. **Observé une fois, non reproduit : `la minuterie est branchée elle aussi` (T3, `mainIdleStartup.spec.ts`) a échoué dans deux exécutions MUTÉES** — donc plus longues et plus chargées — et n'a jamais échoué en isolation (5/5) ni sur l'arbre livré (**10 exécutions complètes consécutives, 490/490**). Ce test amorce l'application entière sous minuteries factices partielles, là où `fake-indexeddb` ordonnance sur `setImmediate` ; c'est une fragilité de harnais sensible à la charge, antérieure à T4 et à surveiller, pas un défaut de la propagation.
+
+État T4 : **490 tests verts** (478 au départ, **+12**), `vue-tsc --build` à 0 diagnostic, `npm run lint --max-warnings 0` propre, `python3 scripts/check-encoding.py` verte sur 1978 fichiers.
+
 ### File List
 
-_Cumulée T1 → T3. Les tâches T4-T11 ne sont pas commencées._
+_Cumulée T1 → T4. Les tâches T5-T11 ne sont pas commencées._
 
 **Nouveaux — production**
 - `frontend/src/utils/credentialStorage.ts` (T1) — substrat commutable des identifiants
 - `frontend/src/utils/idleTimeout.ts` (T3) — mesure de l'inactivité, compteur de requêtes en vol, minuterie
+- `frontend/src/utils/sessionBroadcast.ts` (T4) — canal `escrow-session`, règle d'autorité, repli silencieux
 
 **Nouveaux — tests**
 - `frontend/src/utils/__tests__/credentialStorage.spec.ts` (T1)
@@ -426,13 +473,15 @@ _Cumulée T1 → T3. Les tâches T4-T11 ne sont pas commencées._
 - `frontend/src/stores/__tests__/sessionIdle.spec.ts` (T3) — sémantique `idle`, motif, `enforceIdlePolicy`, `installIdleTimeout`
 - `frontend/src/__tests__/mainIdleStartup.spec.ts` (T3) — **câblage** de `main.ts`, amorçage réel
 - `frontend/src/views/__tests__/sessionIdleNotice.spec.ts` (T3) — motif affiché, EN et FR
+- `frontend/src/stores/__tests__/sessionBroadcast.spec.ts` (T4) — émission, réception, non-ré-émission, absence d'appel réseau, motif, repli
+- `frontend/src/__tests__/mainSessionBroadcast.spec.ts` (T4) — **câblage** de `main.ts`, amorçage réel
 
 **Modifiés**
 - `frontend/src/api/client.ts` (T1 : lecture par `readCredential` ; T3 : alimentation du compteur de requêtes en vol)
 - `frontend/src/api/__tests__/client.spec.ts` (T1 ; T3 : 3 tests de câblage du compteur)
 - `frontend/src/stores/auth.ts` (T1)
-- `frontend/src/stores/session.ts` (T1 : `LAST_USER_STORAGE_KEY` exportée ; T3 : mode `'idle'`, `KNOWN_REASONS`, motif persisté, `enforceIdlePolicy`, `installIdleTimeout`, extraction de `signInQuery`/`returnToSignIn`)
-- `frontend/src/main.ts` (T3 : contrôle au démarrage + minuterie, avant `app.mount()`)
+- `frontend/src/stores/session.ts` (T1 : `LAST_USER_STORAGE_KEY` exportée ; T3 : mode `'idle'`, `KNOWN_REASONS`, motif persisté, `enforceIdlePolicy`, `installIdleTimeout`, extraction de `signInQuery`/`returnToSignIn` ; T4 : `EndSessionSource`, émission, règle d'autorité, `installSessionBroadcastListener`)
+- `frontend/src/main.ts` (T3 : contrôle au démarrage + minuterie, avant `app.mount()` ; T4 : écouteur inter-onglets)
 - `frontend/src/views/AuthView.vue` (T2 : case « rester connecté » ; T3 : motif d'expiration)
 - `frontend/src/i18n/en.json`, `frontend/src/i18n/fr.json` (T2 : `auth.rememberMe` ; T3 : `auth.sessionIdleNotice`)
 - `frontend/src/stores/__tests__/session.spec.ts`, `frontend/src/stores/__tests__/escrow.offline.spec.ts` (T1 : `sessionStorage.clear()` en `beforeEach`)

@@ -3,7 +3,12 @@ import { createPinia } from 'pinia'
 import App from './App.vue'
 import router from './router'
 import { useOfflineQueueStore } from './stores/offlineQueue'
-import { enforceIdlePolicy, installIdleTimeout, installSessionExpiryListener } from './stores/session'
+import {
+  enforceIdlePolicy,
+  installIdleTimeout,
+  installSessionBroadcastListener,
+  installSessionExpiryListener,
+} from './stores/session'
 import { i18n } from './i18n'
 import './style.css'
 
@@ -24,6 +29,14 @@ document.documentElement.setAttribute('lang', i18n.global.locale.value)
 // only dispatches an event (it cannot import the router without closing a cycle).
 // This is what turns that event into a teardown and a trip back to sign-in.
 installSessionExpiryListener(router)
+
+// PROPAGATION INTER-ONGLETS (Story 2.7, AC3). Une déconnexion — ou une expiration —
+// survenue dans un autre onglet du même appareil termine celui-ci aussi, sans que
+// personne ait à y toucher. Branché ici et nulle part ailleurs : `stores/session.ts` est
+// le seul module qui connaisse légitimement à la fois le routeur et les stores, et le
+// canal doit être ouvert avant le montage, sinon un message émis pendant le démarrage
+// s'adresserait à un onglet qui n'écoute pas encore.
+installSessionBroadcastListener(router)
 
 // POLITIQUE D'INACTIVITÉ (Story 2.7, AC2) — LES DEUX MOITIÉS, ET AVANT LE MONTAGE.
 //
