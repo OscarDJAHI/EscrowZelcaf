@@ -56,18 +56,23 @@
   </appender>
 
   <!--
-    Les tests gardent le motif LISIBLE : une suite qui crache du JSON sur des
-    centaines de lignes rend le diagnostic d'un échec pénible, et le format n'est
-    pas ce que les tests éprouvent — c'est la CORRÉLATION qui l'est, et elle
-    s'assère sur le MDC, pas sur la sérialisation.
-  -->
-  <springProfile name="test">
-    <include resource="org/springframework/boot/logging/logback/base.xml"/>
-  </springProfile>
+    UN SEUL FORMAT, PARTOUT — Y COMPRIS SOUS LA SUITE.
 
-  <springProfile name="!test">
-    <root level="INFO">
-      <appender-ref ref="JSON"/>
-    </root>
-  </springProfile>
+    La première version de ce fichier gardait le motif LISIBLE sous le profil `test`,
+    au motif qu'une suite crachant du JSON rend le diagnostic d'un échec pénible.
+    C'est vrai, et ce n'était quand même pas le bon arbitrage : l'AC1 exige que les
+    logs soient structurés, et sous ce découpage AUCUN test ne pouvait le vérifier —
+    la branche `test` n'attachait pas cet appender, si bien que supprimer tout ce
+    fichier laissait la suite verte. Une exigence que rien ne peut falsifier n'est
+    pas une exigence, c'est une intention.
+
+    Le coût est assumé et connu : la sortie de test est plus verbeuse. Le bénéfice
+    est que le format livré est celui que la suite exerce, et que
+    `LogCorrelationIntegrationTest` peut interroger CET encodeur-ci plutôt qu'un
+    encodeur équivalent reconstruit à la main — lequel n'aurait prouvé que sa propre
+    configuration.
+  -->
+  <root level="INFO">
+    <appender-ref ref="JSON"/>
+  </root>
 </configuration>
