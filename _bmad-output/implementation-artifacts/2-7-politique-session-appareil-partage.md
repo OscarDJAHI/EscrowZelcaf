@@ -192,15 +192,15 @@ Ne pas écrire « aucune donnée de A ne survit ». L'AC1 de la Story 1.9 disait
   - [x] ⚠️ **Ne jamais recâbler ce bouton sur `auth.logout()`.** → `endSession({ reason: 'logout' })` conservé, et l'avertissement recopié **dans** `LogoutButton.vue` : le fichier qui porte l'appel est le seul endroit où l'interdiction sera relue au bon moment.
   - [x] Conserver le filet `window.location.assign('/auth')` si `router.replace` échoue, et **le tester** : il est aujourd'hui entièrement mort pour la suite. → conservé et **couvert par 3 tests** (`components/__tests__/logoutBoundedWait.spec.ts`), dont l'un a d'abord été écrit CREUX et redressé par la mutation (Completion Notes).
 
-- [ ] **T9 — Tests** (AC: 1..7)
-  - [ ] `DashboardView`/shells : premier test du bouton de déconnexion. Gabarit le plus proche : `views/__tests__/RecoveryView.spec.ts:497-523` (`trigger('click')` avec confirmation/annulation).
-  - [ ] **Câblage `main.ts`** : `src/__tests__/appShell.spec.ts` est le véhicule qui existe déjà (monte l'application entière avec le vrai routeur) et ne mentionne ni `logout` ni `endSession`. *« Un shell testé isolément prouve qu'il fonctionne, pas qu'il est branché. »*
-  - [ ] Minuteries factices : **un seul fichier** du dépôt en fait usage (`escrow.offline.spec.ts:304-355`) et **uniquement `setSystemTime`** — aucun `advanceTimersByTime` nulle part. Patron à introduire.
-  - [ ] ⚠️ **`vi.waitFor` s'appuie sur les minuteries RÉELLES et se bloque sous `vi.useFakeTimers()`.** `session.spec.ts:279` et `:583` en dépendent. Ne pas basculer tout le fichier en minuteries factices.
-  - [ ] **Instants sentinelles, jamais `new Date()`** : deux `toISOString()` réels tombent dans la même milliseconde et ne distinguent rien.
-  - [ ] Pinia **réel** — `@pinia/testing` n'est pas installé **et ne doit pas l'être** (`SyncFailureNotice.spec.ts:94`). i18n réel via `createEscrowI18n('en')`.
-  - [ ] Session posée par la vraie primitive `applySession({token, user})` : une fixture ne posant que `user` laisse `isAuthenticated` à `false` et teste silencieusement le chemin déconnecté.
-  - [ ] **Chaque assertion négative appariée à une positive** dans le même test, comptes exacts (un `data-testid` inexistant fait renvoyer 0 à `findAll` et satisfait « au plus un » par le vide — **quatrième occurrence de ce motif sur cet epic**).
+- [x] **T9 — Tests** (AC: 1..7)
+  - [x] `DashboardView`/shells : premier test du bouton de déconnexion. → **10 tests dans `layouts/__tests__/shells.spec.ts`**, écrits en `describe.each` sur les DEUX shells : l'exigence n'est pas « chaque shell a un bouton » mais « aucun espace n'est sans sortie », et la table est ce qui l'étendra au troisième shell (Epic 7) sans qu'on y pense. Présence (compte exact), libellé traduit, `type="button"`, 44 px, focus visible, aucune couleur brute.
+  - [x] **Câblage `main.ts`** : `src/__tests__/appShell.spec.ts` est le véhicule qui existe déjà. → **8 tests**, dont le clic de bout en bout sur l'application ENTIÈRE (routeur, stores, IndexedDB et purge réels ; seule la révocation est doublée). ⚠️ **Ce fichier était cassé** et rendait des tests verts sur le mauvais écran — voir Completion Notes, c'est la trouvaille de la tâche.
+  - [x] Minuteries factices : patron à introduire. → **déjà introduit en T3** et non re-livré ici : `utils/__tests__/idleTimeout.spec.ts` (`advanceTimersByTime`) et `stores/__tests__/sessionIdle.spec.ts` (`advanceTimersByTimeAsync`, forme asynchrone requise parce que le gestionnaire l'est). Rien à ajouter en T9 ; la note du plan était antérieure à T3.
+  - [x] ⚠️ **`vi.waitFor` se bloque sous `vi.useFakeTimers()`.** → respecté : aucun des 20 tests de T9 ne fige l'horloge, et `logoutBoundedWait.spec.ts` reste sur minuteries réelles comme son en-tête l'exige.
+  - [x] **Instants sentinelles, jamais `new Date()`.** → aucun instant n'entre dans les tests de T9 ; le patron sentinelle est en place depuis T3 (`T0`).
+  - [x] Pinia **réel**, i18n réel. → les deux fichiers montent une vraie pinia et un vrai catalogue ; `@pinia/testing` reste non installé.
+  - [x] Session posée par la vraie primitive `applySession({token, user})`. → `appShell.spec.ts` l'utilise, et elle est désormais **attendue** (la promesse flottante de `beginSession` se résolvait pendant le test suivant, sur une autre pinia). Mutation 6 le prouve.
+  - [x] **Chaque assertion négative appariée à une positive**, comptes exacts. → tenu : `toHaveLength(1)` partout plutôt qu'`.exists()`, la négative « les écrans sans shell n'en portent pas » est adossée aux six positives sur le MÊME sélecteur, et le test d'isolation du harnais est scindé en deux moitiés pour qu'aucune ne soit satisfaite par un harnais qui n'authentifierait jamais personne.
 
 - [ ] **T10 — Vérification par mutation** (AC: 7 — obligatoire, `project-context.md:99-102`)
   - [ ] Une mutation **par garde livrée** : substrat `sessionStorage`, contrôle au démarrage, minuterie, propagation inter-onglets, borne d'attente, branche « profil illisible », époque de session, câblage `main.ts`, bouton de déconnexion.
@@ -348,7 +348,8 @@ Tests **nouveaux** : test de composant du bouton de déconnexion, test de câbla
 | 2026-08-11 | T5 | Attente bornée sur la révocation : `REVOCATION_WAIT_SECONDS = 3`, `withBudget` sur le seul `await`. `api/auth.ts` inchangé (NEVER 1.9) et désormais asservi. Attente dite à l'écran. | `5e1fdb2` |
 | 2026-08-11 | T6 | Les trois états du jeton (AC5) : `SessionState`, getter `sessionState`, la file hors-ligne ne confond plus « jeton + profil illisible » avec « personne n'est connecté ». Jeton **non** effacé, motif écrit. | `dd66226` |
 | 2026-08-11 | T7 | Époque de session (AC6) : compteur monotone au module, tourné aux deux bouts, comparé à la résolution des trois actions de lecture. `loadSeq` conservé et enfin testé. Écart service worker (D-E) nommé. | `9ee4de0` |
-| 2026-08-11 | T8 | Bouton de déconnexion extrait en `components/LogoutButton.vue` et placé par `ClientShell` **et** `DesktopShell` — ARBITRATOR et ADMIN avaient jusqu'ici zéro sortie par l'IHM (D-C). Tokenisé via `AppButton`, à qui la tâche a révélé **deux manques** : aucun anneau de focus, aucune interpolation de libellé. Les deux réparés dans `AppButton` (additif), pas contournés dans l'appelant. Filet de navigation enfin couvert. 530 tests (527 → +3). | _à venir_ |
+| 2026-08-11 | T8 | Bouton de déconnexion extrait en `components/LogoutButton.vue` et placé par `ClientShell` **et** `DesktopShell` — ARBITRATOR et ADMIN avaient jusqu'ici zéro sortie par l'IHM (D-C). Tokenisé via `AppButton`, à qui la tâche a révélé **deux manques** : aucun anneau de focus, aucune interpolation de libellé. Les deux réparés dans `AppButton` (additif), pas contournés dans l'appelant. Filet de navigation enfin couvert. 530 tests (527 → +3). | `7e89fe1` |
+| 2026-08-11 | T9 | Placement du bouton prouvé dans les deux shells (`describe.each`) et son branchement dans l'application réelle, clic de bout en bout compris. La tâche a trouvé que `appShell.spec.ts` **contaminait ses propres tests** (jeton non purgé entre deux `open()`), si bien que son cas `['/auth', null]` mesurait le tableau de bord — et masquait l'absence totale de `<main>` dans `AuthView` (défaut 2.3). La mutation a par ailleurs invalidé la moitié de mon diagnostic : la fuite d'URL était sans effet, le `replaceState` correspondant a été retiré. 550 tests (530 → +20). | _à venir_ |
 
 ## Dev Agent Record
 
@@ -473,6 +474,19 @@ Restauration après chaque mutation : `stores/session.ts`, `stores/escrow.ts` et
 La mutation 3 est la trouvaille de la tâche et elle vaut d'être lue en entier dans les Completion Notes : un test peut asserter les bons faits sur le mauvais INSTANT et rester vert quoi qu'il arrive.
 
 Restauration : `LogoutButton.vue` réécrit par substitution ciblée après chaque mutation, `git diff` vérifié **vide** avant chaque nouvelle. **Jamais** de `git checkout --`. État final : **530/530 verts**, `vue-tsc` 0 diagnostic, `eslint --max-warnings 0` propre, garde d'encodage verte (1984 fichiers).
+
+**T9 — mutations de vérification (2026-08-11), obligation AC7.** Six mutations : deux sur le placement livré, une sur le défaut d'accessibilité trouvé en route, trois sur le HARNAIS lui-même. Base : 550 verts.
+
+| # | Mutation | Garde visée | Résultat |
+|---|---|---|---|
+| 1 | `<LogoutButton />` retiré de `ClientShell` | la sortie de l'espace client, sur ses cinq surfaces | 🔴 **11** rouges : les 5 tests de placement du shell, les 5 routes clientes, et le clic de bout en bout |
+| 2 | `<LogoutButton />` retiré de `DesktopShell` | **le défaut D-C à l'identique** — ARBITRATOR et ADMIN sans aucune sortie | 🔴 **6** rouges, dont `l'espace back-office en porte une` |
+| 3 | `<main>` d'`AuthView` ramené à `<div>` | le landmark de l'écran de connexion, absent depuis toujours | 🔴 **1 seul** rouge : `/auth ne rend qu'UN <main>` — et il ne rougissait PAS avant la réparation du harnais |
+| 4 | fuite d'URL de jsdom rétablie (`replaceState` retiré) | — | ⚠️ **0 rouge.** Mon diagnostic était FAUX : le `push()` explicite l'emporte sur la position initiale de l'historique. La garde a été **retirée**, pas conservée (voir Completion Notes) |
+| 5 | purge du stockage retirée d'`open()` | la contamination de session d'un `open()` au suivant — **la vraie cause** | 🔴 **1 seul** rouge : `un utilisateur ne survit pas à l'ouverture suivante` |
+| 6 | `await` retiré devant `applySession` | la promesse flottante de `beginSession` se résolvant sur la pinia du test suivant | 🔴 **1 seul** rouge : `les écrans SANS shell n'en portent pas` |
+
+Restauration : `ClientShell.vue`, `DesktopShell.vue`, `AuthView.vue` et `appShell.spec.ts` sauvegardés **hors du dépôt** puis réécrits ; `git diff --stat` vérifié à la fin (3 fichiers attendus, aucun résidu). **Jamais** de `git checkout --`. État final : **550/550 verts**, `vue-tsc` 0 diagnostic, `eslint --max-warnings 0` propre, garde d'encodage verte (1985 fichiers).
 
 ### Completion Notes List
 
@@ -682,9 +696,26 @@ Le point `danger-hover` de T8 **ne s'est pas déclenché** : le bouton d'origine
 
 État T8 : **530 tests verts / 43 fichiers** (527 au départ, **+3**, tous sur le filet), `vue-tsc --build` à 0 diagnostic, `npm run lint --max-warnings 0` propre, `python3 scripts/check-encoding.py` verte sur 1984 fichiers.
 
+---
+
+**T9 — Les tests, et un harnais qui mesurait le mauvais écran depuis deux stories.**
+
+Vingt tests : dix sur le placement du bouton dans les deux shells, dix sur son branchement dans l'application réelle. L'écart que T8 avait nommé et refusé de cocher — *« rien ne prouve que le bouton est effectivement rendu par les deux shells »* — est fermé.
+
+**Ce que j'ai trouvé et qui n'était pas prévu :**
+
+1. **⚠️ `appShell.spec.ts` CONTAMINAIT ses propres tests, et l'un d'eux était vert sur un écran qu'il ne visait pas.** Son helper `open(path, user)` recrée une pinia à chaque appel, mais le store d'authentification **relit l'appareil à sa construction** (`token: readCredential(...)`, `stores/auth.ts:85`) et rien ne vidait le stockage. Un `open(path, null)` consécutif à un `open(path, user)` arrivait donc **authentifié**, et la garde du routeur, voyant une session valide, renvoyait `/auth` vers l'accueil de l'espace. `open('/auth', null)` rendait `/admin` en tant qu'ADMIN. Le cas `['/auth', null]` du test des landmarks mesurait ainsi le tableau de bord client — et il **passait**, parce que son oracle (« exactement un `<main>` ») est vrai des deux côtés de la confusion. Il aura fallu écrire le premier test capable de **distinguer** les deux chemins — la présence du bouton de déconnexion — pour que la contamination devienne visible. Vider le stockage dans le `beforeEach` ne suffisait pas : un même test appelle `open()` deux fois, la purge appartient au helper.
+2. **⚠️ `AuthView.vue` n'avait AUCUN `<main>`.** L'écran de connexion — le premier que voit tout utilisateur, et l'un des deux seuls qu'aucun shell n'enveloppe — n'exposait aucun landmark principal : rien où sauter pour un lecteur d'écran. Le commentaire de `VerifyEmailView` (2.3) affirme pourtant que *« les deux [écrans sans shell] portent leur propre `<main>` »* ; c'était vrai d'un seul, et le test écrit pour le garantir mesurait le mauvais écran. Corrigé dans la vue. **Défaut de la Story 2.3, trouvé par la réparation du harnais de la 2.7.**
+3. **⚠️ LA MUTATION A CORRIGÉ MON PROPRE DIAGNOSTIC, et c'est le fait le plus utile de la tâche.** J'avais incriminé *deux* causes : le jeton qui fuit, et l'URL de jsdom qui survit d'un `open()` au suivant — j'avais ajouté un `history.replaceState` contre la seconde. La mutation 4 a dit non : rétablir la fuite d'URL ne fait rougir **aucun** test, parce que le `push()` explicite l'emporte de toute façon sur la position initiale de l'historique. La route détournée venait de la GARDE réagissant au jeton fuité, jamais de l'URL. J'ai donc **retiré** le `replaceState` et le test que j'avais écrit pour lui, au lieu de les garder « au cas où ». C'est la règle que cette story applique à la production depuis T5 — *une garde improuvable en double d'une garde prouvée n'est pas de la défense en profondeur* — appliquée cette fois à mon propre correctif de harnais. Sans la passe de mutation, j'aurais livré une correction inutile ET un récit faux de la panne.
+4. **Le `describe.each` sur les deux shells est un choix, pas une économie.** L'exigence de D-C n'est pas « chaque shell a un bouton », c'est « aucun espace n'est sans sortie ». Deux `describe` jumeaux auraient laissé le shell suivant — l'Epic 7 en livrera un — échapper à la règle sans que rien ne le signale. La table est la garde.
+
+**Ce que T9 ne revendique PAS :** les quatre derniers points du plan (minuteries factices, instants sentinelles, pinia réelle, `vi.waitFor` sous horloge figée) **étaient déjà tenus par T3** et ne sont pas re-livrés ici. La note du plan les demandait comme un patron à introduire ; il l'a été six tâches plus tôt, et le rappeler en T9 aurait dupliqué des tests existants pour cocher une case.
+
+État T9 : **550 tests verts / 43 fichiers** (530 au départ, **+20**), `vue-tsc --build` à 0 diagnostic, `npm run lint --max-warnings 0` propre, `python3 scripts/check-encoding.py` verte sur 1985 fichiers.
+
 ### File List
 
-_Cumulée T1 → T8. Les tâches T9-T11 ne sont pas commencées._
+_Cumulée T1 → T9. Les tâches T10-T11 ne sont pas commencées._
 
 **Nouveaux — production**
 - `frontend/src/utils/credentialStorage.ts` (T1) — substrat commutable des identifiants
@@ -725,7 +756,9 @@ _Cumulée T1 → T8. Les tâches T9-T11 ne sont pas commencées._
 - `frontend/src/i18n/labels.ts` (T8 : `params` optionnel sur `translateOrHumanize` et `translateOr` ; `I18nLike.t` élargie. `params` absent ⇒ `t(key)` conservé, pour ne pas changer la signature observée par les doubles antérieurs)
 - `frontend/src/layouts/ClientShell.vue` (T8 : `LogoutButton` dans l'en-tête)
 - `frontend/src/layouts/DesktopShell.vue` (T8 : `LogoutButton` dans la barre latérale — ARBITRATOR et ADMIN n'avaient aucune sortie)
-- `frontend/src/views/AuthView.vue` (T2 : case « rester connecté » ; T3 : motif d'expiration)
+- `frontend/src/layouts/__tests__/shells.spec.ts` (T9 : 10 tests de placement en `describe.each` sur les DEUX shells)
+- `frontend/src/__tests__/appShell.spec.ts` (T9 : 8 tests de branchement + clic de bout en bout ; **helper `open()` réparé** — purge du stockage et `applySession` attendue, deux fuites qui rendaient des tests verts sur le mauvais écran)
+- `frontend/src/views/AuthView.vue` (T2 : case « rester connecté » ; T3 : motif d'expiration ; **T9 : `<main>` ajouté** — l'écran de connexion n'exposait AUCUN landmark principal, défaut de la Story 2.3 que le harnais cassé masquait)
 - `frontend/src/i18n/en.json`, `frontend/src/i18n/fr.json` (T2 : `auth.rememberMe` ; T3 : `auth.sessionIdleNotice` ; T5 : `common.loggingOut`)
 - `frontend/src/stores/__tests__/session.spec.ts`, `frontend/src/stores/__tests__/escrow.offline.spec.ts` (T1 : `sessionStorage.clear()` en `beforeEach`)
 - `_bmad-output/implementation-artifacts/sprint-status.yaml` (T1)

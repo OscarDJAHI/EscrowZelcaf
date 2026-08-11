@@ -126,6 +126,67 @@ describe('DesktopShell — arbitrage et back-office', () => {
   })
 })
 
+/**
+ * LA DÉCONNEXION EST DANS LES DEUX SHELLS (Story 2.7, T9 — AC3/AC7, décision D-C).
+ *
+ * <p><b>Le défaut que ces tests ferment.</b> `sprint-status.yaml` affirmait « 2-3 done, le
+ * bouton de déconnexion a sa place définitive ». C'était faux : le bouton était resté dans
+ * `views/DashboardView.vue`, si bien que les rôles ARBITRATOR et ADMIN — servis par
+ * `DesktopShell`, qui n'affiche jamais le tableau de bord client — n'avaient AUCUN moyen de
+ * se déconnecter par l'interface. Un shell sans sortie n'est pas un détail d'ergonomie sur
+ * un appareil partagé : c'est la politique de session entière qui ne s'applique pas.
+ *
+ * <p><b>Pourquoi les deux shells sont éprouvés par la MÊME boucle.</b> L'exigence n'est pas
+ * « chaque shell a un bouton », c'est « aucun espace n'est sans sortie ». Écrire deux
+ * describes jumeaux aurait laissé le troisième shell du jour — l'Epic 7 en livrera —
+ * échapper à la règle sans que rien ne le signale. La table est la garde.
+ */
+describe.each([
+  ['ClientShell', ClientShell, {} as Record<string, unknown>],
+  ['DesktopShell', DesktopShell, { titleKey: 'nav.disputeQueue', navKeys: ['nav.decisions'] }],
+])('%s — aucun espace n’est sans sortie (D-C)', (_nom, shell, props) => {
+  const logoutIn = (wrapper: ReturnType<typeof mountShell>) =>
+    wrapper.findAll('[data-testid="logout-button"]')
+
+  it('porte EXACTEMENT un bouton de déconnexion', () => {
+    // Compte exact et non `.exists()`. Un `data-testid` absent fait renvoyer 0 à `findAll`,
+    // ce qui satisfait « au plus un » par le vide — quatrième occurrence de ce motif sur
+    // cet epic. Et deux boutons seraient un défaut réel : le shell en pose un, une vue
+    // pourrait en reposer un second, et l'utilisateur ne saurait plus lequel agit.
+    expect(logoutIn(mountShell(shell, props))).toHaveLength(1)
+  })
+
+  it('l’annonce dans la langue active, jamais en clé brute', () => {
+    const bouton = logoutIn(mountShell(shell, props))[0]
+    expect(bouton.text()).toBe(fr.common.logout)
+    expect(bouton.text()).not.toMatch(/common\./)
+  })
+
+  it('est un `type="button"` — jamais un bouton de soumission par défaut', () => {
+    // Défaut trouvé en revue de la Story 2-2 : un `<button>` sans `type` vaut `submit`, et
+    // placé un jour dans un formulaire il le soumettrait au lieu de déconnecter.
+    expect(logoutIn(mountShell(shell, props))[0].attributes('type')).toBe('button')
+  })
+
+  it('respecte la cible tactile de 44 px et rend son focus VISIBLE', () => {
+    // Les deux dans le même test : ils décrivent la même exigence — le bouton doit être
+    // atteignable, au pouce comme au clavier. L'anneau de focus MANQUAIT à `AppButton`
+    // avant la T8 de cette story ; sans cette assertion, le retirer repasserait inaperçu.
+    const classes = logoutIn(mountShell(shell, props))[0].classes().join(' ')
+    expect(classes).toContain('min-h-[44px]')
+    expect(classes).toContain('focus-visible:outline-focus-ring')
+  })
+
+  it('n’écrit AUCUNE couleur brute : il passe par les tokens de la 2.1', () => {
+    // Appariée : on vérifie qu'il porte bien la variante tokenisée attendue, ET qu'aucune
+    // classe de palette Tailwind crue n'a survécu à la migration (le bouton d'origine
+    // portait `border-gray-300 text-gray-600 hover:bg-gray-50`).
+    const classes = logoutIn(mountShell(shell, props))[0].classes().join(' ')
+    expect(classes).toContain('border-brand-navy')
+    expect(classes).not.toMatch(/\b(bg|text|border)-(gray|slate|zinc|red|blue)-\d{2,3}\b/)
+  })
+})
+
 describe('AccessDeniedView — la réponse unique (NFR-P9)', () => {
   const mountDenied = () =>
     mount(AccessDeniedView, { global: { plugins: [i18n, router, createPinia()] } })

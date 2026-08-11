@@ -135,7 +135,14 @@ async function handleSubmit() {
 </script>
 
 <template>
-  <div class="flex flex-1 items-center justify-center bg-surface-page px-4 py-10">
+  <!-- `<main>` et non `<div>` (Story 2.7, T9). Cet écran n'est enveloppé par AUCUN shell —
+       `App.vue` n'en résout un que pour les routes portant `meta.space` — il doit donc
+       porter son propre landmark, faute de quoi la page n'en expose aucun et un lecteur
+       d'écran n'a pas de « contenu principal » où sauter. `VerifyEmailView` a reçu le sien
+       en 2.3, et son commentaire affirme que les deux écrans sans shell le portent : c'était
+       vrai d'un seul. Le test `['/auth', null]` d'`appShell.spec.ts` existait pour l'attraper
+       et mesurait en réalité le tableau de bord, faute d'isolation du harnais. -->
+  <main class="flex flex-1 items-center justify-center bg-surface-page px-4 py-10">
     <div class="w-full max-w-md rounded-2xl bg-white p-8">
       <div class="mb-6 text-center">
         <div
@@ -296,5 +303,5 @@ async function handleSubmit() {
         </button>
       </form>
     </div>
-  </div>
+  </main>
 </template>
