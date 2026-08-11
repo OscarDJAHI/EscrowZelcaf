@@ -173,10 +173,10 @@ Ne pas écrire « aucune donnée de A ne survit ». L'AC1 de la Story 1.9 disait
   - [x] `DashboardView.vue:53-63` porte un **commentaire justificatif périmé** → réécrit : la phrase fausse (« la navigation avortait la requête en vol ») est supprimée, les deux raisons qui tiennent sont écrites, et le report au ledger qu'il annonçait est déclaré clos.
   - [x] L'attente visible est libellée avec son délai annoncé (UX-DR26) → `common.loggingOut` EN+FR, délai **interpolé** depuis `REVOCATION_WAIT_SECONDS`, bouton `:disabled` + `aria-busy`.
 
-- [ ] **T6 — Trois états du jeton** (AC: 5)
-  - [ ] `loadStoredUser()` (`auth.ts:32`) rend `null` sur échec de `JSON.parse` alors que le jeton survit. Distinguer **trois** états : jeton absent / jeton + profil lisible / jeton + profil illisible.
-  - [ ] Le **routeur a déjà** une branche « session incohérente » (2-3, `router/index.ts:181`). **La file offline ne l'a pas** : `init()`/`hydrate()` lisent `user?.id == null` comme « pas de session », et chaque mise en file estampille `userId: undefined` → entrées orphelines.
-  - [ ] ⚠️ La 2-4 introduit un **quatrième** état — compte non vérifié. La logique de démarrage doit l'accueillir sans réécriture.
+- [x] **T6 — Trois états du jeton** (AC: 5)
+  - [x] `loadStoredUser()` (`auth.ts:31`) rend `null` sur échec de `JSON.parse` alors que le jeton survit. Distinguer **trois** états : jeton absent / jeton + profil lisible / jeton + profil illisible. → `SessionState = 'anonymous' | 'active' | 'incoherent'`, getter `sessionState` de `stores/auth.ts`. **Le jeton n'est PAS effacé** — motif en Completion Notes.
+  - [x] Le **routeur a déjà** une branche « session incohérente » (2-3, `router/index.ts:181`). **La file offline ne l'a pas** : `init()`/`hydrate()` lisent `user?.id == null` comme « pas de session », et chaque mise en file estampille `userId: undefined` → entrées orphelines. → `init()` ne prétend plus avoir lu la file, `enqueue()` refuse plutôt que de fabriquer une orpheline. Branche du routeur **non réécrite**, et la raison est écrite sur place.
+  - [x] ⚠️ La 2-4 introduit un **quatrième** état — compte non vérifié. La logique de démarrage doit l'accueillir sans réécriture. → repère explicite dans `sessionState`, branches nommées (jamais `!== 'active'`) dans `init()`.
 
 - [ ] **T7 — Époque de session** (AC: 6)
   - [ ] Compteur monotone porté par `session.ts`, capturé à l'émission, comparé à la résolution. `grep "epoch\|sessionEpoch" frontend/src/stores/session.ts` → **0** aujourd'hui.
@@ -411,6 +411,21 @@ Restauration : `session.ts` sauvegardé hors dépôt puis réécrit, `diff` vér
 
 Restauration après chaque mutation : `session.ts`, `api/auth.ts` et `DashboardView.vue` sauvegardés **hors du dépôt** puis réécrits, `diff` vérifié **vide** avant chaque nouvelle mutation et à la fin. **Jamais** de `git checkout --`. État final : **505/505 verts**.
 
+**T6 — mutations de vérification (2026-08-11), obligation AC7.** Quatre mutations sur deux fichiers de production, plus **deux REMUTATIONS de gardes voisines déjà prouvées** (leçon de T5 : une garde neuve placée devant une garde ancienne peut la creuser). Base : 512 verts.
+
+| # | Mutation | Garde visée | Résultat |
+|---|---|---|---|
+| 1 | branche `if (session === 'incoherent') return` retirée d'`init()` | le MENSONGE `hydrated = true` — `RecoveryView` annonçant « rien à récupérer » sur une file que personne n'a ouverte | 🔴 **1 seul** rouge : `ne prétend PAS avoir lu la file quand la session est incohérente` (511 verts) |
+| 2 | garde d'`enqueue()` retirée | l'entrée ORPHELINE — `meta.userId: undefined`, invisible à `getAllForUser`, supprimée à la déconnexion suivante | 🔴 **2** rouges : `refuse de mettre en file` + `ne laisse aucune entrée orpheline naître d'une création hors ligne` |
+| 3 | `sessionState` rend `'anonymous'` quand le profil est illisible — **la lecture à deux états, à la source** | le défaut d'origine, à la ligne près | 🔴 **les 7** tests de `sessionState.spec.ts`, et eux seuls (505 verts = la base d'avant T6) |
+| 4 | `sessionState` ne lit plus l'identifiant (`state.user == null` au lieu de `state.user?.id == null`) | le cas du profil PARSABLE mais sans `id` — celui qui produit le même dégât en aval sans échouer à `JSON.parse` | 🔴 **2** rouges, tous deux sur ce cas |
+| N1 | **remutation voisine** — `this.hydrated = true` retiré de la branche `'anonymous'` d'`init()`, désormais placée APRÈS la branche incohérente | la garde de la Story 1.9 : un démarrage sans session a bel et bien terminé sa lecture | 🔴 `leaves hydrated false when adoptSession() cannot read the queue` **rougit toujours** (+ la positive appariée de ma propre suite) |
+| N2 | **remutation voisine** — reprise de la carte optimiste retirée de `createNewTransaction` | la garde de la Story 4.x que ma garde d'`enqueue` précède désormais dans le même `try` | 🔴 `takes the optimistic card back when the entry could not be persisted` **rougit toujours** (+ la mienne) |
+
+Les deux remutations confirment que la garde neuve ne creuse aucune des deux : elle ne se déclenche pas dans l'état `'anonymous'`, qui est celui de ces tests-là.
+
+Restauration après chaque mutation : `stores/auth.ts`, `stores/offlineQueue.ts` et `stores/escrow.ts` sauvegardés **hors du dépôt** puis réécrits, `diff` vérifié **vide**. **Jamais** de `git checkout --`. État final : **512/512 verts**.
+
 ### Completion Notes List
 
 **T0 — Lire avant d'écrire.** Les cinq fichiers du préalable lus intégralement. Deux avertissements « Story 2.7 réécrira ce fichier » trouvés en place (`session.ts:198-199`, `i18n/index.ts:36-38`) : la décision qu'ils protègent — `escrow_locale` n'est pas une donnée de session — est **conservée**, aucune clé de langue n'entre dans la purge.
@@ -540,9 +555,42 @@ Choix de conception non dictés par la story, et leurs motifs :
 
 **Écart nommé, pas coché :** le TTL serveur reste de 24 h (`application.yml:77`, décision Q3). La borne rend la main à l'utilisateur ; elle ne raccourcit pas la vie du jeton, et une révocation qui n'aboutirait vraiment jamais — appareil éteint pendant le `keepalive` — laisse ce jeton valide jusqu'à son expiration naturelle. À porter au ledger à la clôture de la story, comme la Q3 le prévoit déjà.
 
+**T6 — Trois états du jeton.** `stores/auth.ts` porte désormais `SessionState = 'anonymous' | 'active' | 'incoherent'` et le getter `sessionState`. `stores/offlineQueue.ts` en est le premier consommateur, aux deux endroits où la lecture à deux états faisait du dégât.
+
+**L'ARBITRAGE que l'AC5 laissait ouvert — effacer le jeton, ou faire signaler la file — et son motif.** L'AC offrait les deux ; j'ai retenu **le signalement, et refusé l'effacement**. Quatre raisons, la dernière étant décisive :
+
+1. **Effacer le jeton, c'est détruire une preuve sur un soupçon.** Ce jeton est valide côté serveur — l'API répond, et pour 24 h encore (Q3). Le supprimer parce qu'une CLÉ VOISINE est illisible, c'est laisser un incident de stockage (quota dépassé pendant `persist()`, `sessionStorage` cloisonné, valeur éditée à la main) décider d'une déconnexion que personne n'a demandée. Le sens de la lecture est faux : l'authentification ne manque pas, le profil manque.
+2. **Ça aurait remis trois états à deux.** Jeton effacé ⇒ état `'anonymous'` ⇒ exactement la confusion que l'AC5 demande de défaire, obtenue par l'autre bout. La file aurait continué à lire « personne n'est connecté » — en ayant raison cette fois, mais sans jamais avoir su qu'il y avait eu quelqu'un.
+3. **La Story 2.4 n'aurait plus eu de place où s'insérer.** Un quatrième état — compte non vérifié — a besoin d'une énumération, pas d'un chemin qui efface. Le repère est écrit dans `sessionState`, entre la lecture du profil et le `return 'active'` : deux lignes à ajouter, aucun appelant à retoucher.
+4. **La Story 2.3 avait déjà tranché la même question et dans le même sens.** Sa branche « session incohérente » renvoie vers `/auth` *pour réparer le profil*, en disant explicitement pourquoi elle ne traite pas le cas comme un refus : « le traiter comme un refus condamnerait l'écran de récupération, qui rend à l'utilisateur des fichiers n'existant NULLE PART ailleurs ». Effacer le jeton aurait contredit cette décision six mois plus tard, dans un autre fichier, sans la rouvrir.
+
+Choix de conception non dictés par la story, et leurs motifs :
+
+- **Une ÉNUMÉRATION, jamais un second booléen.** `isIncoherent` posé à côté d'`isAuthenticated` aurait été un booléen à deux branches déguisé en trois : la Story 2.4 aurait dû le réécrire, et deux booléens indépendants admettent quatre combinaisons dont deux sont impossibles — le compilateur n'en dit rien.
+- **`isAuthenticated` reste `Boolean(token)`, intouché.** Le rendre faux sur une session incohérente était le raccourci tentant : il aurait renvoyé l'utilisateur vers `/auth` sans rien expliquer **pendant que `client.ts` continue d'envoyer l'en-tête `Authorization`** — deux modules en désaccord sur l'existence de la session. Le getter neuf dit ce qui manque ; l'ancien n'a pas à mentir pour le compenser.
+- **AUCUNE table de correspondance.** Trois conditions écrites en toutes lettres. C'est la leçon de `spaceForRole('constructor')` appliquée par prévention : `state.user` sort d'un `JSON.parse` sur un stockage éditable, et une table indexée par une de ses valeurs aurait rendu la fonction `Object` — que `?? null` ne rattrape pas. Un objet littéral qu'on n'écrit pas ne peut pas être indexé par une clé hostile ; un test le fige quand même (`ne se laisse pas indexer par une clé hostile venue du stockage`).
+- **La branche du routeur n'est PAS réécrite en `sessionState === 'incoherent'`, et la raison est écrite sur place.** Les deux prédicats posent la même question sur deux champs différents : le routeur a besoin d'un RÔLE routable (`spaceForRole(user?.role) === null`), la file d'un IDENTIFIANT de propriétaire (`user?.id == null`). Ils se recouvrent sans coïncider — un profil lisible portant un rôle inconnu est routable « nulle part » sans être incohérent. Les fusionner aurait élargi l'un des deux en silence, et c'est une garde de sécurité de la Story 2.3. Ce qui est partagé, c'est le VOCABULAIRE ; le commentaire du routeur le dit et renvoie à `SessionState`.
+- **`init()` ne pose PAS `hydrated = true` dans l'état incohérent — et ne fait rien d'autre non plus.** C'est le seul signal disponible : `RecoveryView` lit `hydrated` et rien d'autre, et son `if (!queue.hydrated)` lui fait rappeler `init()` puis afficher son état de lecture manquée. Laissé à `true`, l'écran annonce `recovery.nothingToRecover` à propos d'une file que personne n'a ouverte — sur la seule surface qui rende des fichiers n'existant nulle part ailleurs.
+- **Les branches d'`init()` sont NOMMÉES (`=== 'incoherent'`, `=== 'anonymous'`) et non écrites en `!== 'active'`.** Écrite en négatif, la condition aurait capturé le quatrième état de la 2.4 par accident et refusé sa file à un compte non vérifié — qui a pourtant un identifiant, donc des entrées qui sont les siennes. Un défaut par omission, invisible au compilateur, dans une story qui n'aurait pas touché ce fichier.
+- **La garde d'`enqueue()` vit au POINT D'ÉTRANGLEMENT, pas aux trois points d'appel.** `stores/escrow.ts` estampille `meta.userId` trois fois ; trois copies divergent, et un quatrième appelant naîtrait sans garde. Refuser est la seule issue non destructrice : il n'existe aucun propriétaire à inscrire, et en inventer un — le marqueur d'appareil `escrow_last_user`, par exemple — rendrait à quelqu'un les entrées d'un autre, ce que la Story 1.9 a fermé.
+- **L'état `'anonymous'` n'est PAS refusé à l'enfilement, et l'asymétrie est délibérée.** Il ne traduit aucune incohérence : c'est l'état honnête d'une application sans session, et toutes les surfaces qui appellent `enqueue` sont derrière une route protégée. C'est l'état INCOHÉRENT qui fabrique un orphelin *pendant que l'application se croit authentifiée*. Le refuser aussi aurait par ailleurs cassé une quinzaine de tests qui exercent légitimement la mécanique de la file sans session — signe que ce n'est pas la même chose.
+
+**Ce que je n'ai PAS touché, après l'avoir vérifié :**
+
+- **`hydrate()` garde son `userId == null`.** Sa question n'est pas « dans quel état est la session » mais « ai-je de quoi interroger `getAllForUser` ». Ses deux appelants ont déjà tranché l'état avant d'arriver.
+- **`flush()` n'a besoin de rien.** Son filtre `ownsEntry(item, user)` rend `false` dès que `user?.id` est nul : une session incohérente ne rejoue **rien**, et donc ne peut pas geler l'entrée d'un tiers. Vérifié en lisant `frozenEntry.ts:90-93`, pas en le supposant.
+
+**Ce que j'ai trouvé et qui n'était pas prévu :**
+
+1. **Le troisième état est plus large que « `JSON.parse` a échoué ».** Un profil parfaitement parsable — `{"email":"…","role":"BUYER"}`, sans `id` — franchit `loadStoredUser()` sans encombre et produit **exactement le même dégât en aval** : `meta.userId: undefined`, `getAllForUser` qui ne rend rien, `ownsEntry` qui rend `false`. Le prédicat retenu est donc `user?.id == null` et non `user == null`. La mutation n° 4 existe précisément pour ça : écrite sur `user == null`, la garde restait verte sur les cinq autres tests.
+2. **La branche « session incohérente » du routeur rend le défaut d'`enqueue` INATTEIGNABLE par l'interface aujourd'hui.** Toute route protégée est refusée à une session incohérente (`spaceForRole(undefined) === null`), donc aucun écran ne peut déclencher une mise en file dans cet état. Le seul chemin encore vivant est celui d'`init()`, appelé par `main.ts` **avant** que la garde du routeur n'ait rien à dire. La garde d'`enqueue` est donc, à cette date, une garde d'INVARIANT et non un correctif observable — et c'est écrit ici plutôt que revendiqué comme une fuite fermée. Elle garde sa valeur : la 2.4 ajoute un état où la question se reposera, et la garde vit au seul endroit qui survivra à ce changement.
+3. **Le test qui prouve le mieux le défaut est le test de bout en bout, pas le test unitaire.** `ne laisse aucune entrée orpheline naître d'une création de transaction hors ligne` passe par `escrow.createNewTransaction`, c'est-à-dire par le code qui écrit réellement `userId: useAuthStore().user?.id`. Un test qui n'aurait appelé qu'`enqueue` aurait prouvé la garde sans jamais prouver que le chemin de production la traverse — la distinction « fonction prouvée » / « fonction branchée » que T3 et T4 ont payée deux fois.
+
+État T6 : **512 tests verts** (505 au départ, **+7**), `vue-tsc --build` à 0 diagnostic, `npm run lint --max-warnings 0` propre, `python3 scripts/check-encoding.py` verte, `npm run verify:no-demo` verte.
+
 ### File List
 
-_Cumulée T1 → T4-bis. Les tâches T6-T11 ne sont pas commencées._
+_Cumulée T1 → T6. Les tâches T7-T11 ne sont pas commencées._
 
 **Nouveaux — production**
 - `frontend/src/utils/credentialStorage.ts` (T1) — substrat commutable des identifiants
@@ -561,11 +609,14 @@ _Cumulée T1 → T4-bis. Les tâches T6-T11 ne sont pas commencées._
 - `frontend/src/stores/__tests__/sessionRevocationBudget.spec.ts` (T5) — le plafond d'attente : abandon borné, attente réelle quand le réseau répond, minuterie éteinte, signature de la révocation
 - `frontend/src/api/__tests__/authLogout.spec.ts` (T5) — ce que `logoutUser` envoie : `keepalive`, aucun `signal`, jeton explicite
 - `frontend/src/views/__tests__/logoutBoundedWait.spec.ts` (T5) — l'attente est dite (UX-DR26), EN et FR, bouton neutralisé
+- `frontend/src/stores/__tests__/sessionState.spec.ts` (T6) — les trois états, le mensonge d'`hydrated`, l'entrée orpheline (7 tests)
 
 **Modifiés**
 - `frontend/src/api/client.ts` (T1 : lecture par `readCredential` ; T3 : alimentation du compteur de requêtes en vol)
 - `frontend/src/api/__tests__/client.spec.ts` (T1 ; T3 : 3 tests de câblage du compteur)
-- `frontend/src/stores/auth.ts` (T1)
+- `frontend/src/stores/auth.ts` (T1 : substrat commutable ; T6 : `SessionState`, getter `sessionState`)
+- `frontend/src/stores/offlineQueue.ts` (T6 : `init()` ne prétend plus avoir lu, `enqueue()` refuse l'orpheline)
+- `frontend/src/router/index.ts` (T6 : renvoi croisé vers `sessionState` — la branche « session incohérente » n'est PAS réécrite, et le pourquoi est écrit sur place)
 - `frontend/src/stores/session.ts` (T1 : `LAST_USER_STORAGE_KEY` exportée ; T3 : mode `'idle'`, `KNOWN_REASONS`, motif persisté, `enforceIdlePolicy`, `installIdleTimeout`, extraction de `signInQuery`/`returnToSignIn` ; T4 : `EndSessionSource`, émission, règle d'autorité, `installSessionBroadcastListener` ; T4-bis : veto du récepteur sur `'idle'`)
 - `frontend/src/stores/__tests__/sessionBroadcast.spec.ts` (T4-bis : 4 tests du veto, et `alsoIdle()` sur les deux tests dont le veto aurait creusé la garde)
 - `frontend/src/main.ts` (T3 : contrôle au démarrage + minuterie, avant `app.mount()` ; T4 : écouteur inter-onglets)

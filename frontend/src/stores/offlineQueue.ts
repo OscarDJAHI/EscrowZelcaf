@@ -118,6 +118,34 @@ export const useOfflineQueueStore = defineStore('offlineQueue', {
 
       if (this.hydrated) return
 
+      // TROIS ÉTATS ET NON DEUX (Story 2.7, AC5). La condition d'origine s'écrivait
+      // `useAuthStore().user?.id == null` : elle rangeait sous « personne n'est
+      // connecté » un cas qui n'est pas celui-là — un JETON présent dont le profil est
+      // illisible. Voir `SessionState` dans `stores/auth.ts` pour le défaut complet.
+      const session = useAuthStore().sessionState
+
+      // SESSION INCOHÉRENTE : on ne prétend PAS avoir lu la file.
+      //
+      // La différence avec la branche anonyme ci-dessous tient en un mot : ici, il y a
+      // bien quelqu'un — le jeton le prouve — et ses entrées sont peut-être en
+      // IndexedDB. Poser `hydrated = true` ferait dire à `RecoveryView` « rien à
+      // récupérer » (`recovery.nothingToRecover`) à propos d'une file que personne n'a
+      // ouverte, sur la seule surface qui rende à l'utilisateur des fichiers n'existant
+      // NULLE PART ailleurs. Laissé à faux, l'écran affiche son état de lecture manquée
+      // et son bouton de reprise, et une nouvelle connexion — qui répare le profil —
+      // passera par `adoptSession()`.
+      //
+      // Le drapeau est le seul signal disponible : `RecoveryView` lit `hydrated` et rien
+      // d'autre. Ne rien faire du tout — l'ancien comportement moins le mensonge —
+      // serait indiscernable d'un échec de stockage, ce qui est précisément la
+      // confusion que `hydrated` existe pour trancher.
+      if (session === 'incoherent') {
+        console.error(
+          '[offlineQueue] incoherent session (a token without a readable profile): the queue is not read, and is not claimed to be',
+        )
+        return
+      }
+
       // Booting on the login screen: there is nobody to read the queue *for*, so
       // nothing is read and nothing is replayed — the device may well hold the
       // previous user's entries. `hydrated` is still set, because this restore
@@ -125,10 +153,16 @@ export const useOfflineQueueStore = defineStore('offlineQueue', {
       // read yet" from "nothing there", and leaving it false would strand that
       // screen on a spinner. The sign-in that follows goes through
       // `adoptSession()`, which is what finally reads the queue.
-      if (useAuthStore().user?.id == null) {
+      if (session === 'anonymous') {
         this.hydrated = true
         return
       }
+
+      // Tout autre état poursuit vers l'hydratation — et c'est la place réservée au
+      // quatrième état de la Story 2.4. Un compte non vérifié a un identifiant, donc des
+      // entrées qui sont les siennes : les lui refuser au démarrage serait un choix
+      // produit que rien n'a demandé. Écrit en branches nommées plutôt qu'en `!== 'active'`
+      // exactement pour que ce cas s'ajoute sans réécrire cette fonction.
 
       try {
         await idb.migrateFromLocalStorage()
@@ -168,6 +202,16 @@ export const useOfflineQueueStore = defineStore('offlineQueue', {
      * With no session nothing is loaded *and nothing is dropped*: an entry
      * queued during this very session is legitimately in `queue` and is not the
      * caller's to lose.
+     *
+     * <p>La condition reste `userId == null` et n'a pas été portée sur `sessionState`
+     * (Story 2.7) : ici la question n'est pas « dans quel état est la session » mais
+     * « ai-je de quoi interroger `getAllForUser` ». Ses deux appelants — `init()` et
+     * `adoptSession()` — ont déjà tranché l'état avant d'arriver, et le seul cas où cette
+     * ligne agit encore est celui d'une session incohérente atteinte par un autre chemin :
+     * elle rend alors la main sans rien lire, ce qui est le bon comportement.
+     *
+     * <p>`flush()` n'a rien demandé non plus : son filtre `ownsEntry(item, user)` rend
+     * `false` dès que `user?.id` est nul, donc une session incohérente ne rejoue RIEN.
      */
     async hydrate(): Promise<void> {
       const userId = useAuthStore().user?.id
@@ -261,8 +305,35 @@ export const useOfflineQueueStore = defineStore('offlineQueue', {
       }
     },
 
-    /** Rend l'entrée mise en file, identifiant généré compris. */
+    /**
+     * Rend l'entrée mise en file, identifiant généré compris.
+     *
+     * <p><b>Le point d'étranglement où une session incohérente est refusée</b> (Story 2.7,
+     * AC5). Les appelants estampillent `meta.userId` avec `useAuthStore().user?.id` : dans
+     * cet état-là, le profil étant illisible, chacun d'eux écrirait `undefined`. L'entrée
+     * naîtrait ORPHELINE — invisible à `getAllForUser`, invisible à `ownsEntry`, jamais
+     * rejouée, et supprimée par la première déconnexion venue (`offlineQueue.idb.ts:140`,
+     * qui purge nommément les entrées sans propriétaire). Autrement dit : une preuve
+     * acceptée par l'interface, perdue en silence. AD-9 l'interdit.
+     *
+     * <p>La garde vit ICI et non aux trois points d'appel de `stores/escrow.ts` : trois
+     * copies divergent, et un quatrième appelant naîtrait sans garde. Refuser est la seule
+     * issue non destructrice — il n'existe aucun propriétaire à inscrire, et en inventer
+     * un (le marqueur d'appareil, par exemple) rendrait à quelqu'un les entrées d'un autre.
+     *
+     * <p>L'état `'anonymous'` n'est PAS refusé, et l'asymétrie est délibérée : il ne
+     * traduit aucune incohérence — c'est l'état honnête d'une application sans session, et
+     * les surfaces qui appellent `enqueue` sont toutes derrière une route protégée. C'est
+     * l'état INCOHÉRENT qui fabrique un orphelin pendant que l'application se croit
+     * authentifiée.
+     */
     async enqueue(request: QueuedRequest): Promise<QueueEntry> {
+      if (useAuthStore().sessionState === 'incoherent') {
+        throw new Error(
+          '[offlineQueue] incoherent session (a token without a readable profile): refusing to queue an entry that would have no owner',
+        )
+      }
+
       const item: QueueEntry = {
         id: `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
         timestamp: new Date().toISOString(),

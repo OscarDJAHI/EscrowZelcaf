@@ -47,6 +47,39 @@ interface AuthState {
   error: string | null
 }
 
+/**
+ * LES ÉTATS DU JETON (Story 2.7, AC5) — et pourquoi ce n'est pas un booléen.
+ *
+ * <p><b>Le défaut que cette énumération ferme.</b> `loadStoredUser()` rend `null` sur tout
+ * échec de `JSON.parse` ALORS QUE LE JETON SURVIT. `isAuthenticated` valant
+ * `Boolean(token)`, la garde du routeur laisse passer et l'API fonctionne ; mais la file
+ * hors-ligne lisait `user?.id == null` comme « personne n'est connecté », c'est-à-dire
+ * qu'elle confondait deux états que rien ne permettait de distinguer :
+ * <ul>
+ *   <li>`'anonymous'` — pas de jeton. Il n'y a personne, et c'est normal.</li>
+ *   <li>`'incoherent'` — un jeton, et un profil qu'on ne sait pas lire. Il y a
+ *       quelqu'un, mais on ne sait pas QUI.</li>
+ * </ul>
+ * Les deux conséquences de la confusion sont réelles : `RecoveryView` annonçait « rien à
+ * récupérer » pendant que les preuves dormaient en IndexedDB, et chaque mise en file
+ * estampillait `userId: undefined` — des entrées orphelines, que la déconnexion suivante
+ * supprime (`offlineQueue.idb.ts:135-141`).
+ *
+ * <p><b>Une énumération et non un second booléen.</b> La Story 2.4 introduit un QUATRIÈME
+ * état — compte non vérifié — et un `isIncoherent` posé à côté d'`isAuthenticated` aurait
+ * obligé à le réécrire. Ici il s'insère entre deux branches existantes, à un seul endroit
+ * (voir le repère ci-dessous), sans qu'aucun appelant n'ait à changer de forme.
+ *
+ * <p><b>Ce que cet état ne dit PAS.</b> Il décrit la paire jeton/profil, jamais un droit
+ * d'accès. La branche « session incohérente » du routeur (`router/index.ts`, Story 2.3)
+ * pose la MÊME question sur un autre champ — `spaceForRole(user?.role) === null`, parce
+ * que le routeur a besoin d'un rôle routable, là où la file a besoin d'un identifiant de
+ * propriétaire. Les deux prédicats ne sont pas interchangeables et ne doivent pas être
+ * fusionnés : un rôle inconnu d'un profil par ailleurs lisible est une question
+ * d'autorisation, pas de cohérence. C'est le vocabulaire qui est commun, pas la condition.
+ */
+export type SessionState = 'anonymous' | 'active' | 'incoherent'
+
 export const useAuthStore = defineStore('auth', {
   state: (): AuthState => ({
     token: readCredential(TOKEN_STORAGE_KEY) || null,
@@ -56,8 +89,46 @@ export const useAuthStore = defineStore('auth', {
   }),
 
   getters: {
+    /**
+     * INCHANGÉ, délibérément : « un jeton est présent », et rien de plus.
+     *
+     * <p>Le rendre faux sur une session incohérente aurait été le raccourci tentant et
+     * c'est le mauvais. Le jeton EST valide côté serveur : les appels API aboutissent, et
+     * une garde de routeur qui refuserait de le voir renverrait l'utilisateur vers un
+     * écran de connexion sans jamais dire pourquoi — tout en laissant `client.ts`
+     * continuer à envoyer l'en-tête `Authorization`. Ce qui manque n'est pas
+     * l'authentification, c'est le profil : `sessionState` le dit, celui-ci n'a pas à
+     * mentir pour le compenser.
+     */
     isAuthenticated: (state): boolean => Boolean(state.token),
     role: (state): Role | null => state.user?.role || null,
+
+    /**
+     * L'état de la paire jeton/profil — voir la documentation de `SessionState`.
+     *
+     * <p>Aucune table de correspondance ici, et c'est volontaire : un objet littéral
+     * hérite d'`Object.prototype`, si bien qu'une table indexée par une valeur venue du
+     * stockage rendrait la fonction `Object` pour `'constructor'` — le défaut qui, dans
+     * `spaceForRole`, a fini en ENFERMEMENT hors de `/auth`. Trois conditions écrites en
+     * toutes lettres ne peuvent pas être indexées par une clé hostile.
+     */
+    sessionState: (state): SessionState => {
+      // Pas de jeton : personne, quel que soit ce qui traîne dans `escrow_user`.
+      if (!state.token) return 'anonymous'
+
+      // ⚠️ REPÈRE POUR LA STORY 2.4 — le quatrième état s'insère ICI, entre « le profil
+      // est lisible » et « la session est utilisable » :
+      //     if (state.user.emailVerified === false) return 'unverified'
+      // Il suppose un profil lisible, donc il vient après la condition ci-dessous et
+      // avant le `return 'active'`. Aucun appelant n'a à changer de forme pour lui.
+
+      // Un jeton, mais pas de propriétaire nommable. `user` peut être `null` (JSON
+      // illisible, valeur non-objet) comme un objet sans `id` — les deux produisent
+      // exactement le même dégât en aval, et les distinguer ici ne servirait personne.
+      if (state.user?.id == null) return 'incoherent'
+
+      return 'active'
+    },
   },
 
   actions: {

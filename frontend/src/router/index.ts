@@ -177,6 +177,16 @@ router.beforeEach((to) => {
   //
   // Aucun oracle : la décision ne dépend que de l'état de l'utilisateur, jamais de la
   // cible demandée — toutes les cibles donnent le même résultat.
+  //
+  // <p>Story 2.7 (AC5) : la MÊME notion existe désormais sous le nom `auth.sessionState`
+  // (`stores/auth.ts`), et la file hors-ligne s'en sert — elle ne l'avait pas et lisait
+  // « jeton + profil illisible » comme « personne n'est connecté ». Cette branche-ci n'a
+  // pas été récrite en `sessionState === 'incoherent'`, et ce n'est pas un oubli : elle
+  // interroge le RÔLE, parce qu'un routeur a besoin d'un espace, quand la file interroge
+  // l'IDENTIFIANT, parce qu'une entrée a besoin d'un propriétaire. Les deux prédicats se
+  // recouvrent sans coïncider — un profil lisible portant un rôle inconnu est routable
+  // « nulle part » sans être incohérent. Fusionner les deux élargirait l'un des deux en
+  // silence.
   const space = spaceForRole(auth.user?.role)
   if (auth.isAuthenticated && space === null) {
     return to.name === 'auth' ? true : { name: 'auth', query: { redirect: to.fullPath } }
