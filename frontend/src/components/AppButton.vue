@@ -50,16 +50,15 @@ const props = defineProps({
   /**
    * Paramètres d'interpolation du libellé actif (Story 2.7).
    *
-   * <p><b>Défaut `null`, jamais `{}`.</b> Un objet vide par défaut aurait fait basculer
-   * TOUS les boutons de l'application sur la forme `t(key, params)` — voir le motif écrit
-   * dans `i18n/labels.ts`. Le nul se propage jusqu'à `translateOrHumanize`, qui retombe
-   * alors sur l'appel à un seul argument.
-   *
    * <p>Le MÊME objet sert au libellé et à son remplaçant d'attente : les deux décrivent la
    * même action, et un bouton dont l'attente parle d'autre chose que son intitulé serait
    * illisible. Les paramètres inutiles à l'un sont ignorés par vue-i18n.
+   *
+   * <p>Défaut `{}` — la 2.7 avait d'abord écrit `null` pour préserver un appel à un seul
+   * argument chez les autres boutons ; la mutation de T10 a montré que rien ne dépendait de
+   * cette distinction, et la complication a été retirée plutôt que gardée.
    */
-  labelParams: { type: Object as PropType<Record<string, unknown> | null>, default: null },
+  labelParams: { type: Object as PropType<Record<string, unknown>>, default: () => ({}) },
   type: {
     type: String as PropType<'button' | 'submit' | 'reset'>,
     default: 'button',
@@ -122,7 +121,7 @@ const label = computed(() =>
   translateOrHumanize(
     { t, te },
     props.pending ? props.pendingLabelKey : props.labelKey,
-    props.labelParams ?? undefined,
+    props.labelParams,
   ),
 )
 

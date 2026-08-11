@@ -42,20 +42,22 @@ export function humanize(code: unknown): string {
 /**
  * Traduit `key` si elle existe, sinon `fallback`.
  *
- * <p><b>`params` absent ⇒ `t(key)` et non `t(key, {})`.</b> La distinction n'est pas
- * cosmétique : tous les appelants antérieurs à la 2.7 passent par ici, et plusieurs sont
- * testés contre un `t` simulé. Appeler systématiquement la forme à deux arguments aurait
- * changé la signature observée par ces doubles sans changer une seule ligne de leur code
- * — un test vert qui cesse d'attester ce qu'il attestait.
+ * <p><b>Un seul chemin d'appel, et c'est une correction (T10).</b> La 2.7 avait d'abord
+ * écrit `params ? t(key, params) : t(key)`, au motif que passer systématiquement deux
+ * arguments changerait la signature observée par les doubles de test des appelants
+ * antérieurs. La passe de mutation a montré que ce motif était FAUX : remplacer les deux
+ * branches par un appel unique laisse les 550 tests verts, parce qu'aucun double n'assère
+ * la forme de l'appel. Aucun message du catalogue rendu sans paramètres n'en porte, non
+ * plus. Une branche que rien ne peut falsifier n'est pas une précaution, c'est du code
+ * qu'on croira load-bearing à la prochaine lecture.
  */
 function translateOr(
   { t, te }: I18nLike,
   key: string | null | undefined,
   fallback: string,
-  params?: Record<string, unknown>,
+  params: Record<string, unknown> = {},
 ): string {
-  if (!key || !te(key)) return fallback
-  return params ? t(key, params) : t(key)
+  return key && te(key) ? t(key, params) : fallback
 }
 
 /**
@@ -77,7 +79,7 @@ function translateOr(
 export function translateOrHumanize(
   i18n: I18nLike,
   key: string | null | undefined,
-  params?: Record<string, unknown>,
+  params: Record<string, unknown> = {},
 ): string {
   if (!key) return ''
   return translateOr(i18n, key, humanize(String(key).split('.').pop()), params)

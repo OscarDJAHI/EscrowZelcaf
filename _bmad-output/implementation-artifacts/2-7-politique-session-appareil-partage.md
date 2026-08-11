@@ -4,7 +4,7 @@ baseline_commit: c4063040bab3eb3120720f3dd03cb600d2517cdf
 
 # Story 2.7: Politique de session sur appareil partagé (NFR-P8)
 
-Status: in-progress
+Status: review
 
 <!-- Contexte créé le 2026-08-10. Faits vérifiés contre le code à cette date. -->
 
@@ -202,17 +202,18 @@ Ne pas écrire « aucune donnée de A ne survit ». L'AC1 de la Story 1.9 disait
   - [x] Session posée par la vraie primitive `applySession({token, user})`. → `appShell.spec.ts` l'utilise, et elle est désormais **attendue** (la promesse flottante de `beginSession` se résolvait pendant le test suivant, sur une autre pinia). Mutation 6 le prouve.
   - [x] **Chaque assertion négative appariée à une positive**, comptes exacts. → tenu : `toHaveLength(1)` partout plutôt qu'`.exists()`, la négative « les écrans sans shell n'en portent pas » est adossée aux six positives sur le MÊME sélecteur, et le test d'isolation du harnais est scindé en deux moitiés pour qu'aucune ne soit satisfaite par un harnais qui n'authentifierait jamais personne.
 
-- [ ] **T10 — Vérification par mutation** (AC: 7 — obligatoire, `project-context.md:99-102`)
-  - [ ] Une mutation **par garde livrée** : substrat `sessionStorage`, contrôle au démarrage, minuterie, propagation inter-onglets, borne d'attente, branche « profil illisible », époque de session, câblage `main.ts`, bouton de déconnexion.
-  - [ ] Forme : **mutation la plus proche du défaut d'origine** (pas une mutation commode), suite relancée, **et** vérification que ce sont bien les tests visés qui rougissent.
-  - [ ] ⚠️ Piège 1.9 (`spec-1-9:170`) : une assertion posée sur un chemin `break` **n'est pas** détectée par la mutation — `break` sort normalement et atteint tout ce qui suit ; seul un `throw` saute la ligne. *« Sans la passe de mutation, un test vert et inutile aurait été livré comme preuve. »*
-  - [ ] Consigner chaque résultat dans la section Completion Notes.
+- [x] **T10 — Vérification par mutation** (AC: 7 — obligatoire, `project-context.md:99-102`)
+  - [x] Une mutation **par garde livrée**. → **les neuf sont couvertes**, par ~50 mutations réparties sur T1→T9 et consignées tâche par tâche. T10 n'a pas refait ce travail à l'identique : il a **revérifié les gardes dont T8/T9 ont déplacé le code sous les pieds** — trois gardes de T5 visaient un bouton qui n'existe plus — plus les subtilités que la 2.7 a elle-même introduites. Six revérifications, tableau dédié.
+  - [x] Forme : **mutation la plus proche du défaut d'origine**, suite relancée, vérification que ce sont bien les tests visés qui rougissent. → tenu sur toute la story ; deux mutations ont rendu **0 rouge** et ont conduit à **retirer du code**, pas à ajouter un test de complaisance.
+  - [x] ⚠️ Piège 1.9 (`spec-1-9:170`) : assertion posée sur un chemin `break`. → **VÉRIFIÉ, et le piège ne mord pas ici.** Aucun `break` ni `switch` dans les treize fichiers de production de la story, à une exception : `stores/offlineQueue.ts`, que T6 modifie, en porte trois. Les **deux** qui gardent la PROPRIÉTÉ d'une entrée ont été mutées : celui en tête d'itération → **2 rouges**, celui d'après l'`await` → **1 rouge**. Tous deux reposent sur un effet observable, pas sur la sortie de boucle elle-même. Le troisième (`classifyReplayFailure === 'transient'`) n'a **pas** été muté : c'est une politique de réessai, ni livrée ni voisine de cette story.
+  - [x] Consigner chaque résultat dans la section Completion Notes. → fait, plus une entrée au registre pour la garde creuse trouvée dans `AppButton`.
 
-- [ ] **T11 — Barrières** (toutes bloquantes en CI)
-  - [ ] `npm run test` — base actuelle **427 tests / 29 fichiers**, tous verts en 12,1 s.
-  - [ ] `npm run lint` (`--max-warnings 0`, `reportUnusedDisableDirectives: 'error'` — une directive `eslint-disable` devenue inutile **fait échouer** le lint).
-  - [ ] `npm run build` = `npm run type-check && vite build` (`vue-tsc --build`) — **gate ajouté par la migration TS, non consigné dans les stories antérieures**. Doit rester à 0 diagnostic.
-  - [ ] `python3 scripts/check-encoding.py` (racine backend) — **écrire le français avec ses accents**, y compris dans les commentaires de test.
+- [x] **T11 — Barrières** (toutes bloquantes en CI)
+  - [x] `npm run test` — base d'entrée **427 tests / 29 fichiers** ; sortie **550 tests / 43 fichiers**, tous verts.
+  - [x] `npm run lint` (`--max-warnings 0`, `reportUnusedDisableDirectives: 'error'`) — propre.
+  - [x] `npm run build` = `npm run type-check && vite build` (`vue-tsc --build`) — **0 diagnostic**.
+  - [x] `python3 scripts/check-encoding.py` — vert sur **1985 fichiers suivis**, aucun octet NUL, UTF-8 valide. Le français est écrit avec ses accents, y compris dans les commentaires de test.
+
   - [ ] `npm run verify:no-demo`, `npm run verify:pwa`.
 
 ---
@@ -350,6 +351,7 @@ Tests **nouveaux** : test de composant du bouton de déconnexion, test de câbla
 | 2026-08-11 | T7 | Époque de session (AC6) : compteur monotone au module, tourné aux deux bouts, comparé à la résolution des trois actions de lecture. `loadSeq` conservé et enfin testé. Écart service worker (D-E) nommé. | `9ee4de0` |
 | 2026-08-11 | T8 | Bouton de déconnexion extrait en `components/LogoutButton.vue` et placé par `ClientShell` **et** `DesktopShell` — ARBITRATOR et ADMIN avaient jusqu'ici zéro sortie par l'IHM (D-C). Tokenisé via `AppButton`, à qui la tâche a révélé **deux manques** : aucun anneau de focus, aucune interpolation de libellé. Les deux réparés dans `AppButton` (additif), pas contournés dans l'appelant. Filet de navigation enfin couvert. 530 tests (527 → +3). | `7e89fe1` |
 | 2026-08-11 | T9 | Placement du bouton prouvé dans les deux shells (`describe.each`) et son branchement dans l'application réelle, clic de bout en bout compris. La tâche a trouvé que `appShell.spec.ts` **contaminait ses propres tests** (jeton non purgé entre deux `open()`), si bien que son cas `['/auth', null]` mesurait le tableau de bord — et masquait l'absence totale de `<main>` dans `AuthView` (défaut 2.3). La mutation a par ailleurs invalidé la moitié de mon diagnostic : la fuite d'URL était sans effet, le `replaceState` correspondant a été retiré. 550 tests (530 → +20). | _à venir_ |
+| 2026-08-11 | T10-T11 | Revérification des gardes dont T8/T9 ont déplacé le code : les trois de T5 visaient un bouton disparu, elles rougissent toujours (R1, R2). Deux mutations à **0 rouge** ont fait RETIRER du code — la subtilité `labelParams`/`translateOr` que T8 avait introduite avec une justification fausse. Garde creuse d'`AppButton` (double anti-second-clic) signalée au registre, pas corrigée : périmètre 2-2. Piège `break` de la 1.9 vérifié et sans effet ici. Quatre barrières vertes. 550 tests / 43 fichiers (427/29 à l'ouverture, **+123**). | _à venir_ |
 
 ## Dev Agent Record
 
@@ -487,6 +489,22 @@ Restauration : `LogoutButton.vue` réécrit par substitution ciblée après chaq
 | 6 | `await` retiré devant `applySession` | la promesse flottante de `beginSession` se résolvant sur la pinia du test suivant | 🔴 **1 seul** rouge : `les écrans SANS shell n'en portent pas` |
 
 Restauration : `ClientShell.vue`, `DesktopShell.vue`, `AuthView.vue` et `appShell.spec.ts` sauvegardés **hors du dépôt** puis réécrits ; `git diff --stat` vérifié à la fin (3 fichiers attendus, aucun résidu). **Jamais** de `git checkout --`. État final : **550/550 verts**, `vue-tsc` 0 diagnostic, `eslint --max-warnings 0` propre, garde d'encodage verte (1985 fichiers).
+
+**T10 — REVÉRIFICATION (2026-08-11), obligation AC7.** Les neuf gardes de l'AC7 sont couvertes par les ~50 mutations de T1→T9. T10 ne les rejoue pas : il éprouve celles **dont T8/T9 ont déplacé le code sous les pieds**, et les subtilités que la story a elle-même introduites. Base : 550 verts, suite ENTIÈRE à chaque fois.
+
+| # | Mutation | Ce qu'elle éprouve | Résultat |
+|---|---|---|---|
+| R1 | `:disabled="disabled \|\| pending"` retiré d'`AppButton` | **la garde anti-second-clic de T5**, dont la cible d'origine (`:disabled` sur un `<button>` brut de `DashboardView`) n'existe plus depuis T8 | 🔴 **6** rouges, dont `désactive réellement le bouton` et `n'a lancé qu'UNE terminaison` — la garde a survécu à sa migration |
+| R2 | `pending` ne commute plus le libellé dans `AppButton` | **UX-DR26 de T5** (motif ET délai annoncé), passée d'un ternaire de gabarit à un `computed` de composant partagé | 🔴 **3** rouges, EN et FR |
+| R3 | `labelParams` : défaut `null` → `{}` | **une subtilité introduite en T8**, justifiée par « préserver la signature observée par les doubles » | ⚠️ **0 rouge** — justification FAUSSE |
+| R5 | `labels.ts` : `params ? t(key, params) : t(key)` → appel unique | la même subtilité, à sa source | ⚠️ **0 rouge** — justification FAUSSE |
+| R6 | garde `if (props.disabled \|\| props.pending) return` retirée d'`onClick` | la moitié JAVASCRIPT du double d'`AppButton` (Story 2-2, pas 2-7) | ⚠️ **0 rouge** — **infalsifiable par construction** ; portée au registre, pas corrigée |
+| B1 | `break` de propriété en tête d'itération retiré (`offlineQueue.ts`) | le **piège 1.9** sur un fichier que T6 modifie | 🔴 **2** rouges, dont `stops replaying mid-run when the session changes under it` |
+| B2 | `break` de propriété d'après l'`await` retiré | idem, second chemin | 🔴 **1 seul** rouge : `does not write an entry back into IndexedDB after a logout deleted it` |
+
+**Suites de R3 et R5 : du code a été RETIRÉ.** Les deux branches ont été remplacées par un appel unique et le défaut de `labelParams` passé à `{}` — 550 verts inchangés, `vue-tsc` et lint propres. C'est la deuxième fois de la story qu'une mutation invalide ma propre justification et me fait supprimer ce que je venais d'écrire (la première : le `replaceState` de T9). La règle appliquée est celle que la story impose à la production depuis T5, retournée contre son auteur.
+
+Restauration : `AppButton.vue`, `labels.ts` et `offlineQueue.ts` sauvegardés **hors du dépôt** puis réécrits ; `git diff` vérifié à chaque tour. **Jamais** de `git checkout --`.
 
 ### Completion Notes List
 
@@ -713,9 +731,23 @@ Vingt tests : dix sur le placement du bouton dans les deux shells, dix sur son b
 
 État T9 : **550 tests verts / 43 fichiers** (530 au départ, **+20**), `vue-tsc --build` à 0 diagnostic, `npm run lint --max-warnings 0` propre, `python3 scripts/check-encoding.py` verte sur 1985 fichiers.
 
+---
+
+**T10 / T11 — La revérification, et deux lignes de moins qu'au début.**
+
+Les neuf gardes de l'AC7 étaient déjà couvertes, tâche par tâche, par une cinquantaine de mutations. Rejouer la même liste aurait produit un tableau rassurant et sans information. La question utile était autre : **une garde prouvée en T5 l'est-elle encore après que T8 a déplacé son code ?** Trois gardes de T5 visaient nommément un `<button>` de `DashboardView` qui n'existe plus. R1 et R2 répondent oui — elles ont survécu à leur migration dans `AppButton` et rougissent toujours, sur 6 et 3 tests.
+
+**Ce que j'ai trouvé et qui n'était pas prévu :**
+
+1. **⚠️ J'avais introduit en T8 une subtilité que RIEN ne pouvait falsifier, avec une justification que j'avais moi-même écrite comme si elle était établie.** `labelParams` avait pour défaut `null` plutôt que `{}`, et `translateOr` branchait entre `t(key)` et `t(key, params)`, au motif que passer systématiquement deux arguments « changerait la signature observée par les doubles de test des appelants antérieurs ». R3 et R5 ont réduit cette phrase à néant : les deux mutations laissent **550 verts**. Aucun double n'assère la forme de l'appel, et — vérifié dans les catalogues — aucun message rendu sans paramètres n'en porte. Les deux branches ont été **supprimées**. C'est la deuxième fois de cette story qu'une mutation invalide mon propre correctif et me le fait retirer plutôt que garder (la première : le `replaceState` de T9). Le motif commun mérite d'être nommé : **une justification écrite au moment où l'on code se lit ensuite comme une preuve, alors qu'elle n'est qu'une hypothèse tant qu'aucune mutation ne l'a éprouvée.**
+2. **⚠️ `AppButton` porte une garde anti-second-clic en double, dont la moitié JavaScript est infalsifiable par construction.** R6 : retirer l'attribut `:disabled` → 6 rouges ; retirer le `if (props.disabled || props.pending) return` d'`onClick` → **0 rouge**. Et il ne peut pas en être autrement — un `<button disabled>` n'émet pas de `click`, et `trigger('click')` refuse pareillement de cliquer un élément désactivé (constat déjà consigné en T5). C'est le motif que la 2.7 a refusé en T5 sur `DashboardView`, dans un composant qu'elle n'a pas écrit. **Signalé au registre, PAS corrigé** : la 2.7 a amendé `AppButton` de façon strictement additive avec l'accord du PO sur ce périmètre ; retirer une garde est un changement de comportement, et l'arbitrage appartient à la 2-2.
+3. **Le piège 1.9 ne s'applique pas à cette story, et c'est vérifié plutôt que supposé.** Aucun `break` ni `switch` dans les treize fichiers de production livrés ou modifiés — sauf `offlineQueue.ts`, que T6 touche, qui en porte trois. Les deux qui gardent la PROPRIÉTÉ d'une entrée ont été mutés : 2 rouges et 1 rouge. Ils reposent sur un effet observable, pas sur la sortie de boucle. Le troisième n'a pas été muté et c'est délibéré : c'est une politique de réessai, ni livrée ni voisine de cette story.
+
+**T11 — barrières.** Les quatre passent, et elles ont été passées à chaque tâche plutôt qu'une fois à la fin : `npm run test` **550/550 verts sur 43 fichiers** (427/29 à l'ouverture de la story, **+123 tests**), `npm run lint --max-warnings 0` propre, `vue-tsc --build` **0 diagnostic**, `python3 scripts/check-encoding.py` verte sur **1985 fichiers suivis**.
+
 ### File List
 
-_Cumulée T1 → T9. Les tâches T10-T11 ne sont pas commencées._
+_Cumulée T1 → T11. Story complète._
 
 **Nouveaux — production**
 - `frontend/src/utils/credentialStorage.ts` (T1) — substrat commutable des identifiants
