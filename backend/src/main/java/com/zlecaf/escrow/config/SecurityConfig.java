@@ -97,7 +97,28 @@ public class SecurityConfig {
                     // no other /api/v1/partner/** route is ever opened by default — anything
                     // else falls through to anyRequest().authenticated().
                     .requestMatchers(HttpMethod.POST, "/api/v1/partner/escrow/*/evidence").permitAll()
-                    .requestMatchers("/actuator/health").permitAll();
+                    .requestMatchers("/actuator/health").permitAll()
+                    // Story 11.4 — le scraper Prometheus n'a pas de session, et il ne peut
+                    // pas en avoir : c'est une machine qui interroge en boucle.
+                    //
+                    // ÉPINGLÉ AU CHEMIN EXACT, jamais `/actuator/**`. Le joker aurait ouvert
+                    // du même geste tout endpoint actuator ajouté plus tard — c'est
+                    // exactement le défaut que la revue 1.6 a relevé sur `/api/v1/auth/**`,
+                    // et le commentaire du bloc ci-dessus en fait une règle de ce fichier.
+                    //
+                    // TROIS COUCHES, dont deux vivent ici et une est portée à la 11.3 :
+                    //   1. la liste d'exposition d'`application.yml` (`health,info,prometheus`)
+                    //      — les autres endpoints ne sont même pas ENREGISTRÉS ;
+                    //   2. cette ligne, qui n'ouvre que celui-ci — `env` et `beans` restent
+                    //      refusés quand bien même on les exposerait par erreur ;
+                    //   3. le CANTONNEMENT RÉSEAU : l'actuator écoute sur un port de
+                    //      management distinct (9091) que le reverse-proxy ne publie PAS.
+                    //      C'est la couche qui empêche l'accès depuis Internet, et c'est
+                    //      une contrainte d'exploitation — elle est écrite dans la Story
+                    //      11.4 et doit être honorée par la 11.3. `permitAll` ici ne veut
+                    //      donc PAS dire « public » : il veut dire « pas d'authentification
+                    //      sur un port qui n'est pas exposé ».
+                    .requestMatchers("/actuator/prometheus").permitAll();
                 if (docsExposed) {
                     // OpenAPI spec + Swagger UI, ouverts hors production pour l'exploration
                     // de l'API (dev, CI). Sous profil prod (Story 1.5, NFR-P4) ces matchers

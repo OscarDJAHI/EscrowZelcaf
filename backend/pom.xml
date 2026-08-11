@@ -70,6 +70,44 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-actuator</artifactId>
         </dependency>
+
+        <!--
+          ══ OBSERVABILITÉ (Story 11.4) — BLOC À MIGRER D'UN SEUL TENANT EN STORY 11.9 ══
+
+          Regroupées ici volontairement (décision Q4 du 2026-08-11). La 11.9 fait passer le
+          runtime de Boot 3.3.5 à 4.x, et cette migration touche l'observabilité en deux
+          endroits vérifiés dans la documentation Spring le 2026-08-11 :
+
+            1. les propriétés OTLP passent de `management.otlp.tracing.*`
+               à `management.opentelemetry.tracing.export.otlp.*` (voir application.yml) ;
+            2. le logging structuré JSON devient NATIF à partir de Boot 3.4
+               (`logging.structured.format.*`). `logstash-logback-encoder` ci-dessous
+               n'existe QUE parce que 3.3.5 ne l'a pas — c'est la première dépendance à
+               retirer en 11.9, et `logback-spring.xml` disparaît avec elle.
+
+          Ne PAS bumper Spring Boot ici : territoire exclusif de la 11.9 (précédent 11.1).
+        -->
+        <dependency>
+            <groupId>io.micrometer</groupId>
+            <artifactId>micrometer-registry-prometheus</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.micrometer</groupId>
+            <artifactId>micrometer-tracing-bridge-otel</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.opentelemetry</groupId>
+            <artifactId>opentelemetry-exporter-otlp</artifactId>
+        </dependency>
+        <!--
+          Encodeur JSON. Version explicite : le parent Boot 3.3.5 n'en gère pas la
+          nomenclature (ce n'est pas une dépendance Spring), donc rien ne la fixerait.
+        -->
+        <dependency>
+            <groupId>net.logstash.logback</groupId>
+            <artifactId>logstash-logback-encoder</artifactId>
+            <version>8.0</version>
+        </dependency>
         <!--
           Transport SMTP du port EmailVerificationSender (Story 2.4, décision T0 :
           « port + outbox + adaptateur de développement »). N'IMPOSE AUCUN FOURNISSEUR :

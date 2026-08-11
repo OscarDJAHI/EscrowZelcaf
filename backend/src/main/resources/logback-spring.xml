@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  ══ LOGS STRUCTURÉS (Story 11.4, AC1) — FICHIER À SUPPRIMER EN STORY 11.9 ══
+
+  Avant cette story, le backend n'avait AUCUNE configuration de logging : pas une
+  seule clé `logging.*` dans `application.yml`, donc le motif console par défaut de
+  Logback. Ce fichier pose le format JSON qu'exige l'AC1.
+
+  Il n'existe QUE parce que Spring Boot 3.3.5 n'a pas le logging structuré natif —
+  arrivé en 3.4 sous `logging.structured.format.*`. La Story 11.9, qui migre le
+  runtime en 4.x, supprime ce fichier ET la dépendance `logstash-logback-encoder`
+  du pom, et remplace les deux par trois lignes de configuration.
+
+  ── L'IDENTIFIANT DE CORRÉLATION ──────────────────────────────────────────────
+  C'est le `traceId` de Micrometer Tracing, et il n'y en a pas d'autre (décision
+  T0). Boot l'alimente dans le MDC dès que le pont OTel est présent, et
+  l'échantillonnage ne change rien à cette alimentation : il ne décide que de
+  l'EXPORT de la trace vers le collecteur. Un `X-Request-Id` concurrent aurait
+  créé une seconde notion à garder en accord avec la première, alors que l'AC2
+  exige justement que trace et logs partagent le MÊME identifiant.
+
+  ── CE QUI N'EST PAS JOURNALISÉ ───────────────────────────────────────────────
+  Passer au JSON change ce qui est capturé, et l'Epic 1 a passé dix stories à
+  fermer des oracles. AUCUN appender ne journalise les en-têtes de requête, les
+  corps, ni les paramètres : il n'existe ici aucun logger de requêtes HTTP, et il
+  ne faut pas en ajouter un sans décider ce qu'il masque. `Authorization`, jetons
+  et adresses e-mail ne doivent jamais atteindre un fichier de logs.
+-->
+<configuration>
+  <springProperty scope="context" name="appName" source="spring.application.name"/>
+
+  <!--
+    Console en JSON. Un seul appender : la destination (fichier, collecteur) est une
+    décision d'exploitation qui appartient à la Story 11.3, pas à celle-ci. Écrire
+    sur la sortie standard est ce que le conteneur attend, et ce que le compose lit.
+  -->
+  <appender name="JSON" class="ch.qos.logback.core.ConsoleAppender">
+    <encoder class="net.logstash.logback.encoder.LogstashEncoder">
+      <!--
+        `includeMdc` est le cœur de l'AC1 : c'est lui qui fait passer `traceId` et
+        `spanId` du MDC dans la ligne JSON. Le retirer laisse un JSON parfaitement
+        valide et TOTALEMENT décorrélé — un défaut silencieux, d'où le test de
+        mutation qui le vise.
+      -->
+      <includeMdc>true</includeMdc>
+      <customFields>{"application":"${appName}"}</customFields>
+      <fieldNames>
+        <timestamp>timestamp</timestamp>
+        <message>message</message>
+        <thread>thread</thread>
+        <logger>logger</logger>
+        <level>level</level>
+        <levelValue>[ignore]</levelValue>
+      </fieldNames>
+    </encoder>
+  </appender>
+
+  <!--
+    Les tests gardent le motif LISIBLE : une suite qui crache du JSON sur des
+    centaines de lignes rend le diagnostic d'un échec pénible, et le format n'est
+    pas ce que les tests éprouvent — c'est la CORRÉLATION qui l'est, et elle
+    s'assère sur le MDC, pas sur la sérialisation.
+  -->
+  <springProfile name="test">
+    <include resource="org/springframework/boot/logging/logback/base.xml"/>
+  </springProfile>
+
+  <springProfile name="!test">
+    <root level="INFO">
+      <appender-ref ref="JSON"/>
+    </root>
+  </springProfile>
+</configuration>

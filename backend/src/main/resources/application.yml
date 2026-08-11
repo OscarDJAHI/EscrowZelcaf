@@ -190,8 +190,54 @@ server:
   # l'isolation reseau : le backend n'est joignable QUE par le proxy (compose).
   forward-headers-strategy: framework
 
+# ════════════════════════════════════════════════════════════════════════════════
+# OBSERVABILITE (Story 11.4) — BLOC A MIGRER D'UN SEUL TENANT EN STORY 11.9
+#
+# Regroupe pour que la migration Boot 3.3.5 -> 4.x se fasse ici et nulle part
+# ailleurs (decision Q4 du 2026-08-11). Le renommage a prevoir est signale sur la
+# cle concernee.
+# ════════════════════════════════════════════════════════════════════════════════
 management:
   endpoints:
     web:
       exposure:
-        include: health,info
+        # `prometheus` s'AJOUTE a health,info — l'exposition restreinte est un acquis
+        # de securite, pas un oubli : ne jamais elargir a `*`.
+        #
+        # SURFACE D'ATTAQUE. `/actuator/prometheus` publie la topologie interne, les
+        # volumes de trafic et les noms d'endpoints. Il doit etre joignable par le
+        # scraper et PAS par Internet. Trois decisions anterieures convergent :
+        # Story 1.5 (Swagger ferme en production), Story 1.4 (TLS + en-tetes), et
+        # l'AC3 de la Story 11.3 (« aucune console d'administration exposee
+        # publiquement », NFR-P4). Le cantonnement reseau est pose par le port de
+        # management ci-dessous ; sa publication — ou non — par le reverse-proxy est
+        # une contrainte portee a la Story 11.3.
+        include: health,info,prometheus
+  # Port de management SEPARE du port applicatif. C'est ce qui rend le cantonnement
+  # exprimable en une regle reseau : le proxy publie 8080, jamais 9091.
+  server:
+    port: 9091
+  prometheus:
+    metrics:
+      export:
+        enabled: true
+  metrics:
+    tags:
+      # Toutes les series portent le nom de l'application : sans ce tag, deux
+      # deploiements scrapes par le meme Prometheus deviennent indistinguables.
+      # La valeur vient de `spring.application.name` (= `escrow-core`, ligne 3) et
+      # n'est PAS recopiee : un nom en double diverge au premier renommage.
+      application: ${spring.application.name}
+  tracing:
+    sampling:
+      # 100 % en developpement : l'AC2 exige une trace CONSULTABLE, et le defaut de
+      # Boot (10 %) rend l'observation dependante du hasard. La valeur de production
+      # est un parametre d'exploitation, pas une constante — elle se decide avec la
+      # Story 11.3, qui connait la volumetrie.
+      probability: ${ESCROW_TRACING_SAMPLING:1.0}
+  otlp:
+    # ⚠️ RENOMMAGE BOOT 4.x : `management.otlp.tracing.*` devient
+    # `management.opentelemetry.tracing.export.otlp.*`. Verifie dans la
+    # documentation Spring Boot le 2026-08-11. A migrer en Story 11.9.
+    tracing:
+      endpoint: ${ESCROW_OTLP_ENDPOINT:http://localhost:4318/v1/traces}

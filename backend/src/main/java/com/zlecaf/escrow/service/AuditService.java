@@ -9,6 +9,8 @@ import com.zlecaf.escrow.domain.EscrowTransaction;
 import com.zlecaf.escrow.domain.ParticipantRole;
 import com.zlecaf.escrow.repository.AuditLogRepository;
 import com.zlecaf.escrow.repository.EscrowTransactionRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -21,6 +23,8 @@ import org.springframework.transaction.annotation.Transactional;
  */
 @Service
 public class AuditService {
+
+    private static final Logger log = LoggerFactory.getLogger(AuditService.class);
 
     private final AuditLogRepository auditLogs;
     private final EscrowTransactionRepository transactions;
@@ -221,5 +225,25 @@ public class AuditService {
         logEntry.setNextState(next == null ? null : next.name());
         logEntry.setPayload(payload);
         auditLogs.save(logEntry);
+
+        // Story 11.4 (AC1) — « la recherche par cet identifiant restitue toutes les lignes
+        // d'une même requête, ÉCRITURE D'AUDIT COMPRISE ».
+        //
+        // Avant cette story, ce service n'émettait AUCUN log : il persistait des lignes et
+        // se taisait. L'écriture d'audit était donc invisible à toute recherche par
+        // identifiant de corrélation, et l'AC restait intenable quel que soit le format des
+        // logs. Une ligne ici suffit, parce que les six méthodes publiques du service
+        // convergent toutes vers ce point.
+        //
+        // Placée APRÈS `auditLogs.save(...)` : on journalise ce qui est écrit, pas ce qu'on
+        // s'apprête à écrire. Sur le chemin `recordFailure` (REQUIRES_NEW), la ligne est
+        // émise pour une écriture qui survivra au rollback de l'appelant — c'est
+        // précisément ce que cette propagation garantit.
+        //
+        // AUCUNE donnée sensible : identifiants techniques et noms d'états, jamais le
+        // `payload` — il porte des motifs de rejet en texte libre, et un log n'est pas
+        // l'endroit où les faire ressortir. Le `traceId` est ajouté par le MDC, pas ici.
+        log.info("audit entry written transactionId={} actorId={} previousState={} nextState={}",
+                transactionId, actorId, previous, next);
     }
 }

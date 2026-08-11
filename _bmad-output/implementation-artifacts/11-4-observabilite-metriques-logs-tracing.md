@@ -41,9 +41,26 @@ Toute garde livrée par cette story se prouve en la retirant et en constatant le
 
 ---
 
-## ⚠️ Questions ouvertes — À TRANCHER AVANT T1
+## ✅ Décisions d'Oscard — 2026-08-11 (les quatre questions sont closes)
 
-Ces quatre points commandent le périmètre livrable. Les trancher en ouverture, comme la Story 2.7 l'a fait pour ses trois questions, plutôt que de les découvrir à mi-parcours.
+Tranchées en ouverture, sur les défauts recommandés. Le détail du raisonnement de chacune reste lisible ci-dessous ; ce bloc dit ce qui est retenu.
+
+| | Décision |
+|---|---|
+| **Q1** | La pile monte dans `infra/docker-compose.yml`. Le **déploiement production est un écart NOMMÉ**, routé vers la Story 11-3. L'AC3 est donc tenable : la preuve de délivrance se fait sur la pile locale. |
+| **Q2** | Canal d'alerte = **SMTP vers le Mailpit déjà présent au compose**. Ne préempte PAS le spike AR-P6 : SMTP est un protocole, pas un fournisseur (précédent 2-4 du 2026-08-10). |
+| **Q3** | Jauge de rapprochement **pilotée par injection de dépendance**, jamais par un endpoint. Un fournisseur de valeur par défaut rend « pas de circuit financier » tant que l'Epic 4 n'a rien à émettre ; le test injecte son propre fournisseur. **Aucune surface de production n'est ajoutée** (interdiction 1-10 / 2-4 T0). |
+| **Q4** | Configuration d'observabilité **regroupée** et commentée pour que 11-9 la migre d'un bloc. **Aucun bump de Spring Boot** dans cette story. |
+
+**Décision complémentaire, prise en T0 et non couverte par les quatre questions : le tracing PORTE la corrélation.** Micrometer Tracing alimente `traceId`/`spanId` dans le MDC ; aucun `X-Request-Id` concurrent n'est introduit. Motif : deux notions d'identifiant se désaccordent au premier refactor, et l'AC2 exige de toute façon que trace et logs partagent le **même** identifiant — en créer un second obligerait à prouver leur égalité en permanence. L'échantillonnage n'y change rien : Micrometer ouvre un span pour chaque requête et alimente le MDC, l'échantillonnage ne décide que de l'**export** de la trace.
+
+**Constat de T0 qui change une tâche : `AuditService` n'émet AUCUN log.** Il persiste des lignes `AuditLog` via son repository, sans logger. L'AC1 exige que la recherche par identifiant restitue les lignes « écriture d'audit comprise » — il faut donc que l'écriture d'audit **émette une ligne de log** corrélée. Ce n'est pas un changement de schéma : aucune colonne n'est ajoutée à `AuditLog`, la corrélation vit dans le MDC de la ligne de log.
+
+---
+
+## ⚠️ Questions ouvertes — TRANCHÉES LE 2026-08-11 (conservées pour le raisonnement)
+
+Ces quatre points commandaient le périmètre livrable. Les trancher en ouverture, comme la Story 2.7 l'a fait pour ses trois questions, plutôt que de les découvrir à mi-parcours.
 
 ### Q1 — Où tourne la pile d'observabilité, puisque AR-P5 n'est pas tranché ?
 
