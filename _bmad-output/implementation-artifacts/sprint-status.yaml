@@ -186,7 +186,7 @@ development_status:
   11-1-pipeline-ci-cd-gate-tests: done # AC1 100% clos 2026-07-25: repo public, protection posée+exportée (main dur / develop souple)
   11-2-configuration-externalisee-profils: backlog
   11-3-stack-production-durcie-hebergement: backlog # vérifier région commune aux corridors (tenabilité report AR-P5)
-  11-4-observabilite-metriques-logs-tracing: backlog # PRÉREQUIS DUR de l'ouverture de l'Epic 4 (AD-16)
+  11-4-observabilite-metriques-logs-tracing: ready-for-dev # PRÉREQUIS DUR de l'ouverture de l'Epic 4 (AD-16). Story créée le 2026-08-11 avec QUATRE questions ouvertes à trancher avant T1 : (Q1) où tourne la pile, puisque AR-P5/11-3 n'est pas tranché — proposition : compose local, déploiement production routé vers 11-3 ; (Q2) quel canal d'alerte sans préempter le spike AR-P6 — précédent SMTP/Mailpit de la 2-4 applicable ; (Q3) comment injecter l'écart factice de l'AC4 sans ajouter d'endpoint de test en production (interdiction 1-10) ; (Q4) instrumenter sur Boot 3.3.5 en sachant que 11-9 migre en 4.x (propriétés OTLP renommées, logs JSON natifs seulement à partir de 3.4)
   11-5-sauvegarde-restauration-testees: backlog
   11-6-resilience-dependances-croissance-audit: backlog
   11-7-tests-e2e-offline-online-dette: backlog
