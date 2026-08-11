@@ -347,7 +347,7 @@ Tests **nouveaux** : test de composant du bouton de déconnexion, test de câbla
 | 2026-08-11 | T4-bis | Veto du récepteur sur `'idle'` (décision D-F, `46969ee`) : un onglet qui n'est pas lui-même inactif ignore l'annonce. Veto borné à `'idle'`. | `44a40b2` |
 | 2026-08-11 | T5 | Attente bornée sur la révocation : `REVOCATION_WAIT_SECONDS = 3`, `withBudget` sur le seul `await`. `api/auth.ts` inchangé (NEVER 1.9) et désormais asservi. Attente dite à l'écran. | `5e1fdb2` |
 | 2026-08-11 | T6 | Les trois états du jeton (AC5) : `SessionState`, getter `sessionState`, la file hors-ligne ne confond plus « jeton + profil illisible » avec « personne n'est connecté ». Jeton **non** effacé, motif écrit. | `dd66226` |
-| 2026-08-11 | T7 | Époque de session (AC6) : compteur monotone au module, tourné aux deux bouts, comparé à la résolution des trois actions de lecture. `loadSeq` conservé et enfin testé. Écart service worker (D-E) nommé. | _renseigné par le commit suivant : un hash n'existe pas avant son commit_ |
+| 2026-08-11 | T7 | Époque de session (AC6) : compteur monotone au module, tourné aux deux bouts, comparé à la résolution des trois actions de lecture. `loadSeq` conservé et enfin testé. Écart service worker (D-E) nommé. | `9ee4de0` |
 
 ## Dev Agent Record
 
