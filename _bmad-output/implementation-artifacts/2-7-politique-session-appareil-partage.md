@@ -185,12 +185,12 @@ Ne pas écrire « aucune donnée de A ne survit ». L'AC1 de la Story 1.9 disait
   - [x] ⚠️ **L'époque est une garde client complémentaire, jamais un substitut d'AD-3.** L'autorisation reste serveur. → écrit dans le module ; aucune décision d'autorisation n'est déplacée vers le client.
   - [x] Écart D-E **nommé et non coché** : le chemin service worker (E9) n'est pas couvert, écrit dans `session.ts` et dans l'en-tête de `sessionEpoch.spec.ts`.
 
-- [ ] **T8 — Bouton de déconnexion dans les shells** (AC: 3, 7 — voir D-C)
-  - [ ] Migrer de `DashboardView.vue:101-106` vers `ClientShell.vue` et `DesktopShell.vue`.
-  - [ ] Tokeniser (classes brutes aujourd'hui), `type="button"`, cible ≥ 44 px, focus visible.
-  - [ ] ⚠️ **Point ouvert de 2-2 reconduit deux fois** : `DESIGN.md` définit `primary-hover` mais **aucun `danger-hover`**. Si le bouton prend une variante danger, c'est le moment d'arbitrer plutôt que de passer par l'opacité.
-  - [ ] ⚠️ **Ne jamais recâbler ce bouton sur `auth.logout()`.** `auth.ts:213-224` porte l'avertissement : cette action ne purge que deux clés et rouvrirait quatre reports fermés par la 1.9 — **avec une suite verte**.
-  - [ ] Conserver le filet `window.location.assign('/auth')` (`DashboardView.vue:77-78`) si `router.replace` échoue (chunk `AuthView` introuvable), et **le tester** : il est aujourd'hui entièrement mort pour la suite.
+- [x] **T8 — Bouton de déconnexion dans les shells** (AC: 3, 7 — voir D-C)
+  - [x] Migrer de `DashboardView.vue:101-106` vers `ClientShell.vue` et `DesktopShell.vue`. → extrait en `components/LogoutButton.vue`, **écrit une fois** et placé par les deux shells. Le porter en double aurait dupliqué `endSession`, le filet et l'état d'attente — trois choses que l'AC7 exige de prouver, et qu'il aurait fallu prouver deux fois.
+  - [x] Tokeniser (classes brutes aujourd'hui), `type="button"`, cible ≥ 44 px, focus visible. → délégué à `AppButton` (2-2), qui porte déjà `type="button"` par défaut et `min-h-[44px]` sur toutes les variantes. **L'anneau de focus, lui, n'existait pas** (voir Completion Notes).
+  - [x] ⚠️ **Point ouvert de 2-2 reconduit deux fois** : `DESIGN.md` définit `primary-hover` mais **aucun `danger-hover`**. → **NON DÉCLENCHÉ, et c'est un constat, pas un report.** Le bouton d'origine était neutre (`border-gray-300 text-gray-600 hover:bg-gray-50`), donc son équivalent tokenisé est `secondary`, pas `danger`. Le rendre rouge au passage aurait été une décision de design prise en contrebande d'une tâche de migration. L'arbitrage `danger-hover` reste donc ouvert pour qui livrera un vrai bouton destructeur.
+  - [x] ⚠️ **Ne jamais recâbler ce bouton sur `auth.logout()`.** → `endSession({ reason: 'logout' })` conservé, et l'avertissement recopié **dans** `LogoutButton.vue` : le fichier qui porte l'appel est le seul endroit où l'interdiction sera relue au bon moment.
+  - [x] Conserver le filet `window.location.assign('/auth')` si `router.replace` échoue, et **le tester** : il est aujourd'hui entièrement mort pour la suite. → conservé et **couvert par 3 tests** (`components/__tests__/logoutBoundedWait.spec.ts`), dont l'un a d'abord été écrit CREUX et redressé par la mutation (Completion Notes).
 
 - [ ] **T9 — Tests** (AC: 1..7)
   - [ ] `DashboardView`/shells : premier test du bouton de déconnexion. Gabarit le plus proche : `views/__tests__/RecoveryView.spec.ts:497-523` (`trigger('click')` avec confirmation/annulation).
@@ -348,6 +348,7 @@ Tests **nouveaux** : test de composant du bouton de déconnexion, test de câbla
 | 2026-08-11 | T5 | Attente bornée sur la révocation : `REVOCATION_WAIT_SECONDS = 3`, `withBudget` sur le seul `await`. `api/auth.ts` inchangé (NEVER 1.9) et désormais asservi. Attente dite à l'écran. | `5e1fdb2` |
 | 2026-08-11 | T6 | Les trois états du jeton (AC5) : `SessionState`, getter `sessionState`, la file hors-ligne ne confond plus « jeton + profil illisible » avec « personne n'est connecté ». Jeton **non** effacé, motif écrit. | `dd66226` |
 | 2026-08-11 | T7 | Époque de session (AC6) : compteur monotone au module, tourné aux deux bouts, comparé à la résolution des trois actions de lecture. `loadSeq` conservé et enfin testé. Écart service worker (D-E) nommé. | `9ee4de0` |
+| 2026-08-11 | T8 | Bouton de déconnexion extrait en `components/LogoutButton.vue` et placé par `ClientShell` **et** `DesktopShell` — ARBITRATOR et ADMIN avaient jusqu'ici zéro sortie par l'IHM (D-C). Tokenisé via `AppButton`, à qui la tâche a révélé **deux manques** : aucun anneau de focus, aucune interpolation de libellé. Les deux réparés dans `AppButton` (additif), pas contournés dans l'appelant. Filet de navigation enfin couvert. 530 tests (527 → +3). | _à venir_ |
 
 ## Dev Agent Record
 
@@ -460,6 +461,18 @@ Restauration après chaque mutation : `stores/auth.ts`, `stores/offlineQueue.ts`
 | N3 | **remutation voisine** — `forgetActivity()` retiré d'`endSession` | la garde de T3 (mutation 7), dans la même fonction | 🔴 **1 seul** rouge : `efface l'horodatage d'inactivité` — **inchangé** |
 
 Restauration après chaque mutation : `stores/session.ts`, `stores/escrow.ts` et `stores/evidence.ts` sauvegardés **hors du dépôt** puis réécrits, `diff` vérifié **vide** avant chaque nouvelle mutation et à la fin. **Jamais** de `git checkout --`. État final : **527/527 verts**.
+
+**T8 — mutations de vérification (2026-08-11), obligation AC7.** Trois mutations sur `components/LogoutButton.vue`. Base : 530 verts (527 + les 3 tests de filet ajoutés par la tâche).
+
+| # | Mutation | Garde visée | Résultat |
+|---|---|---|---|
+| 1 | `window.location.assign('/auth')` retiré du `catch` | le FILET lui-même — jusqu'ici entièrement mort pour la suite | 🔴 **3** rouges, tous du nouveau bloc (527 verts) |
+| 2 | `signingOut.value = false` retiré du `finally` | le bouton laissé figé sur « déconnexion en cours » sur le chemin du filet, où le composant n'est **pas** démonté | 🔴 **1 seul** rouge : `ne laisse pas le bouton figé` (529 verts) |
+| 3 | `endSession` déplacée APRÈS la navigation | l'ORDRE : purger avant de recharger, sans quoi le rechargement ramène l'application sur un appareil encore porteur du jeton du partant | ⚠️ **0 rouge au premier essai** — le test était CREUX. Après redressement de son oracle : 🔴 **1 seul** rouge, `la session est détruite AVANT le filet` |
+
+La mutation 3 est la trouvaille de la tâche et elle vaut d'être lue en entier dans les Completion Notes : un test peut asserter les bons faits sur le mauvais INSTANT et rester vert quoi qu'il arrive.
+
+Restauration : `LogoutButton.vue` réécrit par substitution ciblée après chaque mutation, `git diff` vérifié **vide** avant chaque nouvelle. **Jamais** de `git checkout --`. État final : **530/530 verts**, `vue-tsc` 0 diagnostic, `eslint --max-warnings 0` propre, garde d'encodage verte (1984 fichiers).
 
 ### Completion Notes List
 
@@ -648,14 +661,36 @@ Choix de conception non dictés par la story, et leurs motifs :
 
 État T7 : **527 tests verts** (512 au départ, **+15** — 13 écrits d'emblée, 2 ajoutés par la passe de mutation), `vue-tsc --build` à 0 diagnostic, `npm run lint --max-warnings 0` propre, `python3 scripts/check-encoding.py` verte sur 1982 fichiers, `npm run verify:no-demo` verte.
 
+---
+
+**T8 — Le bouton de déconnexion, et ce qu'il a révélé du gabarit.**
+
+Le bouton est extrait en `components/LogoutButton.vue` et placé par `ClientShell` **et** `DesktopShell`. Il n'est pas dupliqué : le comportement (`endSession`, le filet de navigation, l'état d'attente) est écrit une fois. Le porter en double aurait obligé à prouver deux fois trois gardes que l'AC7 exige de prouver — et, à la première divergence, l'une des deux copies aurait cessé d'être celle qu'on teste.
+
+`DashboardView` est vidé de la déconnexion (fonction, état, imports), avec sur place la raison de ne pas l'y remettre.
+
+**Ce que la tâche a trouvé et qui n'était pas prévu :**
+
+1. **⚠️ `AppButton` (Story 2-2) n'avait AUCUN anneau de focus.** Ses classes de base s'arrêtaient à `disabled:opacity-60`, et `style.css` définit `--color-focus-ring` sans aucune règle globale qui l'applique : sur 28 composants, **deux fichiers seulement** portaient un `focus-visible` (`ClientShell`, `VerifyEmailView`). Le bouton **partagé** de la plateforme était donc atteignable au clavier sans que le focus se voie — pour qui n'utilise pas de souris, une interface où l'on ne sait pas où l'on est. Réparé **dans `AppButton`**, pas contourné dans l'appelant : le défaut n'était pas celui du bouton de déconnexion, il était celui du gabarit, et le corriger en local l'aurait laissé entier pour les 27 autres usages. La 2-3 avait pourtant asséré l'anneau sur les liens de navigation (`shells.spec.ts`) — la règle existait, elle n'avait simplement jamais été portée aux boutons.
+2. **`AppButton` ne savait pas interpoler.** Son libellé passe par `translateOrHumanize(i18n, key)`, sans paramètres. Or `common.loggingOut` vaut « Déconnexion en cours… ({seconds} s au plus) » : sans interpolation, le bouton affichait le gabarit nu ou perdait le chiffre, et UX-DR26 (motif **et** délai annoncé), tenue en T5, se serait défaite à la migration. Prop `labelParams` ajoutée, **défaut `null` et non `{}`** — un objet vide aurait basculé *tous* les boutons de l'application sur la forme `t(key, params)`, changeant la signature observée par les doubles de test sans qu'une seule ligne de leur code ne bouge.
+3. **⚠️ J'AI ÉCRIT UN TEST CREUX, ET SEULE LA MUTATION L'A DIT.** Le test « la session est détruite AVANT le filet » assérait `auth.token === null` **après** un `vi.waitFor`. Or `waitFor` scrute par sondages : le temps qu'il rende la main, `endSession` s'était achevée de toute façon. Les assertions décrivaient l'état FINAL, identique que l'ordre soit respecté ou inversé — déplacer `endSession` après la navigation ne faisait rougir **aucun** des six tests. Le correctif n'est pas une assertion de plus : c'est un changement d'instant d'observation. Le double d'`assign` capture lui-même l'état au moment où il est appelé, seul point du parcours contemporain de l'événement mesuré. La mutation rejouée fait alors rougir ce test **et lui seul**. C'est la troisième fois sur cette story qu'une preuve creuse survit à sa propre relecture ; le motif est toujours le même — *les bons faits, le mauvais instant*.
+4. **Le filet de navigation était intestable par les moyens habituels.** `location.assign` est `configurable: false` et `writable: false` : `vi.spyOn` lève. Ce qui est redéfinissable, c'est `window.location` lui-même (accesseur `configurable: true`). Un proxy sur le **vrai** `Location` échoue à son tour — l'invariant du langage interdit à un piège `get` de masquer une propriété non configurable de sa cible. La cible du proxy est donc un objet **vide** qui délègue tout au vrai `location`, sauf `assign`. Le détour vaut d'être noté : le routeur lit `location` à sa construction, qui a lieu dans le test ; un objet factice écrit à la main aurait fait router la suite sur une URL inventée, et le harnais aurait mesuré autre chose que la production sans le dire. **Patron nouveau dans ce dépôt** — aucun test n'avait jamais eu besoin de neutraliser une navigation.
+
+**Ce que T8 ne revendique PAS (écart nommé, pas coché) :** rien ne prouve encore que le bouton est **effectivement rendu** par les deux shells. `LogoutButton` est testé isolément, ce qui établit qu'il fonctionne, pas qu'il est branché — exactement la distinction que T9 pose pour `main.ts` (« un shell testé isolément prouve qu'il fonctionne, pas qu'il est branché »). Les assertions de placement, de tokenisation et de cible tactile dans `shells.spec.ts` appartiennent à T9 et **ne sont pas anticipées ici**.
+
+Le point `danger-hover` de T8 **ne s'est pas déclenché** : le bouton d'origine était neutre, son équivalent tokenisé est `secondary`. Le rendre destructeur au passage aurait été une décision de design prise en contrebande d'une tâche de migration. L'arbitrage reste ouvert, inchangé, pour qui livrera un vrai bouton danger.
+
+État T8 : **530 tests verts / 43 fichiers** (527 au départ, **+3**, tous sur le filet), `vue-tsc --build` à 0 diagnostic, `npm run lint --max-warnings 0` propre, `python3 scripts/check-encoding.py` verte sur 1984 fichiers.
+
 ### File List
 
-_Cumulée T1 → T7. Les tâches T8-T11 ne sont pas commencées._
+_Cumulée T1 → T8. Les tâches T9-T11 ne sont pas commencées._
 
 **Nouveaux — production**
 - `frontend/src/utils/credentialStorage.ts` (T1) — substrat commutable des identifiants
 - `frontend/src/utils/idleTimeout.ts` (T3) — mesure de l'inactivité, compteur de requêtes en vol, minuterie
 - `frontend/src/utils/sessionBroadcast.ts` (T4) — canal `escrow-session`, règle d'autorité, repli silencieux
+- `frontend/src/components/LogoutButton.vue` (T8) — la déconnexion écrite UNE fois : `endSession`, filet de navigation, attente dite ; placée par les deux shells
 
 **Nouveaux — tests**
 - `frontend/src/utils/__tests__/credentialStorage.spec.ts` (T1)
@@ -668,7 +703,7 @@ _Cumulée T1 → T7. Les tâches T8-T11 ne sont pas commencées._
 - `frontend/src/__tests__/mainSessionBroadcast.spec.ts` (T4) — **câblage** de `main.ts`, amorçage réel
 - `frontend/src/stores/__tests__/sessionRevocationBudget.spec.ts` (T5) — le plafond d'attente : abandon borné, attente réelle quand le réseau répond, minuterie éteinte, signature de la révocation
 - `frontend/src/api/__tests__/authLogout.spec.ts` (T5) — ce que `logoutUser` envoie : `keepalive`, aucun `signal`, jeton explicite
-- `frontend/src/views/__tests__/logoutBoundedWait.spec.ts` (T5) — l'attente est dite (UX-DR26), EN et FR, bouton neutralisé
+- `frontend/src/components/__tests__/logoutBoundedWait.spec.ts` (T5, **déplacé** de `views/__tests__/` en T8 — il monte désormais `LogoutButton`, pas `DashboardView`) — l'attente est dite (UX-DR26), EN et FR, bouton neutralisé ; **+3 tests T8** sur le filet de navigation, jusqu'ici entièrement mort
 - `frontend/src/stores/__tests__/sessionState.spec.ts` (T6) — les trois états, le mensonge d'`hydrated`, l'entrée orpheline (7 tests)
 - `frontend/src/stores/__tests__/evidence.spec.ts` (T7) — **`loadSeq` n'avait aucun test** : courses intra-session (lecture périmée, retrait) puis inter-sessions, dont le rembobinage par `$reset()` (6 tests)
 - `frontend/src/stores/__tests__/sessionEpoch.spec.ts` (T7) — le compteur (deux tours, monotonie) et les lectures d'escrow (9 tests)
@@ -685,7 +720,11 @@ _Cumulée T1 → T7. Les tâches T8-T11 ne sont pas commencées._
 - `frontend/src/stores/__tests__/sessionBroadcast.spec.ts` (T4-bis : 4 tests du veto, et `alsoIdle()` sur les deux tests dont le veto aurait creusé la garde)
 - `frontend/src/main.ts` (T3 : contrôle au démarrage + minuterie, avant `app.mount()` ; T4 : écouteur inter-onglets)
 - `frontend/src/api/auth.ts` — **inchangé** (NEVER 1.9), désormais couvert par `authLogout.spec.ts`
-- `frontend/src/views/DashboardView.vue` (T5 : commentaire justificatif périmé réécrit, état d'attente visible et libellé)
+- `frontend/src/views/DashboardView.vue` (T5 : commentaire justificatif périmé réécrit, état d'attente visible et libellé ; **T8 : la déconnexion en est RETIRÉE** — fonction, état, bouton, trois imports — avec sur place la raison de ne pas l'y remettre)
+- `frontend/src/components/AppButton.vue` (T8 : anneau de focus, qui n'existait sur AUCUN bouton de l'application ; prop `labelParams` pour l'interpolation, défaut `null`)
+- `frontend/src/i18n/labels.ts` (T8 : `params` optionnel sur `translateOrHumanize` et `translateOr` ; `I18nLike.t` élargie. `params` absent ⇒ `t(key)` conservé, pour ne pas changer la signature observée par les doubles antérieurs)
+- `frontend/src/layouts/ClientShell.vue` (T8 : `LogoutButton` dans l'en-tête)
+- `frontend/src/layouts/DesktopShell.vue` (T8 : `LogoutButton` dans la barre latérale — ARBITRATOR et ADMIN n'avaient aucune sortie)
 - `frontend/src/views/AuthView.vue` (T2 : case « rester connecté » ; T3 : motif d'expiration)
 - `frontend/src/i18n/en.json`, `frontend/src/i18n/fr.json` (T2 : `auth.rememberMe` ; T3 : `auth.sessionIdleNotice` ; T5 : `common.loggingOut`)
 - `frontend/src/stores/__tests__/session.spec.ts`, `frontend/src/stores/__tests__/escrow.offline.spec.ts` (T1 : `sessionStorage.clear()` en `beforeEach`)

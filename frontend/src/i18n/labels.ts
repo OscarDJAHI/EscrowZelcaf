@@ -27,7 +27,9 @@
  * appelables hors composant, et testables en leur passant deux `vi.fn()`.
  */
 export interface I18nLike {
-  t: (key: string) => string
+  // Le second paramètre est OPTIONNEL et le reste : `vi.fn()` en tient lieu sans rien
+  // déclarer, et les appelants qui n'interpolent rien continuent d'écrire `t(key)`.
+  t: (key: string, params?: Record<string, unknown>) => string
   te: (key: string) => boolean
 }
 
@@ -37,9 +39,23 @@ export function humanize(code: unknown): string {
   return String(code).replaceAll('_', ' ')
 }
 
-/** Traduit `key` si elle existe, sinon `fallback`. */
-function translateOr({ t, te }: I18nLike, key: string | null | undefined, fallback: string): string {
-  return key && te(key) ? t(key) : fallback
+/**
+ * Traduit `key` si elle existe, sinon `fallback`.
+ *
+ * <p><b>`params` absent ⇒ `t(key)` et non `t(key, {})`.</b> La distinction n'est pas
+ * cosmétique : tous les appelants antérieurs à la 2.7 passent par ici, et plusieurs sont
+ * testés contre un `t` simulé. Appeler systématiquement la forme à deux arguments aurait
+ * changé la signature observée par ces doubles sans changer une seule ligne de leur code
+ * — un test vert qui cesse d'attester ce qu'il attestait.
+ */
+function translateOr(
+  { t, te }: I18nLike,
+  key: string | null | undefined,
+  fallback: string,
+  params?: Record<string, unknown>,
+): string {
+  if (!key || !te(key)) return fallback
+  return params ? t(key, params) : t(key)
 }
 
 /**
@@ -49,10 +65,22 @@ function translateOr({ t, te }: I18nLike, key: string | null | undefined, fallba
  * Rend `create` plutôt que `common.create` quand la clé manque : le préfixe n'apprend
  * rien à l'utilisateur, et une clé brute affichée est précisément ce que la Story 2.1 a
  * passé trois passes de revue à éliminer.
+ *
+ * <p><b>`params` (Story 2.7).</b> Certains libellés portent une valeur que l'utilisateur
+ * doit lire AVANT d'agir — `common.loggingOut` annonce le délai maximal d'attente, comme
+ * UX-DR26 l'exige. Sans interpolation ici, un tel libellé s'affichait avec son gabarit nu
+ * (« ({seconds} s au plus) ») ou perdait le chiffre : les deux trahissent l'exigence.
+ *
+ * <p>La dégradation ne change pas : clé absente ⇒ forme lisible SANS interpolation. Le
+ * gabarit n'existe que dans le catalogue, donc il n'y a rien à interpoler quand il manque.
  */
-export function translateOrHumanize(i18n: I18nLike, key: string | null | undefined): string {
+export function translateOrHumanize(
+  i18n: I18nLike,
+  key: string | null | undefined,
+  params?: Record<string, unknown>,
+): string {
   if (!key) return ''
-  return translateOr(i18n, key, humanize(String(key).split('.').pop()))
+  return translateOr(i18n, key, humanize(String(key).split('.').pop()), params)
 }
 
 /** Libellé d'un état du cycle de vie escrow. */

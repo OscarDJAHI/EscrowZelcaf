@@ -47,6 +47,19 @@ const props = defineProps({
   /** Action en cours : désactive ET remplace le libellé. Jamais un spinner muet. */
   pending: { type: Boolean, default: false },
   pendingLabelKey: { type: String, default: 'common.pleaseWait' },
+  /**
+   * Paramètres d'interpolation du libellé actif (Story 2.7).
+   *
+   * <p><b>Défaut `null`, jamais `{}`.</b> Un objet vide par défaut aurait fait basculer
+   * TOUS les boutons de l'application sur la forme `t(key, params)` — voir le motif écrit
+   * dans `i18n/labels.ts`. Le nul se propage jusqu'à `translateOrHumanize`, qui retombe
+   * alors sur l'appel à un seul argument.
+   *
+   * <p>Le MÊME objet sert au libellé et à son remplaçant d'attente : les deux décrivent la
+   * même action, et un bouton dont l'attente parle d'autre chose que son intitulé serait
+   * illisible. Les paramètres inutiles à l'un sont ignorés par vue-i18n.
+   */
+  labelParams: { type: Object as PropType<Record<string, unknown> | null>, default: null },
   type: {
     type: String as PropType<'button' | 'submit' | 'reset'>,
     default: 'button',
@@ -78,6 +91,13 @@ const classes = computed(() => [
   // est utilisée d'abord au pouce, sur mobile.
   'inline-flex min-h-[44px] items-center justify-center gap-2 rounded-md px-4 text-label',
   'font-medium transition disabled:opacity-60',
+  // ANNEAU DE FOCUS (Story 2.7). Il manquait — sur les 28 composants, seuls `ClientShell`
+  // et `VerifyEmailView` en portaient un, et `style.css` définit `--color-focus-ring` sans
+  // aucune règle globale qui l'applique. Le bouton PARTAGÉ de la plateforme était donc
+  // atteignable au clavier sans que le focus se voie, ce qui revient, pour qui n'utilise
+  // pas de souris, à ne pas savoir où l'on est. Posé ici plutôt que sur le bouton de
+  // déconnexion qui l'a révélé : le défaut n'était pas le sien, il était celui du gabarit.
+  'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring',
   VARIANTS[props.variant] ?? VARIANTS.primary,
 ])
 
@@ -99,9 +119,11 @@ const formattedAmount = computed(() => {
 })
 
 const label = computed(() =>
-  props.pending
-    ? translateOrHumanize({ t, te }, props.pendingLabelKey)
-    : translateOrHumanize({ t, te }, props.labelKey),
+  translateOrHumanize(
+    { t, te },
+    props.pending ? props.pendingLabelKey : props.labelKey,
+    props.labelParams ?? undefined,
+  ),
 )
 
 function onClick(event: MouseEvent) {

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { RouterLink } from 'vue-router'
 import LanguageSwitcher from '@/components/LanguageSwitcher.vue'
+import LogoutButton from '@/components/LogoutButton.vue'
 
 /**
  * Shell de l'espace CLIENT — mobile-first, comme le prescrit `DESIGN.md`.
@@ -50,6 +51,9 @@ const LINK =
           •
         </span>
         <LanguageSwitcher />
+        <!-- Dans le shell et non dans un écran : la déconnexion doit rester atteignable
+             depuis les cinq surfaces de l'espace, pas seulement depuis l'accueil. -->
+        <LogoutButton />
       </div>
     </header>
 

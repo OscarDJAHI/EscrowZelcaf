@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { PropType } from 'vue'
 import LanguageSwitcher from '@/components/LanguageSwitcher.vue'
+import LogoutButton from '@/components/LogoutButton.vue'
 
 /**
  * Shell des surfaces DESKTOP-FIRST : console d'arbitrage et back-office.
@@ -44,7 +45,13 @@ defineProps({
             </span>
           </li>
         </ul>
-        <div class="p-4"><LanguageSwitcher /></div>
+        <!-- ARBITRATOR et ADMIN n'avaient AUCUN moyen de se déconnecter par l'interface
+             avant la 2.7 : le bouton vivait dans le tableau de bord client, que ces deux
+             rôles n'atteignent jamais (décision D-C). -->
+        <div class="flex flex-col items-start gap-2 p-4">
+          <LanguageSwitcher />
+          <LogoutButton />
+        </div>
       </nav>
 
       <!-- 1280 px : largeur maximale des tableaux, DESIGN.md. -->

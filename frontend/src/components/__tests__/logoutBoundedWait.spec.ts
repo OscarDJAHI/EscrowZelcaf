@@ -4,7 +4,7 @@ import { createRouter, createWebHistory } from 'vue-router'
 import { mount } from '@vue/test-utils'
 import { IDBFactory } from 'fake-indexeddb'
 import { logoutUser } from '@/api/auth'
-import DashboardView from '@/views/DashboardView.vue'
+import LogoutButton from '@/components/LogoutButton.vue'
 import { createEscrowI18n } from '@/i18n'
 import en from '@/i18n/en.json'
 import fr from '@/i18n/fr.json'
@@ -23,13 +23,19 @@ import type { Router } from 'vue-router'
  * <p><b>Ce que ce fichier garde.</b> L'attente de la révocation est désormais bornée
  * (`REVOCATION_WAIT_MS`), mais une attente bornée reste une attente : entre le clic et la
  * navigation, `endSession` a déjà remis les stores à zéro et l'écran se vide. Sans état
- * visible, l'utilisateur regarde un tableau de bord qui perd son contenu et un bouton qui
- * ne répond plus, sans savoir si son geste a été pris en compte.
+ * visible, l'utilisateur regarde une interface qui perd son contenu et un bouton qui ne
+ * répond plus, sans savoir si son geste a été pris en compte.
  *
  * <p><b>Périmètre strict.</b> On mesure ici ce que l'ATTENTE affiche, et rien d'autre. La
- * place définitive du bouton, sa tokenisation et sa cible tactile appartiennent à T8/T9 et
- * ne sont pas assérées ici — un test qui verrouillerait la position actuelle du bouton
- * rougirait à sa migration pour une raison qui n'a rien à voir avec ce qu'il prouve.
+ * place du bouton dans les shells, sa tokenisation et sa cible tactile sont assérées
+ * ailleurs (T8/T9) — un test qui verrouillerait ici la position du bouton rougirait à sa
+ * migration pour une raison qui n'a rien à voir avec ce qu'il prouve.
+ *
+ * <p><b>T8 a exercé cette prudence, et elle a payé.</b> Le sujet monté était
+ * `DashboardView`, où le bouton vivait ; il est désormais `LogoutButton`, que les deux
+ * shells placent (décision D-C). Aucune assertion n'a eu à changer — seul le composant
+ * monté — parce qu'aucune ne parlait du tableau de bord. C'est exactement la propriété que
+ * l'en-tête revendiquait avant que la migration ne la mette à l'épreuve.
  *
  * <p><b>Minuteries RÉELLES</b>, et rien à faire avancer : le libellé s'observe PENDANT
  * l'attente, dont le test tient le fil par une révocation qui ne se règle que sur ordre.
@@ -58,21 +64,37 @@ let pinia: Pinia
 /** Le double de `caches.delete` — l'un des effets qu'une seconde déconnexion rejouerait. */
 let cacheDelete: ReturnType<typeof vi.fn>
 
-function makeRouter(): Router {
+/**
+ * `authChunkFails` reproduit le défaut d'origine et non une commodité de test.
+ *
+ * <p>Toutes les routes de production sont des chunks paresseux. Le filet existe pour le cas
+ * où celui d'`AuthView` ne se charge PAS — déploiement qui invalide le nom haché, précache
+ * évincé hors ligne. Un composant asynchrone qui rejette est littéralement cet événement ;
+ * un `spyOn(router, 'replace')` aurait prouvé la même ligne en simulant le mécanisme au
+ * lieu de la panne, et serait resté vert si la production cessait un jour de passer par
+ * `replace`.
+ */
+function makeRouter({ authChunkFails = false } = {}): Router {
   return createRouter({
     history: createWebHistory(),
     routes: [
-      { path: '/', name: 'dashboard', component: DashboardView },
-      { path: '/auth', name: 'auth', component: { template: '<div />' } },
+      { path: '/', name: 'dashboard', component: { template: '<div />' } },
+      {
+        path: '/auth',
+        name: 'auth',
+        component: authChunkFails
+          ? () => Promise.reject(new Error('chunk AuthView introuvable'))
+          : { template: '<div />' },
+      },
     ],
   })
 }
 
-async function mountDashboard(locale = 'en') {
-  const router = makeRouter()
+async function mountLogoutButton(locale = 'en', routerOptions = {}) {
+  const router = makeRouter(routerOptions)
   await router.push('/')
   await router.isReady()
-  const wrapper = mount(DashboardView, {
+  const wrapper = mount(LogoutButton, {
     global: { plugins: [pinia, router, createEscrowI18n(locale)] },
   })
   await wrapper.vm.$nextTick()
@@ -136,7 +158,7 @@ describe('le bouton de déconnexion dit l’attente et annonce son délai (UX-DR
   it('affiche le motif ET le délai pendant l’attente, puis rend la main', async () => {
     signIn()
     const answer = revocationOnDemand()
-    const { wrapper, router } = await mountDashboard()
+    const { wrapper, router } = await mountLogoutButton()
     const button = wrapper.find(LOGOUT)
 
     // Appariée d'entrée : AVANT le clic, le bouton est celui de tous les jours. Sans ce
@@ -163,7 +185,7 @@ describe('le bouton de déconnexion dit l’attente et annonce son délai (UX-DR
     // n'applique plus. Le test lit `REVOCATION_WAIT_SECONDS`, comme la vue.
     signIn()
     const answer = revocationOnDemand()
-    const { wrapper, router } = await mountDashboard('fr')
+    const { wrapper, router } = await mountLogoutButton('fr')
     const button = wrapper.find(LOGOUT)
 
     expect(button.text()).toBe(fr.common.logout)
@@ -193,7 +215,7 @@ describe('le bouton de déconnexion dit l’attente et annonce son délai (UX-DR
     // `caches.delete` en est le témoin direct, et c'est lui qu'on compte ici.
     signIn()
     const answer = revocationOnDemand()
-    const { wrapper, router } = await mountDashboard()
+    const { wrapper, router } = await mountLogoutButton()
 
     await wrapper.find(LOGOUT).trigger('click')
     await vi.waitFor(() => expect(cacheDelete).toHaveBeenCalledTimes(1))
@@ -205,5 +227,139 @@ describe('le bouton de déconnexion dit l’attente et annonce son délai (UX-DR
     // Une purge et une seule, du clic jusqu'à l'écran d'authentification.
     expect(cacheDelete).toHaveBeenCalledTimes(1)
     expect(logoutUser).toHaveBeenCalledTimes(1)
+  })
+})
+
+/**
+ * LE FILET DE NAVIGATION (Story 2.7, T8).
+ *
+ * <p>Ce chemin était, jusqu'ici, ENTIÈREMENT MORT pour la suite : la story le relève
+ * nommément. Il vaut d'être couvert parce qu'il ne se déclenche que le jour où quelque
+ * chose d'autre a déjà mal tourné — et c'est précisément là qu'un code jamais exécuté
+ * révèle qu'il ne fonctionne pas.
+ *
+ * <p>L'enjeu est le pire état de l'application : la session vient d'être détruite, le jeton
+ * n'existe plus, et si la navigation échoue sans filet, l'utilisateur reste sur un écran
+ * vide, sans issue, pendant qu'un rejet non traité s'échappe d'un gestionnaire `async`.
+ */
+describe('le filet quand l’écran d’authentification ne se charge pas', () => {
+  let assign: ReturnType<typeof vi.fn>
+  let realLocationDescriptor: PropertyDescriptor | undefined
+
+  /**
+   * Pourquoi un PROXY et non un `vi.spyOn(window.location, 'assign')`.
+   *
+   * <p>`assign` est une propriété propre de `Location`, `configurable: false` et
+   * `writable: false` : l'espionner lève « Cannot redefine property ». Ce qui EST
+   * redéfinissable, c'est `window.location` lui-même (accesseur `configurable: true`).
+   *
+   * <p>Le proxy remplace donc `assign` seul et délègue TOUT le reste au vrai objet, ce qui
+   * n'est pas un détail : `createWebHistory()` lit `location` à la construction du routeur,
+   * qui a lieu DANS le test, donc après ce remplacement. Un objet factice construit à la
+   * main aurait fait router les tests sur une URL inventée — le harnais mesurerait alors
+   * autre chose que la production, sans le dire.
+   *
+   * <p><b>La cible du proxy est un objet VIDE, pas le vrai `Location`.</b> Un piège `get`
+   * n'a pas le droit de rendre autre chose que la valeur réelle d'une propriété non
+   * configurable et non inscriptible de sa cible — c'est un invariant du langage, et
+   * proxier `Location` directement lève au premier appel d'`assign`. Une cible vierge n'a
+   * aucune propriété à protéger : la délégation est alors explicite, et `assign` est la
+   * seule chose qui n'est pas déléguée.
+   */
+  beforeEach(() => {
+    assign = vi.fn()
+    realLocationDescriptor = Object.getOwnPropertyDescriptor(window, 'location')
+    const real = window.location
+    const proxy = new Proxy({} as Location, {
+      get(_target, prop) {
+        if (prop === 'assign') return assign
+        const value = Reflect.get(real, prop, real)
+        return typeof value === 'function' ? value.bind(real) : value
+      },
+      set(_target, prop, value) {
+        return Reflect.set(real, prop, value)
+      },
+      has(_target, prop) {
+        return prop in real
+      },
+    })
+    Object.defineProperty(window, 'location', { configurable: true, get: () => proxy })
+    // Le diagnostic est ÉMIS par la production : on le tait pour ne pas polluer la sortie,
+    // et on l'assère plus bas plutôt que de faire semblant qu'il n'existe pas.
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+  })
+
+  afterEach(() => {
+    // Restauré par son descripteur d'origine et non par une réaffectation : `location` est
+    // un ACCESSEUR, et lui rendre la forme d'une donnée laisserait le reste de la suite
+    // tourner sur une fenêtre subtilement différente de celle du navigateur.
+    if (realLocationDescriptor) Object.defineProperty(window, 'location', realLocationDescriptor)
+  })
+
+  it('recharge sur /auth quand `router.replace` rejette', async () => {
+    signIn()
+    const { wrapper } = await mountLogoutButton('en', { authChunkFails: true })
+
+    // Appariée : avant le clic, aucun rechargement n'a été demandé. Sans ce premier temps,
+    // un filet déclenché à tort — au montage, par exemple — passerait l'assertion suivante.
+    expect(assign).not.toHaveBeenCalled()
+
+    await wrapper.find(LOGOUT).trigger('click')
+    await vi.waitFor(() => expect(assign).toHaveBeenCalledWith('/auth'))
+
+    // Une seule fois : le filet est une sortie, pas une boucle.
+    expect(assign).toHaveBeenCalledTimes(1)
+    expect(console.error).toHaveBeenCalled()
+  })
+
+  it('la session est détruite AVANT le filet — il ne rattrape pas une purge manquée', async () => {
+    // L'ordre est ce qui compte. Si le filet partait avant `endSession`, un rechargement
+    // ramènerait l'application sur un appareil encore porteur du jeton et du cache du
+    // partant, et la garde de routeur le laisserait passer. Le filet répare la NAVIGATION,
+    // jamais la purge.
+    //
+    // ⚠️ CE TEST A ÉTÉ ÉCRIT CREUX, ET LA MUTATION L'A DIT. Sa première version assérait
+    // `auth.token === null` APRÈS le `vi.waitFor`. Or `waitFor` scrute par sondages, et
+    // `endSession` s'était achevée entre-temps : les assertions décrivaient l'état FINAL,
+    // que l'ordre soit respecté ou inversé. Déplacer `endSession` après la navigation ne
+    // faisait rougir AUCUN des six tests. Ce qu'il faut observer n'est pas l'état après,
+    // c'est l'état À L'INSTANT où le filet part — d'où la capture dans le double lui-même,
+    // seul point du parcours qui soit contemporain de l'événement mesuré.
+    const auth = signIn()
+    let stateAtNetTime: { token: string | null; stored: string | null; purges: number } | null = null
+    assign.mockImplementation(() => {
+      stateAtNetTime = {
+        token: auth.token,
+        stored: localStorage.getItem('escrow_token') ?? sessionStorage.getItem('escrow_token'),
+        purges: cacheDelete.mock.calls.length,
+      }
+    })
+
+    const { wrapper } = await mountLogoutButton('en', { authChunkFails: true })
+
+    await wrapper.find(LOGOUT).trigger('click')
+    await vi.waitFor(() => expect(assign).toHaveBeenCalledWith('/auth'))
+
+    // Appariée : le filet est bien parti, sinon les assertions suivantes porteraient sur
+    // un `null` et passeraient par le vide — le motif exact relevé quatre fois sur cet epic.
+    expect(stateAtNetTime).not.toBeNull()
+    expect(stateAtNetTime!.token).toBeNull()
+    expect(stateAtNetTime!.stored).toBeNull()
+    expect(stateAtNetTime!.purges).toBeGreaterThan(0)
+  })
+
+  it('ne laisse pas le bouton figé sur « déconnexion en cours »', async () => {
+    // Le `finally` est là pour ce chemin précis : le composant n'est PAS démonté, puisque
+    // le rechargement complet met du temps à venir. Un bouton resté en attente mentirait
+    // indéfiniment à qui le regarde.
+    signIn()
+    const { wrapper } = await mountLogoutButton('en', { authChunkFails: true })
+
+    await wrapper.find(LOGOUT).trigger('click')
+    await vi.waitFor(() => expect(assign).toHaveBeenCalledWith('/auth'))
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.find(LOGOUT).text()).toBe(en.common.logout)
+    expect(wrapper.find(LOGOUT).attributes('disabled')).toBeUndefined()
   })
 })
