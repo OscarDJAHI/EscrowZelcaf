@@ -1,6 +1,13 @@
 # Story 11.4: Observabilité — métriques, logs corrélés, tracing et alerting
 
-Status: ready-for-dev
+Status: in-progress <!-- T0→T4 livrés (2026-08-11 → 2026-08-14). Reste T5 (alerting), T6 (invariant AD-16), T7 (tests/mutations), T8 (barrières). -->
+
+<!-- ⚠️ TENUE DE LIVRES RATTRAPÉE LE 2026-08-14. Les commits T1→T3 des 11 et 12 août
+     n'avaient mis à jour ni les cases ci-dessous, ni le Dev Agent Record, ni le Change
+     Log : le fichier annonçait `ready-for-dev` alors que trois tâches étaient poussées.
+     C'est le même écart que le suivi de sprint a déjà porté deux fois (chiffres périmés).
+     Les cases cochées ci-dessous l'ont été en relisant les COMMITS, pas la mémoire. -->
+
 
 <!-- Créée le 2026-08-11 par bmad-create-story. Quatre questions ouvertes sont listées en
      tête et DOIVENT être tranchées avant T1 : elles commandent le périmètre livrable. -->
@@ -103,33 +110,36 @@ Le dépôt est en **Spring Boot 3.3.5**. La Story 11-9 (« migrations runtime Bo
 
 ## Tasks / Subtasks
 
-- [ ] **T0 — Lire avant d'écrire, et faire trancher Q1→Q4** (préalable bloquant)
-  - [ ] Faire trancher les quatre questions ci-dessus par le PO et consigner chaque décision dans ce fichier avant d'écrire une ligne.
-  - [ ] Lire `backend/src/main/resources/application.yml` (bloc `management:` ligne 193, exposition limitée à `health,info`) et `application-prod.yml`.
-  - [ ] Lire `security/JwtAuthFilter.java` et `security/AuthRateLimitFilter.java` — la chaîne de filtres existante détermine **où** s'insère le filtre de corrélation, et son ordre est load-bearing (voir Dev Notes §Sécurité).
-  - [ ] Lire `service/AuditService.java` et `domain/AuditLog.java` : l'AC1 exige que l'identifiant de corrélation atteigne **l'écriture d'audit**. Décider s'il est porté par le MDC (log) seulement, ou aussi persisté sur `AuditLog` — ce second cas est un changement de schéma (migration Flyway) et doit être dit.
-  - [ ] Relever la base de tests backend et frontend avant toute modification (chiffre exact, pour que les deltas soient vérifiables).
+- [x] **T0 — Lire avant d'écrire, et faire trancher Q1→Q4** (préalable bloquant) — *2026-08-11, commit `02b9ed2`*
+  - [x] Faire trancher les quatre questions ci-dessus par le PO et consigner chaque décision dans ce fichier avant d'écrire une ligne. → tableau des décisions en tête, plus **une cinquième décision** non prévue : le tracing PORTE la corrélation (pas de `X-Request-Id` concurrent).
+  - [x] Lire `application.yml` / `application-prod.yml`.
+  - [x] Lire `JwtAuthFilter` / `AuthRateLimitFilter`. **Conséquence non prévue** : aucun filtre de corrélation n'a finalement été écrit — Micrometer Tracing alimente le MDC lui-même, et ajouter un filtre aurait créé la seconde notion d'identifiant que la décision T0 refuse.
+  - [x] Lire `AuditService` / `AuditLog`. **Constat qui a changé une tâche** : `AuditService` n'émettait AUCUN log. Corrélation portée par le MDC seul → **aucune migration Flyway**, aucune colonne ajoutée.
+  - [x] Relever la base de tests : **514 backend** à l'ouverture.
 
-- [ ] **T1 — Métriques exposées et scrapées** (AC: 1)
-  - [ ] Ajouter `micrometer-registry-prometheus` au `backend/pom.xml`. L'actuator est **déjà présent** (`spring-boot-starter-actuator`, pom ligne 71) — ne pas le redéclarer.
-  - [ ] Exposer `prometheus` dans `management.endpoints.web.exposure.include` **sans élargir le reste** : l'exposition actuelle est `health,info` et cette parcimonie est un acquis de sécurité, pas un oubli.
-  - [ ] Vérifier que les quatre familles de l'AC sont bien présentes dans la sortie : JVM, HTTP (`http.server.requests`), pool Hikari (`hikaricp.*`), files du broker. ⚠️ **Les métriques RabbitMQ ne sortent pas toutes seules** — `spring-boot-starter-amqp` est présent (pom ligne 67) mais la profondeur de file côté broker n'est pas une métrique client. Décider et écrire : métriques client Spring AMQP, ou exporteur RabbitMQ, ou plugin `rabbitmq_prometheus`.
-  - [ ] Ajouter Prometheus au compose et le faire scraper le backend. **Ports** : 9090 est libre ; 9000/9001 sont pris par MinIO, 5432/8081/5050/5672/15672 aussi (voir Dev Notes).
+- [x] **T1 — Métriques exposées et scrapées** (AC: 1) — *2026-08-11, commit `fef3b03`*
+  - [x] Ajouter `micrometer-registry-prometheus` au `backend/pom.xml`, sans redéclarer l'actuator.
+  - [x] Exposer `prometheus` sans élargir le reste → `include: health,info,prometheus`. **Trois couches de cantonnement** et non une : liste d'exposition, règle de sécurité épinglée au chemin EXACT (jamais `/actuator/**`), port de management séparé (9091).
+  - [x] **Trois obstacles, dont deux muets** : 403 (Spring Security), 404 (`@ConditionalOnEnabledMetricsExport` → drapeau `management.prometheus.metrics.export.enabled` explicite — sans lui tout est en place, rien n'est exposé, et RIEN ne le dit), et `http_server_requests_seconds` qui naît du TRAFIC et non de la configuration.
+  - [x] Familles JVM / HTTP / Hikari vérifiées par nom de métrique précis dans `ObservabilityIntegrationTest`.
+  - [~] **Famille « files du broker » — DÉCIDÉE en T1, CÂBLÉE en T4.** Décision écrite en T1 (`ObservabilityIntegrationTest` §javadoc) : la profondeur de file est un fait du BROKER, aucune dépendance ajoutée à cette application ne la ferait apparaître — elle vient du plugin `rabbitmq_prometheus`. L'écart a été nommé plutôt que maquillé par une assertion sur une métrique cliente. Le câblage (plugin activé + cible de scraping) est livré en T4, où le tableau de bord en a besoin.
+  - [x] Prometheus au compose, scraping du **port de management** (9091) et jamais du port applicatif.
 
-- [ ] **T2 — Logs structurés JSON et identifiant de corrélation** (AC: 1)
-  - [ ] ⚠️ **Il n'y a AUCUNE configuration de logging aujourd'hui** : `application.yml` ne contient pas une seule clé `logging.*`, et le backend écrit donc au motif console par défaut de Logback. Tout est à poser.
-  - [ ] Boot 3.3.5 n'a pas le logging structuré natif (arrivé en 3.4) → encodeur JSON explicite. Regrouper la configuration pour que 11-9 la migre d'un bloc.
-  - [ ] Identifiant de corrélation propagé : Boot alimente `traceId`/`spanId` dans le MDC dès que Micrometer Tracing est présent (T3), et `logging.pattern.correlation` en contrôle le rendu. **Décider si le tracing est le porteur de la corrélation** (une seule notion) ou si un `X-Request-Id` distinct est introduit (deux notions à garder en accord — coût récurrent).
-  - [ ] ⚠️ **Aucun `MDC`, `correlationId`, `traceId` ni `X-Request-Id` n'existe dans tout `backend/src/main/java`** (vérifié 2026-08-11). Il n'y a rien à réutiliser et rien à casser, mais **rien non plus pour rattraper un oubli**.
-  - [ ] Faire atteindre l'identifiant à l'**écriture d'audit** (exigence explicite de l'AC1), selon la décision de T0.
-  - [ ] Le MDC doit être **nettoyé en fin de requête**, y compris sur le chemin d'erreur : un pool de threads réutilise ses threads, et un MDC non vidé attribue les lignes de la requête suivante à la trace précédente. C'est un défaut silencieux — les logs restent lisibles, ils sont simplement **faux**.
+- [x] **T2 — Logs structurés JSON et identifiant de corrélation** (AC: 1) — *2026-08-12, commit `9d88c5f`*
+  - [x] Configuration de logging posée de zéro : `logback-spring.xml` + `logstash-logback-encoder` 8.0.
+  - [x] Regroupée et commentée pour la migration 11-9 (l'encodeur est la **première dépendance à retirer**, et `logback-spring.xml` disparaît avec elle).
+  - [x] Le tracing porte la corrélation (décision T0) : `traceId`/`spanId` du MDC, aucun `X-Request-Id` concurrent.
+  - [x] Identifiant porté jusqu'à l'**écriture d'audit** — le point le PLUS PROFOND du parcours : s'il est atteint, tout ce qui est moins profond l'est aussi.
+  - [x] Nettoyage du MDC prouvé par un test dédié (fuite d'un fil à l'autre).
+  - [x] **Correction d'un défaut de T1, trouvée en T2** : le découpage par profil gardait un motif lisible sous `test`, si bien que la branche `test` n'attachait pas l'appender JSON — **supprimer TOUT `logback-spring.xml` laissait la suite verte**. Une exigence que rien ne peut falsifier n'est pas une exigence. Un seul format désormais, partout, et le test interroge l'encodeur QUI TOURNE.
 
-- [ ] **T3 — Trace de bout en bout du parcours chaud** (AC: 2)
-  - [ ] Dépendances Boot 3.3.5 : `io.micrometer:micrometer-tracing-bridge-otel` + `io.opentelemetry:opentelemetry-exporter-otlp`. Propriétés sous `management.otlp.tracing.*` (**renommées en 4.x**, voir Q4).
-  - [ ] Collecteur + interface de consultation dans le compose.
-  - [ ] Le parcours chaud nommé par l'AC est le **versement de preuve, du contrôleur au stockage objet** : `web/EvidenceController.java` → `service/*` → MinIO. Vérifier que la trace couvre bien l'appel au stockage objet et pas seulement la couche web.
-  - [ ] ⚠️ **Échantillonnage** : le défaut de Boot est 10 %. Une trace « consultable » pour l'AC suppose de le savoir — soit 100 % en développement, soit une requête ciblée. Écrire le choix, ne pas le subir.
-  - [ ] Corrélation trace ↔ logs par le même identifiant : c'est ce qui rend l'AC2 vérifiable, et c'est l'objet du test de T7.
+- [x] **T3 — Trace de bout en bout du parcours chaud** (AC: 2) — *2026-08-12, commit `cd6ca54`*
+  - [x] `micrometer-tracing-bridge-otel` + `opentelemetry-exporter-otlp`, propriétés `management.otlp.tracing.*` avec le renommage 4.x signalé sur la clé.
+  - [x] Jaeger au compose (collecteur OTLP **et** interface), endpoint OTLP **injecté** et non codé en dur.
+  - [x] **Le SDK AWS v2 n'est PAS instrumenté par Micrometer** : sans intervention, la trace s'arrêtait à la couche web et le poste le plus lent du parcours — l'écrit réseau vers le stockage objet — restait invisible. Observation posée dans `MinioEvidenceStorage`, autour de l'appel S3 **et de lui seul** : le chiffrement d'enveloppe reste dehors, l'englober ferait passer un ralentissement CPU pour une lenteur réseau.
+  - [x] Échantillonnage écrit et non subi : 100 % en développement, 0 % sous la suite — ce qui **démontre au passage** que l'échantillonnage ne gouverne que l'EXPORT, jamais l'alimentation du MDC.
+  - [x] Corrélation prouvée par câblage réel (application entière + vrai MinIO + vrai versement multipart), en comparant le traceId vu DANS le stockage à celui vu dans l'écriture d'audit. **Un test d'adaptateur isolé aurait prouvé que l'observation est créée, pas qu'elle est BRANCHÉE.**
+  - [x] **Le 409 a appris une règle métier** : la fenêtre de versement n'ouvre qu'à partir de `FUNDS_LOCKED` (FR-8/AD-2). Le financement a été ajouté au montage plutôt que l'état écrit directement en base.
 
 - [ ] **T4 — Dashboard** (AC: 1)
   - [ ] « Restituées dans un dashboard » : dashboard **versionné dans le dépôt** (provisioning déclaratif), pas construit à la main dans une interface. Un tableau de bord qui ne vit que dans un volume Docker n'est pas livrable et disparaît au premier `docker compose down -v`.
@@ -229,14 +239,53 @@ Le dépôt est en **Spring Boot 3.3.5**. La Story 11-9 (« migrations runtime Bo
 
 ### Agent Model Used
 
+claude-opus-5 (Claude Code).
+
 ### Debug Log References
+
+- **T1 — 403 puis 404 sur `/actuator/prometheus`.** Le 404 n'était pas un défaut de configuration mais une condition d'auto-configuration non satisfaite : le rapport d'évaluation des conditions montrait `PrometheusMetricsExportAutoConfiguration` trouvant sa classe et échouant sur `@ConditionalOnEnabledMetricsExport`, `management.defaults.metrics.export.enabled` étant évalué à false. **Aucune erreur au démarrage, aucun avertissement** — c'est ce silence qui vaut d'être consigné.
+- **T3 — 409 au premier montage du test de trace.** La fenêtre de versement de preuve n'ouvre qu'à partir de `FUNDS_LOCKED` (`EscrowState.allowsEvidenceMutation`, FR-8/AD-2). Découvert par un refus plutôt que contourné en écrivant l'état en base.
+- **CI 2026-08-12 — job `supply-chain` rouge** (run 31568941048). Diagnostic dans le commit `8b0b73e` : dérive de CVE, aucune introduite par la story ; vérifié contre l'artefact SBOM du dernier run vert (30391134522).
 
 ### Completion Notes List
 
+1. **Le tracing porte la corrélation, et aucun filtre n'a été écrit.** La conception initiale (T2, Dev Notes) prévoyait un filtre de corrélation à insérer dans la chaîne Spring Security, avec la question de son ordre. Micrometer Tracing alimentant lui-même le MDC, ce filtre aurait créé la seconde notion d'identifiant que la décision T0 refuse : la tâche disparaît par sa décision, elle n'est pas oubliée.
+2. **Aucune migration Flyway, aucune colonne ajoutée à `AuditLog`.** La corrélation vit dans le MDC de la ligne de log — mais `AuditService` n'émettait AUCUN log, ce qui rendait l'AC1 (« écriture d'audit comprise ») intenable quel que soit le format. Une ligne de log a donc été ajoutée à l'écriture d'audit.
+3. **Un défaut de T1 corrigé par T2, et il rend l'ampleur du piège mesurable** : le découpage par profil laissait la branche `test` sans appender JSON — **supprimer TOUT `logback-spring.xml` laissait la suite verte**. Le format est désormais unique, et le test interroge l'encodeur qui tourne.
+4. **L'échantillonnage ne gouverne que l'EXPORT.** Affirmé en T1, éprouvé en T2 : les tests de corrélation tournent à 0 % d'échantillonnage et passent.
+5. **Le SDK AWS v2 n'est pas instrumenté par Micrometer** — sans l'observation posée en T3, la trace s'arrête à la couche web et le poste le plus lent du parcours reste invisible. Le chiffrement d'enveloppe est délibérément HORS de l'observation.
+6. **Écart nommé, à ne pas relire comme livré** : la famille « files du broker » de l'AC1 a été DÉCIDÉE en T1 (plugin `rabbitmq_prometheus`, l'application ne peut pas produire cette métrique) et CÂBLÉE en T4.
+7. **Le rouge de la CI n'appartenait pas à cette story** et a quand même été absorbé par elle (7 CVE triées, 1 corrigée à la source). Deux entrées au registre en sont sorties, dont une qui contredit le motif d'exemption collectif écrit en 11.1.
+
 ### File List
+
+**T1 → T3** (commits `fef3b03`, `9d88c5f`, `cd6ca54`) :
+
+| | Fichier |
+|---|---|
+| A | `backend/src/main/resources/logback-spring.xml` |
+| A | `backend/src/test/java/com/zlecaf/escrow/observability/ObservabilityIntegrationTest.java` |
+| A | `backend/src/test/java/com/zlecaf/escrow/observability/LogCorrelationIntegrationTest.java` |
+| A | `backend/src/test/java/com/zlecaf/escrow/observability/StorageTracingIntegrationTest.java` |
+| A | `infra/observability/prometheus.yml` |
+| M | `backend/pom.xml` |
+| M | `backend/src/main/java/com/zlecaf/escrow/config/SecurityConfig.java` |
+| M | `backend/src/main/java/com/zlecaf/escrow/service/AuditService.java` |
+| M | `backend/src/main/java/com/zlecaf/escrow/service/storage/MinioEvidenceStorage.java` |
+| M | `backend/src/main/resources/application.yml` |
+| M | `backend/src/test/java/com/zlecaf/escrow/service/storage/MinioEvidenceStorageTest.java` |
+| M | `backend/src/test/resources/application.properties` |
+| M | `infra/docker-compose.yml` |
+
+**Correctif CI** (commit `8b0b73e`) : `.trivyignore-backend`, `frontend/package-lock.json`, `deferred-work.md`.
 
 ## Change Log
 
 | Date | Tâche | Résumé | Commit |
 |---|---|---|---|
-| 2026-08-11 | — | Story créée (bmad-create-story). Quatre questions ouvertes posées en tête, à trancher avant T1. | _à venir_ |
+| 2026-08-11 | — | Story créée (bmad-create-story). Quatre questions ouvertes posées en tête, à trancher avant T1. | `02b9ed2` |
+| 2026-08-11 | T0 | Les quatre questions tranchées par le PO, plus une cinquième décision non prévue (le tracing porte la corrélation). Constat qui change une tâche : `AuditService` n'émet aucun log. Base de tests relevée : 514. | `02b9ed2` |
+| 2026-08-11 | T1 | Métriques exposées et scrapables. Trois obstacles dont deux muets (403 sécurité, 404 par condition d'auto-configuration, série HTTP qui naît du trafic). Cantonnement en trois couches réelles. Mutations : 3 gardes retirées → 3 rouges chacune. **518 tests** (+4). | `fef3b03` |
+| 2026-08-12 | T2 | Logs JSON corrélés jusqu'à l'écriture d'audit. Correction d'un défaut de T1 : le découpage par profil rendait `logback-spring.xml` supprimable sans un seul rouge. Mutations : 4, dont une qui reste verte à raison (le test de fuite MDC garde le nettoyage, pas la présence). **522 tests** (+4). | `9d88c5f` |
+| 2026-08-12 | T3 | Trace du contrôleur au stockage objet — le SDK AWS n'étant pas instrumenté, l'observation est posée autour du seul appel S3. Preuve par câblage réel (application entière + vrai MinIO), traceId du stockage comparé à celui de l'audit. **524 tests** (+2). | `cd6ca54` |
+| 2026-08-14 | — | **Rouge CI traité : dérive, pas régression.** Vérifié contre le SBOM du dernier run vert. nanoid corrigé à la source ; 7 CVE backend exemptées et datées ; 2 entrées au registre, dont une qui contredit le motif d'exemption collectif de la 11.1. Cinq scans rejoués verts localement avec le Trivy de la CI. | `8b0b73e` |
