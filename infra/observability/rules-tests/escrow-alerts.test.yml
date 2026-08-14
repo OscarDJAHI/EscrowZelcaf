@@ -230,3 +230,67 @@ tests:
             exp_annotations:
               summary: "File de rebut non vide : escrow.events.queue.dlq"
               description: "1 message(s) en rebut dans escrow.events.queue.dlq — un traitement a échoué de façon définitive et personne ne le voit côté application."
+
+  # ────────────────────────────────────────────────────────────────────────────
+  # SegregationInvariantBreached (T6 — AC4, AD-16)
+  #
+  # Quatre cas, et aucun n'est décoratif : les deux SIGNES de l'écart (une règle
+  # `> 0` passerait le négatif en silence), l'écart NUL (silence attendu — c'est
+  # l'invariant tenu), et l'état NaN d'aujourd'hui, où il n'existe aucun circuit
+  # financier. Ce dernier vérifie noir sur blanc que « toute comparaison avec NaN
+  # est fausse en PromQL » — affirmation lue dans la documentation, éprouvée ici.
+  # ────────────────────────────────────────────────────────────────────────────
+  - interval: 1m
+    name: "aucun circuit financier (jauge NaN) — silence attendu"
+    input_series:
+      - series: 'escrow_segregation_deviation_usd{application="escrow-core"}'
+        values: 'NaN NaN NaN NaN NaN'
+    alert_rule_test:
+      - eval_time: 3m
+        alertname: SegregationInvariantBreached
+        exp_alerts: []
+
+  - interval: 1m
+    name: "écart nul — invariant tenu, silence attendu"
+    input_series:
+      - series: 'escrow_segregation_deviation_usd{application="escrow-core"}'
+        values: '0x5'
+    alert_rule_test:
+      - eval_time: 3m
+        alertname: SegregationInvariantBreached
+        exp_alerts: []
+
+  - interval: 1m
+    name: "écart POSITIF — alerte critique immédiate attendue"
+    input_series:
+      - series: 'escrow_segregation_deviation_usd{application="escrow-core"}'
+        values: '1234.56x5'
+    alert_rule_test:
+      # 1 min : aucun `for:` sur cette règle, l'AC4 dit « immédiatement ».
+      - eval_time: 1m
+        alertname: SegregationInvariantBreached
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              service: escrow-core
+              application: escrow-core
+            exp_annotations:
+              summary: "ÉCART DE SÉGRÉGATION DES FONDS — invariant AD-16 rompu"
+              description: "Le rapprochement rend un écart de 1234.56 USD entre le grand livre (wallets + séquestres + réservations + transit) et le compte miroir de cantonnement. Tout écart non nul est bloquant : suspendre le circuit financier et rapprocher avant toute opération."
+
+  - interval: 1m
+    name: "écart NÉGATIF — le cas qu'une règle `> 0` laisserait passer"
+    input_series:
+      - series: 'escrow_segregation_deviation_usd{application="escrow-core"}'
+        values: '-500x5'
+    alert_rule_test:
+      - eval_time: 1m
+        alertname: SegregationInvariantBreached
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              service: escrow-core
+              application: escrow-core
+            exp_annotations:
+              summary: "ÉCART DE SÉGRÉGATION DES FONDS — invariant AD-16 rompu"
+              description: "Le rapprochement rend un écart de -500 USD entre le grand livre (wallets + séquestres + réservations + transit) et le compte miroir de cantonnement. Tout écart non nul est bloquant : suspendre le circuit financier et rapprocher avant toute opération."

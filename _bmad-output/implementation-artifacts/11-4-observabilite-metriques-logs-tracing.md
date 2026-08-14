@@ -161,12 +161,15 @@ Le dépôt est en **Spring Boot 3.3.5**. La Story 11-9 (« migrations runtime Bo
   - [x] **Défaut trouvé et corrigé en chemin, introduit par T1** : le healthcheck du backend sondait `localhost:8080/actuator/health` alors que le port de management a déplacé TOUS les endpoints actuator sur 9091 → 404 → backend `unhealthy` À JAMAIS, et avec lui tout ce qui l'attend en `condition: service_healthy` (frontend, prometheus, grafana). Resté invisible 13 h parce que l'image du poste était périmée, et non vu par T4 qui vérifiait la cible de scraping (9091 en direct), pas la sonde.
   - [x] **Second défaut de câblage, trouvé par l'échec de la preuve elle-même** : `rule_files` nommait un fichier précis, si bien que la règle temporaire n'était **jamais chargée** — écrite, montée, et ignorée sans la moindre erreur. Passé au motif `rules/*.yml`. Corollaire structurel : le fichier de tests `promtool` a été SORTI de `rules/` vers `rules-tests/`, sans quoi le motif l'avalerait et Prometheus refuserait de démarrer.
 
-- [ ] **T6 — Alerte de l'invariant de ségrégation** (AC: 4)
-  - [ ] Formule AD-16, à ne pas réinventer : `wallets + séquestres + réservations + transit = miroir cantonnement` (SOLUTION-DESIGN §25). L'écart est la différence ; **tout écart non nul est une alerte critique**.
-  - [ ] Poser la métrique de rapprochement et la règle d'alerte **sévérité critique, sans délai de tolérance** — l'AC dit « immédiatement ».
-  - [ ] Selon Q3 : injecter l'écart factice **sans ajouter d'endpoint à la surface de production** (interdiction posée par 1-10 et par T0 de la 2-4).
-  - [ ] Écrire, à l'endroit du code, le contrat que l'Epic 4 devra honorer : « n'aura qu'à émettre la métrique ». Nommer la métrique et son unité pour que 4-3 (grand livre) la trouve.
-  - [ ] La fréquence de rapprochement est **un paramètre par corridor** (SOLUTION-DESIGN §101) — ne pas graver une constante globale.
+- [x] **T6 — Alerte de l'invariant de ségrégation** (AC: 4) — *2026-08-14*
+  - [x] Formule AD-16 recopiée telle quelle dans la javadoc du port, sans réinvention. **`!= 0` et non `> 0`** : un écart **négatif** dit que le compte cantonné porte MOINS que ce que le grand livre prétend — le sens le plus dangereux des deux, et celui qu'un `> 0` laisserait passer en silence. Les deux signes sont éprouvés.
+  - [x] Règle `SegregationInvariantBreached`, sévérité critique, **aucun `for:`** — l'AC dit « immédiatement », et la route Alertmanager `critical` posée en T5 a `group_wait: 0s`, sans quoi le défaut de 30 s l'aurait retenue.
+  - [x] Q3 tenue : l'écart factice entre par **remplacement de bean** dans le test. Un test dédié vérifie que deux chemins d'écriture plausibles rendent **403** — la sécurité refuse avant même l'absence de handler, donc ouvrir un tel endpoint exigerait de toucher `SecurityConfig` et ferait rougir ce test.
+  - [x] Contrat pour l'Epic 4 écrit à l'endroit du code : `SegregationDeviationSource` + `@ConditionalOnMissingBean`. La Story 4-3 déclare son bean et le défaut s'efface — **rien d'autre ne bouge**, ni jauge, ni règle, ni tableau de bord. Métrique nommée `escrow.segregation.deviation`, exposée `escrow_segregation_deviation_usd`.
+  - [x] Aucune fréquence gravée : la source est LUE à chaque scrape, c'est le job de l'Epic 4 qui décide quand il RECALCULE (quotidien EOD au MVP, resserrable par corridor).
+  - [x] **`NaN` au repos, jamais `0`.** Zéro affirmerait « rapprochement fait, invariant tenu » alors qu'il n'existe ni grand livre ni compte cantonné. Assertion négative appariée : la sortie ne doit PAS contenir la jauge à `0.0`.
+  - [x] ⚠️ **LE HARNAIS A ATTRAPÉ UNE ERREUR QUE LA RELECTURE N'AURAIT PAS VUE.** La règle écrite `!= 0` **se déclenche sur `NaN`** : en PromQL, `NaN != 0` est VRAI (la comparaison n'est fausse avec NaN que pour `>`, `<` et `==`). Sans correctif, l'alerte la plus critique du système partait dès aujourd'hui, sur un dépôt sans le moindre circuit financier — et aurait été coupée bien avant le jour où elle sert. Garde ajoutée (`and x == x`, seule expression que `NaN` ne satisfait pas) ; mutation : garde retirée → le cas NaN rougit.
+  - [x] ⚠️ **Écart nommé, routé vers la Story 4-3** : une jauge à `NaN` ne distingue pas « pas encore de circuit financier » d'« un job de rapprochement mort ». Le second est un incident silencieux. Y répondre exige un horodatage de dernière exécution réussie — donc un job, qui n'existe pas encore.
 
 - [ ] **T7 — Tests et preuve par mutation** (AC: 5)
   - [ ] Test d'intégration : l'endpoint de métriques répond et **contient nommément** les quatre familles de l'AC1. Assertion par présence de métriques précises, pas par « la réponse n'est pas vide ».
@@ -268,7 +271,9 @@ claude-opus-5 (Claude Code).
 6. **Écart nommé, à ne pas relire comme livré** : la famille « files du broker » de l'AC1 a été DÉCIDÉE en T1 (plugin `rabbitmq_prometheus`, l'application ne peut pas produire cette métrique) et CÂBLÉE en T4.
 7. **Le rouge de la CI n'appartenait pas à cette story** et a quand même été absorbé par elle (7 CVE triées, 1 corrigée à la source). Deux entrées au registre en sont sorties, dont une qui contredit le motif d'exemption collectif écrit en 11.1.
 8. **T4 a fait tourner la pile pour de vrai, et c'est ce qui a trouvé les défauts.** T1 et T3 s'étaient prouvés par des tests JVM — qui ne montent pas le compose. Monter la pile a révélé (a) que l'image du backend était périmée, donc que la cible de scraping était `down` et les logs non JSON, et (b) qu'une requête du tableau de bord sur treize rendait le vide. Aucun des deux n'était visible depuis la suite de tests.
-9. **La règle « DLQ non vide » de T5 n'a rien à surveiller** : `RabbitConfig` ne déclare qu'une file, sans exchange de rebut. Constat posé en T4 et routé vers l'ouverture de T5 (voir la tâche), pas découvert à mi-parcours.
+9. **La règle « DLQ non vide » de T5 n'a rien à surveiller** : `RabbitConfig` ne déclare qu'une file, sans exchange de rebut. Constat posé en T4 et routé vers l'ouverture de T5 (voir la tâche), pas découvert à mi-parcours. Tranché en ouverture de T5 : règle écrite, logique prouvée par `promtool`, **inertie consignée dans le fichier**, contrat de nommage (`.dlq`) posé pour la story qui créera la file.
+10. **Le harnais `promtool` a payé son coût dès le premier usage sérieux.** Il a démasqué une erreur de raisonnement que la relecture n'aurait pas vue : `NaN != 0` est VRAI en PromQL (la comparaison n'est fausse avec `NaN` que pour `>`, `<` et `==`). La règle AD-16, écrite `!= 0` et parfaitement plausible à la lecture, se serait déclenchée dès aujourd'hui sur un dépôt sans circuit financier — et l'alerte la plus critique du système aurait été coupée bien avant le jour où elle sert. C'est exactement le scénario que le T7 de cette story appelle « preuve creuse », attrapé avant d'être livré.
+11. **Deux câblages muets, corrigés en T5, tous deux invisibles à la relecture** : un healthcheck qui sonde le mauvais port depuis que T1 a déplacé l'actuator (backend `unhealthy` À JAMAIS), et un `rule_files` nommant un fichier précis (une règle écrite, montée, jamais chargée, sans la moindre erreur). Le second n'a été trouvé que parce que la preuve de bout en bout de l'AC3 a échoué — une vérification qui n'aurait pas eu lieu si l'on s'était contenté de relire la configuration.
 
 ### File List
 
@@ -304,6 +309,26 @@ claude-opus-5 (Claude Code).
 | M | `infra/docker-compose.yml` |
 | M | `infra/.env.example` |
 
+**T5** :
+
+| | Fichier |
+|---|---|
+| A | `infra/observability/alertmanager.yml` |
+| A | `infra/observability/rules/escrow-alerts.yml` |
+| A | `infra/observability/rules-tests/escrow-alerts.test.yml` |
+| M | `infra/observability/prometheus.yml` · `infra/docker-compose.yml` · `infra/.env.example` |
+
+**T6** :
+
+| | Fichier |
+|---|---|
+| A | `backend/src/main/java/com/zlecaf/escrow/observability/SegregationDeviationSource.java` |
+| A | `backend/src/main/java/com/zlecaf/escrow/observability/NoFinancialCircuitDeviationSource.java` |
+| A | `backend/src/main/java/com/zlecaf/escrow/observability/SegregationMetrics.java` |
+| A | `backend/src/test/java/com/zlecaf/escrow/observability/SegregationMetricsIntegrationTest.java` |
+| A | `backend/src/test/java/com/zlecaf/escrow/observability/SegregationDefaultStateIntegrationTest.java` |
+| M | `infra/observability/rules/escrow-alerts.yml` · `rules-tests/escrow-alerts.test.yml` · `grafana/dashboards/escrow-observabilite.json` |
+
 ## Change Log
 
 | Date | Tâche | Résumé | Commit |
@@ -315,4 +340,6 @@ claude-opus-5 (Claude Code).
 | 2026-08-12 | T3 | Trace du contrôleur au stockage objet — le SDK AWS n'étant pas instrumenté, l'observation est posée autour du seul appel S3. Preuve par câblage réel (application entière + vrai MinIO), traceId du stockage comparé à celui de l'audit. **524 tests** (+2). | `cd6ca54` |
 | 2026-08-14 | — | **Rouge CI traité : dérive, pas régression.** Vérifié contre le SBOM du dernier run vert. nanoid corrigé à la source ; 7 CVE backend exemptées et datées ; 2 entrées au registre, dont une qui contredit le motif d'exemption collectif de la 11.1. Cinq scans rejoués verts localement avec le Trivy de la CI. | `8b0b73e` |
 | 2026-08-14 | — | **Consolidation** : la tenue de livres avait trois tâches de retard (fichier à `ready-for-dev`, Change Log et Dev Agent Record vides). Cases cochées en relisant les commits ; une seule laissée ouverte, celle qui l'était vraiment. | `bcc5361` |
-| 2026-08-14 | T4 | **Tableau de bord provisionné, quatrième famille de l'AC1 close.** Grafana en lecture seule (verrou prouvé par écriture réelle → HTTP 400), mot de passe en `:?` (prouvé par mutation). Plugin `rabbitmq_prometheus` activé, deux cibles de scraping justifiées par une mesure (`/metrics/per-object` perd les alarmes du nœud). 13 requêtes vérifiées contre un Prometheus vivant, **1 rendait le vide** → corrigée. Deux défauts trouvés en montant la pile, dont l'image backend périmée qui laissait la cible `down` et les logs non JSON. | _ce commit_ |
+| 2026-08-14 | T4 | **Tableau de bord provisionné, quatrième famille de l'AC1 close.** Grafana en lecture seule (verrou prouvé par écriture réelle → HTTP 400), mot de passe en `:?` (prouvé par mutation). Plugin `rabbitmq_prometheus` activé, deux cibles de scraping justifiées par une mesure (`/metrics/per-object` perd les alarmes du nœud). 13 requêtes vérifiées contre un Prometheus vivant, **1 rendait le vide** → corrigée. Deux défauts trouvés en montant la pile, dont l'image backend périmée qui laissait la cible `down` et les logs non JSON. | `49bee67` |
+| 2026-08-14 | T5 | **Canal d'alerte prouvé de bout en bout** : Prometheus → Alertmanager → SMTP → Mailpit, message `[FIRING]` reçu puis `[RESOLVED]` à la levée. Quatre règles minimales + harnais `promtool` (10 cas, 3 mutations passées). **Décision d'ouverture : la DLQ n'est pas créée** — règle écrite, logique prouvée, inertie consignée, contrat de nommage posé. Deux câblages muets corrigés : healthcheck backend sur 8080 après le déplacement de l'actuator en 9091 (backend `unhealthy` à jamais), et `rule_files` nommant un fichier précis (règle écrite, jamais chargée, aucune erreur). | `e57066b` |
+| 2026-08-14 | T6 | **Invariant AD-16 posé, et le harnais a rattrapé une erreur de raisonnement.** Jauge `escrow_segregation_deviation_usd` pilotée par injection de dépendance, `NaN` au repos (jamais `0`, qui affirmerait l'invariant tenu), aucun endpoint ajouté (403 prouvé). ⚠️ La règle écrite `!= 0` **se déclenchait sur `NaN`** — `NaN != 0` est vrai en PromQL — donc l'alerte la plus critique du système partait dès aujourd'hui sans circuit financier. Garde `and x == x` ajoutée, mutation vérifiée. **528 tests** (+4). | _ce commit_ |

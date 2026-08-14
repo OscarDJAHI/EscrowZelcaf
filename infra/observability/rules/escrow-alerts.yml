@@ -62,6 +62,59 @@ groups:
           summary: "Pool de connexions saturé (des requêtes attendent)"
           description: "{{ $value }} requête(s) en attente d'une connexion Hikari depuis 2 minutes sur le pool {{ $labels.pool }}."
 
+  # ══════════════════════════════════════════════════════════════════════════════
+  # T6 — INVARIANT DE SÉGRÉGATION DES FONDS (AC4, AD-16, NFR-P25)
+  #
+  # C'est la règle qui conditionne l'ouverture de l'Epic 4 : « le circuit financier ne
+  # se déploie qu'avec la règle d'alerte active » (ARCHITECTURE-SPINE §69). Elle est
+  # posée AVANT le circuit, pour que l'Epic 4 n'ait qu'à émettre la métrique.
+  # ══════════════════════════════════════════════════════════════════════════════
+  - name: escrow-segregation
+    rules:
+      # `!= 0` ET NON `> 0`. Un écart NÉGATIF dit que le compte cantonné porte MOINS
+      # que ce que le grand livre prétend : c'est le sens le plus dangereux des deux,
+      # et `> 0` le laisserait passer en silence. Le harnais éprouve les deux signes.
+      #
+      # AUCUN `for:`, et c'est une exigence littérale de l'AC4 (« une alerte de sévérité
+      # critique est délivrée immédiatement »). Un délai de tolérance sur un écart de
+      # ségrégation des fonds serait une fenêtre pendant laquelle l'argent des clients
+      # ne serait plus adossé sans que personne ne soit prévenu.
+      #
+      # ⚠️⚠️ LA MOITIÉ DROITE DE L'EXPRESSION N'EST PAS UNE TAUTOLOGIE. NE PAS LA
+      # « SIMPLIFIER ».
+      #
+      # `escrow_segregation_deviation_usd == escrow_segregation_deviation_usd` filtre
+      # les `NaN` : NaN est la seule valeur qui n'est pas égale à elle-même. Sans elle,
+      # cette règle DÉCLENCHE aujourd'hui, sur un dépôt sans le moindre circuit
+      # financier — parce que `NaN != 0` est VRAI en PromQL. C'était écrit ici comme
+      # « toute comparaison avec NaN est fausse », et c'était faux : ça vaut pour
+      # `>`, `<` et `==`, pas pour `!=`. Le harnais promtool l'a démontré ; la
+      # documentation avait suggéré le contraire.
+      #
+      # Conséquence si on l'oublie : l'alerte la plus critique du système crie au loup
+      # dès le premier jour, tous les jours, jusqu'à ce que quelqu'un la coupe — et
+      # elle sera coupée le jour où elle aurait servi.
+      #
+      # `abs(...) > 0` aurait aussi écarté le NaN, en une expression plus courte. Écarté
+      # justement : `$value` y perdrait le SIGNE de l'écart, or c'est lui qui dit dans
+      # quel sens la ségrégation est rompue — la première question de l'exploitant.
+      #
+      # ⚠️ CE QUE CETTE RÈGLE NE PEUT PAS VOIR, et qui appartient à l'Epic 4 : un job de
+      # rapprochement MORT rend la même chose qu'un circuit absent. Aucune règle assise
+      # sur cette seule jauge ne les distingue. La Story 4.3 doit exposer un horodatage
+      # de dernière exécution réussie et lui adosser sa propre règle de fraîcheur ;
+      # l'écrire ici évite qu'on croie le trou couvert.
+      - alert: SegregationInvariantBreached
+        expr: |
+          escrow_segregation_deviation_usd != 0
+            and escrow_segregation_deviation_usd == escrow_segregation_deviation_usd
+        labels:
+          severity: critical
+          service: escrow-core
+        annotations:
+          summary: "ÉCART DE SÉGRÉGATION DES FONDS — invariant AD-16 rompu"
+          description: "Le rapprochement rend un écart de {{ $value }} USD entre le grand livre (wallets + séquestres + réservations + transit) et le compte miroir de cantonnement. Tout écart non nul est bloquant : suspendre le circuit financier et rapprocher avant toute opération."
+
   - name: escrow-broker
     rules:
       # ── RÈGLE MINIMALE 3/3 de l'AC3 (second volet) : saturation disque/mémoire ──
