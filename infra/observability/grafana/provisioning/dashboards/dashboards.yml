@@ -1,0 +1,35 @@
+# Fournisseur de tableaux de bord (Story 11.4, T4).
+#
+# CE QUI REND LE LIVRABLE VÉRIFIABLE. La tâche T4 exige un tableau de bord « versionné
+# dans le dépôt (provisioning déclaratif), pas construit à la main dans une interface ».
+# Les deux drapeaux ci-dessous sont ce qui fait tenir cette exigence dans le temps
+# plutôt que dans une intention :
+#
+#   - `allowUiUpdates: false` — une modification faite dans l'interface n'est pas
+#     enregistrée. Sans lui, le tableau de bord dérive du fichier versionné en silence,
+#     et personne ne sait plus lequel des deux fait foi ;
+#   - `disableDeletion: true` — il ne peut pas être supprimé depuis l'interface.
+#
+# ⚠️ NE PAS CONCLURE DE `meta.canSave` QUE LA GARDE EST OUVERTE. L'API rend
+# `canSave: true` sur ce tableau de bord : ce champ décrit la PERMISSION de
+# l'utilisateur, pas le verrou de provisioning, qui est appliqué au moment de
+# l'écriture. Vérifié le 2026-08-14 en tentant réellement l'écriture (ce qu'un clic
+# « Save » déclenche) : HTTP 400, « Cannot save provisioned dashboard », titre
+# inchangé. Lire `canSave` et en déduire que rien ne protège le fichier serait
+# l'erreur naturelle — d'où cette note.
+#
+# Le répertoire monté est en lecture seule côté compose : c'est la troisième couche, et
+# la seule qui survive à quelqu'un qui modifierait ce fichier.
+apiVersion: 1
+
+providers:
+  - name: escrow
+    orgId: 1
+    folder: ''
+    type: file
+    disableDeletion: true
+    allowUiUpdates: false
+    updateIntervalSeconds: 30
+    options:
+      path: /var/lib/grafana/dashboards
+      foldersFromFilesStructure: false

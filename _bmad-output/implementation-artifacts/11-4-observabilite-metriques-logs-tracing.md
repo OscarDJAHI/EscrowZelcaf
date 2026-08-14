@@ -122,7 +122,7 @@ Le dépôt est en **Spring Boot 3.3.5**. La Story 11-9 (« migrations runtime Bo
   - [x] Exposer `prometheus` sans élargir le reste → `include: health,info,prometheus`. **Trois couches de cantonnement** et non une : liste d'exposition, règle de sécurité épinglée au chemin EXACT (jamais `/actuator/**`), port de management séparé (9091).
   - [x] **Trois obstacles, dont deux muets** : 403 (Spring Security), 404 (`@ConditionalOnEnabledMetricsExport` → drapeau `management.prometheus.metrics.export.enabled` explicite — sans lui tout est en place, rien n'est exposé, et RIEN ne le dit), et `http_server_requests_seconds` qui naît du TRAFIC et non de la configuration.
   - [x] Familles JVM / HTTP / Hikari vérifiées par nom de métrique précis dans `ObservabilityIntegrationTest`.
-  - [~] **Famille « files du broker » — DÉCIDÉE en T1, CÂBLÉE en T4.** Décision écrite en T1 (`ObservabilityIntegrationTest` §javadoc) : la profondeur de file est un fait du BROKER, aucune dépendance ajoutée à cette application ne la ferait apparaître — elle vient du plugin `rabbitmq_prometheus`. L'écart a été nommé plutôt que maquillé par une assertion sur une métrique cliente. Le câblage (plugin activé + cible de scraping) est livré en T4, où le tableau de bord en a besoin.
+  - [x] **Famille « files du broker » — DÉCIDÉE en T1, CÂBLÉE en T4 (close).** Décision écrite en T1 (`ObservabilityIntegrationTest` §javadoc) : la profondeur de file est un fait du BROKER, aucune dépendance ajoutée à cette application ne la ferait apparaître — elle vient du plugin `rabbitmq_prometheus`. L'écart a été nommé plutôt que maquillé par une assertion sur une métrique cliente. Le câblage (plugin activé + cible de scraping) est livré en T4, où le tableau de bord en a besoin.
   - [x] Prometheus au compose, scraping du **port de management** (9091) et jamais du port applicatif.
 
 - [x] **T2 — Logs structurés JSON et identifiant de corrélation** (AC: 1) — *2026-08-12, commit `9d88c5f`*
@@ -141,13 +141,18 @@ Le dépôt est en **Spring Boot 3.3.5**. La Story 11-9 (« migrations runtime Bo
   - [x] Corrélation prouvée par câblage réel (application entière + vrai MinIO + vrai versement multipart), en comparant le traceId vu DANS le stockage à celui vu dans l'écriture d'audit. **Un test d'adaptateur isolé aurait prouvé que l'observation est créée, pas qu'elle est BRANCHÉE.**
   - [x] **Le 409 a appris une règle métier** : la fenêtre de versement n'ouvre qu'à partir de `FUNDS_LOCKED` (FR-8/AD-2). Le financement a été ajouté au montage plutôt que l'état écrit directement en base.
 
-- [ ] **T4 — Dashboard** (AC: 1)
-  - [ ] « Restituées dans un dashboard » : dashboard **versionné dans le dépôt** (provisioning déclaratif), pas construit à la main dans une interface. Un tableau de bord qui ne vit que dans un volume Docker n'est pas livrable et disparaît au premier `docker compose down -v`.
-  - [ ] ⚠️ Identifiants d'administration de l'outil : **aucun secret en clair** (Story 1-2, externalisation des secrets). Variables d'environnement, et pas de mot de passe par défaut laissé en place.
+- [x] **T4 — Dashboard** (AC: 1) — *2026-08-14*
+  - [x] Tableau de bord versionné (`infra/observability/grafana/dashboards/escrow-observabilite.json`), provisionné en déclaratif, monté en **lecture seule**. Verrou prouvé par écriture réelle : HTTP 400 « Cannot save provisioned dashboard », titre inchangé. ⚠️ `meta.canSave` rend `true` — c'est la permission de l'utilisateur, pas le verrou.
+  - [x] Aucun secret en clair : `GF_SECURITY_ADMIN_PASSWORD` en `:?` (le compose **refuse de démarrer** sans la variable — prouvé par mutation) et non en `:-`, sans quoi l'image resterait sur `admin/admin` sans que rien ne le dise. `infra/.env` gitignoré, aucune occurrence du mot de passe dans les fichiers suivis.
+  - [x] **La quatrième famille de l'AC1 est câblée ici** (elle avait été décidée en T1 et nommée comme écart) : plugin `rabbitmq_prometheus` activé, cible de scraping dédiée.
+  - [x] **Deux cibles de scraping sur le même broker, et ce n'est pas un doublon.** Mesuré : `/metrics/per-object` n'est PAS un sur-ensemble de `/metrics` — il perd les trois métriques d'alarme du nœud, exactement la matière de la règle « saturation disque » de T5. Une seule cible aurait coûté une règle de l'AC3, et le manque ne se serait vu qu'en écrivant la règle — ou jamais.
+  - [x] **Les 13 requêtes des panneaux vérifiées une par une contre un Prometheus vivant.** 12 rendaient des points, **1 rendait le vide** : la part de 5xx laissait le panneau BLANC en l'absence d'erreurs, indistinguable d'une requête cassée. Corrigée par `or vector(0)`, les deux branches prouvées (à vide → 0 ; numérateur non vide → la vraie valeur, non écrasée).
+  - [x] **Défaut trouvé en montant la pile, et qui ne venait pas de T4** : la cible `escrow-backend` était `down` (connexion refusée sur 9091) et les logs n'étaient pas en JSON — **l'image du backend était périmée**, piège déjà connu de ce projet. Le scraping de bout en bout n'avait jamais tourné : T1 et T3 s'étaient prouvés par des tests JVM, qui ne montent pas le compose.
 
 - [ ] **T5 — Alerting : canal et règles minimales** (AC: 3)
   - [ ] Canal selon Q2, avec écrit noir sur blanc ce qu'il n'est pas (pas une décision AR-P6).
   - [ ] Les trois règles minimales de l'AC : **taux de 5xx**, **DLQ non vide**, **saturation disque/pool**. Chacune doit reposer sur une métrique réellement exposée par T1 — vérifier plutôt que supposer, une règle sur une série inexistante ne se déclenche jamais et **ne rougit jamais non plus**.
+  - [ ] ⚠️ **T4 a déblayé deux des trois règles et BUTÉ sur la troisième.** Les expressions de *taux de 5xx* (avec son `or vector(0)`) et de *saturation* (alarmes du nœud + `hikaricp_connections_pending`) sont posées au tableau de bord et vérifiées rendre des points. Mais **il n'y a AUCUNE DLQ dans ce dépôt** : `RabbitConfig` ne déclare qu'une file, `escrow.events.queue`, sans `x-dead-letter-exchange` ni file de rebut. La règle « DLQ non vide » n'a donc rien à surveiller — à trancher en ouverture de T5, et pas à mi-parcours : soit la DLQ est déclarée ici (changement de topologie du broker, hors périmètre annoncé de la story), soit la règle est écrite ET nommée comme inerte jusqu'à ce qu'une DLQ existe. Une règle sur une file inexistante est le cas d'école de la preuve creuse.
   - [ ] Preuve de bout en bout : déclencher une alerte de test et **constater sa réception** sur le canal. Consigner la preuve.
 
 - [ ] **T6 — Alerte de l'invariant de ségrégation** (AC: 4)
@@ -256,6 +261,8 @@ claude-opus-5 (Claude Code).
 5. **Le SDK AWS v2 n'est pas instrumenté par Micrometer** — sans l'observation posée en T3, la trace s'arrête à la couche web et le poste le plus lent du parcours reste invisible. Le chiffrement d'enveloppe est délibérément HORS de l'observation.
 6. **Écart nommé, à ne pas relire comme livré** : la famille « files du broker » de l'AC1 a été DÉCIDÉE en T1 (plugin `rabbitmq_prometheus`, l'application ne peut pas produire cette métrique) et CÂBLÉE en T4.
 7. **Le rouge de la CI n'appartenait pas à cette story** et a quand même été absorbé par elle (7 CVE triées, 1 corrigée à la source). Deux entrées au registre en sont sorties, dont une qui contredit le motif d'exemption collectif écrit en 11.1.
+8. **T4 a fait tourner la pile pour de vrai, et c'est ce qui a trouvé les défauts.** T1 et T3 s'étaient prouvés par des tests JVM — qui ne montent pas le compose. Monter la pile a révélé (a) que l'image du backend était périmée, donc que la cible de scraping était `down` et les logs non JSON, et (b) qu'une requête du tableau de bord sur treize rendait le vide. Aucun des deux n'était visible depuis la suite de tests.
+9. **La règle « DLQ non vide » de T5 n'a rien à surveiller** : `RabbitConfig` ne déclare qu'une file, sans exchange de rebut. Constat posé en T4 et routé vers l'ouverture de T5 (voir la tâche), pas découvert à mi-parcours.
 
 ### File List
 
@@ -279,6 +286,18 @@ claude-opus-5 (Claude Code).
 
 **Correctif CI** (commit `8b0b73e`) : `.trivyignore-backend`, `frontend/package-lock.json`, `deferred-work.md`.
 
+**T4** :
+
+| | Fichier |
+|---|---|
+| A | `infra/observability/grafana/dashboards/escrow-observabilite.json` |
+| A | `infra/observability/grafana/provisioning/datasources/datasources.yml` |
+| A | `infra/observability/grafana/provisioning/dashboards/dashboards.yml` |
+| A | `infra/observability/rabbitmq-enabled-plugins` |
+| M | `infra/observability/prometheus.yml` |
+| M | `infra/docker-compose.yml` |
+| M | `infra/.env.example` |
+
 ## Change Log
 
 | Date | Tâche | Résumé | Commit |
@@ -289,3 +308,5 @@ claude-opus-5 (Claude Code).
 | 2026-08-12 | T2 | Logs JSON corrélés jusqu'à l'écriture d'audit. Correction d'un défaut de T1 : le découpage par profil rendait `logback-spring.xml` supprimable sans un seul rouge. Mutations : 4, dont une qui reste verte à raison (le test de fuite MDC garde le nettoyage, pas la présence). **522 tests** (+4). | `9d88c5f` |
 | 2026-08-12 | T3 | Trace du contrôleur au stockage objet — le SDK AWS n'étant pas instrumenté, l'observation est posée autour du seul appel S3. Preuve par câblage réel (application entière + vrai MinIO), traceId du stockage comparé à celui de l'audit. **524 tests** (+2). | `cd6ca54` |
 | 2026-08-14 | — | **Rouge CI traité : dérive, pas régression.** Vérifié contre le SBOM du dernier run vert. nanoid corrigé à la source ; 7 CVE backend exemptées et datées ; 2 entrées au registre, dont une qui contredit le motif d'exemption collectif de la 11.1. Cinq scans rejoués verts localement avec le Trivy de la CI. | `8b0b73e` |
+| 2026-08-14 | — | **Consolidation** : la tenue de livres avait trois tâches de retard (fichier à `ready-for-dev`, Change Log et Dev Agent Record vides). Cases cochées en relisant les commits ; une seule laissée ouverte, celle qui l'était vraiment. | `bcc5361` |
+| 2026-08-14 | T4 | **Tableau de bord provisionné, quatrième famille de l'AC1 close.** Grafana en lecture seule (verrou prouvé par écriture réelle → HTTP 400), mot de passe en `:?` (prouvé par mutation). Plugin `rabbitmq_prometheus` activé, deux cibles de scraping justifiées par une mesure (`/metrics/per-object` perd les alarmes du nœud). 13 requêtes vérifiées contre un Prometheus vivant, **1 rendait le vide** → corrigée. Deux défauts trouvés en montant la pile, dont l'image backend périmée qui laissait la cible `down` et les logs non JSON. | _ce commit_ |

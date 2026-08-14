@@ -1,0 +1,259 @@
+{
+  "uid": "escrow-observabilite",
+  "title": "Escrow — observabilité",
+  "description": "Story 11.4 (T4), AC1 « restituées dans un dashboard ». Les QUATRE familles nommées par l'AC, une par panneau : JVM, HTTP, pool Hikari, files du broker. Ce fichier est versionné dans le dépôt et provisionné en lecture seule — il ne se modifie PAS depuis cette interface (voir provisioning/dashboards/dashboards.yml). Chaque requête a été vérifiée contre un Prometheus vivant le 2026-08-14 : un panneau assis sur une série inexistante reste vide sans jamais rien signaler.",
+  "tags": ["escrow", "story-11-4"],
+  "timezone": "browser",
+  "editable": false,
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "time": { "from": "now-1h", "to": "now" },
+  "templating": { "list": [] },
+  "annotations": { "list": [] },
+  "panels": [
+    {
+      "id": 1,
+      "type": "row",
+      "title": "Application (escrow-core)",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "JVM — mémoire utilisée par zone",
+      "description": "Famille JVM de l'AC1. La mémoire est le premier symptôme d'un incident de production. Découpée par zone (`area`) : un tas qui monte et un hors-tas stable ne racontent pas la même panne.",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 1 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "sum by (area) (jvm_memory_used_bytes{application=\"escrow-core\"})",
+          "legendFormat": "{{area}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "custom": { "drawStyle": "line", "fillOpacity": 10, "lineWidth": 1 }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      }
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "HTTP — débit des requêtes par statut",
+      "description": "Famille HTTP de l'AC1. La série naît du TRAFIC et non de la configuration : au repos, ce panneau est vide, et c'est correct. Corollaire retenu en T1 et qui vaut pour T5 — une règle d'alerte assise sur cette série ne dit rien d'une application au repos.",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 1 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "sum by (status) (rate(http_server_requests_seconds_count{application=\"escrow-core\"}[5m]))",
+          "legendFormat": "{{status}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "custom": { "drawStyle": "line", "fillOpacity": 10, "lineWidth": 1 }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      }
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "HTTP — part de 5xx",
+      "description": "Base de la PREMIÈRE règle minimale de l'AC3 (taux de 5xx), posée ici pour que T5 écrive sa règle sur une expression déjà vue rendre des points. Le dénominateur est le trafic total : un taux, jamais un compte brut — dix 5xx sur dix requêtes et dix sur dix mille ne sont pas le même incident. Le `or vector(0)` n'est PAS cosmétique : sans lui, un numérateur vide (aucun 5xx, cas nominal) rend un vecteur vide et le panneau reste BLANC — indistinguable d'une requête cassée. Vérifié le 2026-08-14 sur les quatre cas : forme initiale à vide (blanc), mécanique du rapport sur un statut réellement présent (rend une valeur), forme corrigée à vide (rend 0), forme corrigée avec numérateur non vide (n'écrase pas la valeur).",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 9 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "(sum(rate(http_server_requests_seconds_count{application=\"escrow-core\",status=~\"5..\"}[5m])) or vector(0)) / sum(rate(http_server_requests_seconds_count{application=\"escrow-core\"}[5m]))",
+          "legendFormat": "part de 5xx"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "custom": { "drawStyle": "line", "fillOpacity": 20, "lineWidth": 1 }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "single", "sort": "none" }
+      }
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Pool Hikari — connexions",
+      "description": "Famille « pool » de l'AC1 et base de la TROISIÈME règle minimale de l'AC3 (saturation du pool). Ce dépôt a déjà touché un plafond de connexions une fois (83 erreurs, bundle QUALITÉ-CI) : la série `pending` est celle qui l'aurait dit avant les erreurs.",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 9 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "hikaricp_connections_active{application=\"escrow-core\"}",
+          "legendFormat": "actives"
+        },
+        {
+          "refId": "B",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "hikaricp_connections_idle{application=\"escrow-core\"}",
+          "legendFormat": "inactives"
+        },
+        {
+          "refId": "C",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "hikaricp_connections_pending{application=\"escrow-core\"}",
+          "legendFormat": "en attente"
+        },
+        {
+          "refId": "D",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "hikaricp_connections_max{application=\"escrow-core\"}",
+          "legendFormat": "plafond"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0,
+          "custom": { "drawStyle": "line", "fillOpacity": 0, "lineWidth": 1 }
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "plafond" },
+            "properties": [
+              { "id": "custom.lineStyle", "value": { "dash": [10, 10], "fill": "dash" } }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      }
+    },
+    {
+      "id": 6,
+      "type": "row",
+      "title": "Broker (RabbitMQ)",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 17 },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "Files du broker — profondeur par file",
+      "description": "Quatrième famille de l'AC1, et la seule que l'application ne peut PAS produire : la profondeur d'une file est un fait du broker, pas de son client. Elle vient du plugin `rabbitmq_prometheus`, cible de scraping distincte (`rabbitmq-queues`), restreinte à la famille `queue_coarse_metrics` pour borner la cardinalité. Le préfixe `rabbitmq_detailed_` n'est pas décoratif : il distingue ces séries étiquetées par file des séries agrégées de la cible `rabbitmq`.",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 18 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "rabbitmq_detailed_queue_messages",
+          "legendFormat": "{{queue}} — total"
+        },
+        {
+          "refId": "B",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "rabbitmq_detailed_queue_messages_ready",
+          "legendFormat": "{{queue}} — prêts"
+        },
+        {
+          "refId": "C",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "rabbitmq_detailed_queue_messages_unacked",
+          "legendFormat": "{{queue}} — non acquittés"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0,
+          "custom": { "drawStyle": "line", "fillOpacity": 10, "lineWidth": 1 }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      }
+    },
+    {
+      "id": 8,
+      "type": "stat",
+      "title": "Broker — alarmes du nœud",
+      "description": "Base de la règle « saturation disque » de l'AC3. Ces trois métriques n'existent QUE sur la cible agrégée `rabbitmq` : elles sont absentes de `/metrics/per-object` et de `/metrics/detailed` (vérifié le 2026-08-14 sur le plugin en fonctionnement). C'est la raison d'être des deux cibles de scraping. Valeur 1 = alarme active.",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 18 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "rabbitmq_alarms_free_disk_space_watermark",
+          "legendFormat": "disque"
+        },
+        {
+          "refId": "B",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "rabbitmq_alarms_memory_used_watermark",
+          "legendFormat": "mémoire"
+        },
+        {
+          "refId": "C",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "rabbitmq_alarms_file_descriptor_limit",
+          "legendFormat": "descripteurs"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "mappings": [
+            { "type": "value", "options": { "0": { "text": "au repos", "color": "green", "index": 0 } } },
+            { "type": "value", "options": { "1": { "text": "ALARME", "color": "red", "index": 1 } } }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "red", "value": 1 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "value_and_name",
+        "orientation": "horizontal"
+      }
+    }
+  ]
+}

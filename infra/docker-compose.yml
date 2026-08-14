@@ -56,9 +56,16 @@ services:
     environment:
       RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER:-escrow}
       RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS:?RABBITMQ_DEFAULT_PASS manquant}
+    volumes:
+      # Story 11.4 (T4) : active `rabbitmq_prometheus` en plus de la console. Voir
+      # l'en-tête du fichier — il REMPLACE la liste par défaut de l'image.
+      - ./observability/rabbitmq-enabled-plugins:/etc/rabbitmq/enabled_plugins:ro
     ports:
       - "5672:5672"    # AMQP
       - "15672:15672"  # management UI
+      # Métriques Prometheus du broker (Story 11.4). Sur la boucle locale comme le
+      # reste de l'observabilité : cet endpoint ne s'authentifie pas.
+      - "127.0.0.1:15692:15692"
     healthcheck:
       test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
       interval: 10s
@@ -317,6 +324,37 @@ services:
       COLLECTOR_OTLP_ENABLED: "true"
     ports:
       - "127.0.0.1:${JAEGER_UI_PORT:-16686}:16686"
+
+  grafana:
+    # Tableau de bord (Story 11.4, T4 — AC1 « restituées dans un dashboard »).
+    image: grafana/grafana:12.4.8
+    environment:
+      # ── AUCUN SECRET EN CLAIR (Story 1.2, externalisation des secrets) ──
+      # `:?` et non `:-` : le compose REFUSE de démarrer si la variable manque,
+      # au lieu de retomber sur un défaut. C'est ce qui empêche le mot de passe
+      # `admin/admin` de l'image de rester en place sans que personne ne le voie —
+      # même posture que POSTGRES_PASSWORD et RABBITMQ_DEFAULT_PASS ci-dessus.
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-escrow-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?GRAFANA_ADMIN_PASSWORD manquant}
+      # Pas de création de compte, pas d'accès anonyme : cette instance n'a qu'un
+      # seul utilisateur et aucune raison d'en accepter d'autres.
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      # Le poste de développement n'a pas de réseau sortant à consommer : ni
+      # télémétrie, ni sondage de mises à jour, ni catalogue de greffons distant.
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+    volumes:
+      # LECTURE SEULE, et c'est la couche qui compte : provisioning et tableaux de
+      # bord viennent du dépôt. Grafana ne peut pas réécrire ce que la revue lit.
+      - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    ports:
+      # 3000 est libre (relevé au T0 de la story). Boucle locale comme Prometheus
+      # et Jaeger : la publication en production est portée par la Story 11.3.
+      - "127.0.0.1:${GRAFANA_PORT:-3000}:3000"
+    depends_on:
+      - prometheus
 
 volumes:
   pgdata:

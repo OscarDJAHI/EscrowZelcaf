@@ -1,0 +1,15 @@
+%% Plugins RabbitMQ activés (Story 11.4, T4 — famille « files du broker » de l'AC1).
+%%
+%% POURQUOI CE FICHIER EXISTE. La profondeur d'une file est un fait du BROKER, pas de
+%% son client : `spring-boot-starter-amqp` est au pom depuis l'origine et n'expose
+%% AUCUNE métrique de profondeur — aucune dépendance ajoutée à l'application ne la
+%% ferait apparaître. L'écart avait été nommé en T1 plutôt que maquillé par une
+%% assertion sur une métrique cliente ; il se referme ici, du côté du broker.
+%%
+%% ⚠️ CE FICHIER REMPLACE la liste par défaut de l'image, il ne s'y ajoute pas.
+%% `rabbitmq_management` doit donc y figurer : l'omettre éteindrait la console du
+%% port 15672, publiée par le compose et utilisée par le poste de développement.
+%%
+%% Syntaxe Erlang : une liste de termes, point final compris. Le point manquant est
+%% l'erreur classique — le broker démarre alors SANS plugin et sans rien dire.
+[rabbitmq_management,rabbitmq_prometheus].

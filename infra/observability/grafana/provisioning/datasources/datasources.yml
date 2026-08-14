@@ -1,0 +1,33 @@
+# Sources de données Grafana (Story 11.4, T4) — PROVISIONNÉES, jamais saisies à la main.
+#
+# `editable: false` est délibéré : une source modifiée dans l'interface vivrait dans le
+# volume Docker et disparaîtrait au premier `compose down -v`, sans laisser de trace en
+# revue. Ce fichier est la seule vérité.
+#
+# AUCUN IDENTIFIANT ICI. Ni Prometheus ni Jaeger ne s'authentifient sur ce poste de
+# développement (ils ne publient que sur la boucle locale, voir docker-compose.yml) —
+# il n'y a donc aucun secret à externaliser dans ce fichier, et il ne doit jamais en
+# recevoir : c'est le mot de passe d'administration de Grafana qui est externalisé,
+# côté compose (Story 1.2). Si la Story 11.3 met ces sources derrière une
+# authentification, les identifiants passeront par `secureJsonData` + variables
+# d'environnement, jamais en clair dans ce YAML versionné.
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    type: prometheus
+    # `uid` FIXÉ et non généré : c'est lui que le JSON du tableau de bord référence.
+    # Un uid généré à l'exécution changerait à chaque recréation du volume et laisserait
+    # tous les panneaux sur « source de données introuvable ».
+    uid: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+    editable: false
+
+  - name: Jaeger
+    type: jaeger
+    uid: jaeger
+    access: proxy
+    url: http://jaeger:16686
+    editable: false

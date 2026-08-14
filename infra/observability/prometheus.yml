@@ -14,3 +14,44 @@ scrape_configs:
     metrics_path: /actuator/prometheus
     static_configs:
       - targets: ["backend:9091"]
+
+  # ══ FAMILLE « FILES DU BROKER » DE L'AC1 (T4) ══
+  #
+  # DEUX CIBLES SUR LE MÊME BROKER, ET CE N'EST PAS UN DOUBLON. Mesuré le
+  # 2026-08-14 sur le plugin réellement en fonctionnement (rabbitmq_prometheus
+  # 3.13.7), parce que la documentation laisse croire que `/metrics/per-object`
+  # est un sur-ensemble de `/metrics`. IL NE L'EST PAS :
+  #
+  #   - `/metrics` agrège les files SANS étiquette : impossible de dire QUELLE
+  #     file monte — donc inutilisable pour la règle « DLQ non vide » de T5 ;
+  #   - `/metrics/per-object` étiquette par file, mais PERD les trois métriques
+  #     d'alarme du nœud (`rabbitmq_alarms_free_disk_space_watermark`,
+  #     `..._memory_used_watermark`, `..._file_descriptor_limit`) — vérifié :
+  #     elles sont absentes de sa sortie, et de `/metrics/detailed` aussi.
+  #     Or c'est exactement la matière de la règle « saturation disque » de T5.
+  #
+  # Prendre une seule des deux aurait donc coûté une règle d'alerte de l'AC3, et
+  # le manque ne se serait vu qu'au moment d'écrire la règle — ou pire, jamais :
+  # une règle assise sur une série absente ne se déclenche pas et ne rougit pas.
+  #
+  # Le recouvrement est nul côté noms : la cible détaillée rend des séries
+  # `rabbitmq_detailed_*`, distinctes des `rabbitmq_*` agrégées. Rien à
+  # dédoublonner, aucune ambiguïté pour les règles et le tableau de bord.
+  - job_name: rabbitmq
+    # Agrégé : métriques de NŒUD (alarmes disque/mémoire/descripteurs, mémoire
+    # résidente, descripteurs ouverts). C'est le socle des règles de saturation.
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["rabbitmq:15692"]
+
+  - job_name: rabbitmq-queues
+    # Détaillé, RESTREINT à la seule famille utile : 4 séries par file, contre
+    # ~160 métriques si l'on prenait `/metrics/per-object` en entier. La
+    # cardinalité par file est le mode de défaut connu de ce plugin — la borner
+    # ici est un choix, pas un oubli. Une file aujourd'hui (`escrow.events.queue`),
+    # et l'ajout d'une DLQ en T5 n'y change rien.
+    metrics_path: /metrics/detailed
+    params:
+      family: [queue_coarse_metrics]
+    static_configs:
+      - targets: ["rabbitmq:15692"]
