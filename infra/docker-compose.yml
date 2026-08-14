@@ -265,7 +265,16 @@ services:
       mailpit:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/actuator/health | grep -q UP"]
+      # ⚠️ 9091 ET NON 8080 — corrigé le 2026-08-14 (défaut introduit par le T1 de la
+      # Story 11.4). Le port de management sépare l'actuator du port applicatif : il
+      # déplace TOUS ses endpoints, `/actuator/health` compris. La sonde pointait
+      # encore sur 8080 et y recevait un 404, donc le backend restait `unhealthy` À
+      # JAMAIS — et avec lui tout ce qui l'attend (`condition: service_healthy` :
+      # frontend, prometheus, grafana). Défaut resté invisible 13 h : l'image tournant
+      # sur le poste était périmée, donc l'actuator y était encore sur 8080 ; il n'est
+      # apparu qu'après la reconstruction, et la vérification de T4 regardait la cible
+      # de scraping (9091 en direct), pas la sonde de santé.
+      test: ["CMD-SHELL", "wget -qO- http://localhost:9091/actuator/health | grep -q UP"]
       interval: 10s
       timeout: 5s
       retries: 12
@@ -307,6 +316,10 @@ services:
       - --config.file=/etc/prometheus/prometheus.yml
     volumes:
       - ./observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      # Règles d'alerte (T5/T6). Le répertoire ENTIER est monté, pas chaque fichier :
+      # une règle ajoutée plus tard n'exigera pas de toucher au compose — c'est
+      # précisément le genre d'oubli qui laisse une règle écrite mais jamais chargée.
+      - ./observability/rules:/etc/prometheus/rules:ro
     ports:
       # 9090 est libre : 9000/9001 sont pris par MinIO, 5432/5672/15672/8081/5050
       # par le reste de la pile. Lié à la boucle locale, jamais à 0.0.0.0.
@@ -324,6 +337,26 @@ services:
       COLLECTOR_OTLP_ENABLED: "true"
     ports:
       - "127.0.0.1:${JAEGER_UI_PORT:-16686}:16686"
+
+  alertmanager:
+    # Acheminement des alertes (Story 11.4, T5 — AC3). Ce qu'il N'EST PAS est écrit
+    # en tête d'`observability/alertmanager.yml` : ni canal de production, ni
+    # décision du spike AR-P6.
+    image: prom/alertmanager:v0.33.1
+    command:
+      - --config.file=/etc/alertmanager/alertmanager.yml
+    volumes:
+      - ./observability/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+    ports:
+      # 9093 est libre. Boucle locale comme le reste de l'observabilité : cette
+      # console ne s'authentifie pas, et elle permet de FAIRE TAIRE des alertes.
+      - "127.0.0.1:${ALERTMANAGER_PORT:-9093}:9093"
+    depends_on:
+      # Le canal de délivrance doit être debout AVANT le routeur, sinon la première
+      # alerte part dans le vide — et un envoi perdu ne laisse aucune trace côté
+      # exploitant, ce qui est exactement le mode de défaut que l'AC3 veut exclure.
+      mailpit:
+        condition: service_healthy
 
   grafana:
     # Tableau de bord (Story 11.4, T4 — AC1 « restituées dans un dashboard »).

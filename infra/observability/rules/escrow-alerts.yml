@@ -1,0 +1,121 @@
+# Règles d'alerte (Story 11.4, T5 — AC3 « les règles minimales sont actives »).
+#
+# ══ CE QUI GARDE CE FICHIER, PUISQUE `mvn test` NE LE VOIT PAS ══
+# Aucune règle d'alerte ne rougit dans la suite JVM : le piège nommé par la story est
+# exactement là. Ce fichier a donc son propre harnais — `escrow-alerts.test.yml`,
+# exécuté par `promtool test rules`, qui pose des séries synthétiques et vérifie que
+# CHAQUE règle se déclenche quand elle doit et RESTE MUETTE quand elle ne doit pas.
+# La paire est obligatoire : une règle qui se déclenche toujours est aussi fausse
+# qu'une règle qui ne se déclenche jamais, et seule la moitié négative l'attrape.
+#
+# ══ CONVENTIONS ══
+# Noms d'alerte en ANGLAIS (codes machine, convention du spine) ; `summary` et
+# `description` en français (ce sont des libellés lus par un exploitant).
+# Les SEUILS sont des paramètres d'exploitation, pas des vérités : ils sont
+# commentés un par un pour être discutés à la Story 11.3, qui connaîtra la
+# volumétrie réelle. Les figer ici sans le dire les rendrait intouchables.
+groups:
+  - name: escrow-application
+    rules:
+      # ── RÈGLE MINIMALE 1/3 de l'AC3 : taux de 5xx ──
+      #
+      # Un TAUX et non un compte brut : dix 5xx sur dix requêtes et dix sur dix mille
+      # ne sont pas le même incident.
+      #
+      # ⚠️ PAS de `or vector(0)` ici, CONTRAIREMENT au panneau du tableau de bord, et
+      # ce n'est pas un oubli de recopie. Sur un panneau, un numérateur vide rend un
+      # blanc qu'on ne distingue pas d'une panne — il faut donc forcer le 0. Sur une
+      # règle, un numérateur vide doit précisément NE PAS produire d'alerte : ajouter
+      # `or vector(0)` ne changerait rien au verdict et masquerait l'intention.
+      #
+      # SEUIL 5 % pendant 5 min : au repos la série n'existe pas (elle naît du trafic,
+      # constat de T1), donc cette règle ne dit rien d'une application sans trafic.
+      # C'est une limite réelle, pas un défaut à corriger ici : une sonde de vivacité
+      # est le bon outil pour « l'application ne répond plus », et elle relève de 11.3.
+      - alert: HighServerErrorRate
+        expr: |
+          sum(rate(http_server_requests_seconds_count{application="escrow-core",status=~"5.."}[5m]))
+            / sum(rate(http_server_requests_seconds_count{application="escrow-core"}[5m])) > 0.05
+        for: 5m
+        labels:
+          severity: critical
+          service: escrow-core
+        annotations:
+          summary: "Taux de 5xx élevé sur escrow-core"
+          description: "Plus de 5 % des requêtes HTTP échouent en 5xx depuis 5 minutes (valeur : {{ $value | humanizePercentage }})."
+
+      # ── RÈGLE MINIMALE 3/3 de l'AC3 (premier volet) : saturation du pool ──
+      #
+      # `pending` = des fils qui ATTENDENT une connexion. C'est le signal qui précède
+      # les erreurs, là où `active` au plafond peut être un régime nominal. Ce dépôt a
+      # déjà touché un plafond de connexions une fois (83 erreurs, bundle QUALITÉ-CI) :
+      # la série qui l'aurait dit AVANT est celle-ci.
+      # 2 min de patience : un pic d'attente sur une rafale est normal, une attente
+      # continue ne l'est pas.
+      - alert: ConnectionPoolSaturated
+        expr: hikaricp_connections_pending{application="escrow-core"} > 0
+        for: 2m
+        labels:
+          severity: warning
+          service: escrow-core
+        annotations:
+          summary: "Pool de connexions saturé (des requêtes attendent)"
+          description: "{{ $value }} requête(s) en attente d'une connexion Hikari depuis 2 minutes sur le pool {{ $labels.pool }}."
+
+  - name: escrow-broker
+    rules:
+      # ── RÈGLE MINIMALE 3/3 de l'AC3 (second volet) : saturation disque/mémoire ──
+      #
+      # Les trois alarmes du NŒUD RabbitMQ, et c'est la raison d'être de la seconde
+      # cible de scraping posée en T4 : elles n'existent QUE sur `/metrics` agrégé,
+      # `/metrics/per-object` les perd. Sans cette cible, cette règle porterait sur
+      # une série absente — elle ne se déclencherait jamais et ne rougirait jamais.
+      # Aucun `for:` : une alarme de watermark est déjà, en elle-même, un état durable
+      # décidé par le broker.
+      - alert: BrokerResourceAlarm
+        expr: |
+          rabbitmq_alarms_free_disk_space_watermark > 0
+            or rabbitmq_alarms_memory_used_watermark > 0
+            or rabbitmq_alarms_file_descriptor_limit > 0
+        labels:
+          severity: critical
+          service: rabbitmq
+        annotations:
+          summary: "Alarme de ressource sur le broker RabbitMQ"
+          description: "Le broker a levé une alarme de watermark (disque, mémoire ou descripteurs de fichiers) : la publication est bloquée tant qu'elle dure."
+
+      # ── RÈGLE MINIMALE 2/3 de l'AC3 : DLQ non vide ──
+      #
+      # ⚠️⚠️ CETTE RÈGLE EST CORRECTE ET INERTE. À LIRE AVANT DE LA CROIRE ACTIVE.
+      #
+      # IL N'EXISTE AUCUNE DLQ DANS CE DÉPÔT. `RabbitConfig` déclare une seule file,
+      # `escrow.events.queue`, sans `x-dead-letter-exchange` ni file de rebut (vérifié
+      # le 2026-08-14). Aucune série ne correspond donc au sélecteur ci-dessous, et
+      # cette règle ne peut PAS se déclencher aujourd'hui.
+      #
+      # POURQUOI ELLE EST QUAND MÊME LÀ, ET POURQUOI CE N'EST PAS UNE PREUVE CREUSE.
+      # Deux options se présentaient à l'ouverture de T5 : déclarer la DLQ ici, ou
+      # écrire la règle en nommant son inertie. La première a été écartée — changer la
+      # topologie du broker modifie le TRAITEMENT des messages en échec, ce qui n'est
+      # pas de l'observabilité et n'appartient pas à cette story (même raisonnement que
+      # « aucun bump de Spring Boot », décision Q4). La seconde n'est acceptable qu'à
+      # deux conditions, toutes deux tenues :
+      #   1. la LOGIQUE de la règle est prouvée par `promtool` sur une série synthétique
+      #      portant le nom conventionnel — le harnais la fait bien passer en `firing` ;
+      #   2. l'inertie est ÉCRITE ici, et non déduite par le prochain lecteur.
+      #
+      # ⚠️ CE SÉLECTEUR EST UN CONTRAT, PAS UNE DEVINETTE. Il repose sur une convention
+      # de nommage qui n'existe pas encore : toute file de rebut créée plus tard DOIT
+      # se terminer par `.dlq` (ex. `escrow.events.queue.dlq`). Une DLQ nommée
+      # autrement — `...dead-letter`, `...rebut` — ne serait jamais vue par cette
+      # règle, en silence. La story qui crée la DLQ doit honorer ce suffixe ou changer
+      # ce sélecteur EN MÊME TEMPS. C'est le mode de défaut le plus probable de cette
+      # règle, et il est nommé d'avance.
+      - alert: DeadLetterQueueNotEmpty
+        expr: rabbitmq_detailed_queue_messages{queue=~".+\\.dlq"} > 0
+        labels:
+          severity: critical
+          service: rabbitmq
+        annotations:
+          summary: "File de rebut non vide : {{ $labels.queue }}"
+          description: "{{ $value }} message(s) en rebut dans {{ $labels.queue }} — un traitement a échoué de façon définitive et personne ne le voit côté application."

@@ -1,0 +1,58 @@
+# Acheminement des alertes (Story 11.4, T5 — AC3 « elle est délivrée sur le canal opérateur »).
+#
+# ══════════════════════════════════════════════════════════════════════════════
+# CE QUE CE CANAL N'EST PAS — à lire avant d'en déduire quoi que ce soit.
+#
+# Ce n'est PAS le canal d'alerte de production, et ce n'est PAS une décision du
+# spike AR-P6 (choix du fournisseur e-mail/SMS, Story 8.1), qui reste entier.
+# Décision Q2 du 2026-08-11, sur le précédent posé par la Story 2.4 le 2026-08-10 :
+# « SMTP est un protocole, pas un fournisseur ». Écrire ici un smarthost vers le
+# Mailpit DÉJÀ présent au compose prouve la chaîne de bout en bout — Prometheus
+# évalue, Alertmanager route, le message part, il arrive — sans engager le moindre
+# prestataire. Le jour où AR-P6 tranche, c'est la valeur de `smtp_smarthost` qui
+# change, pas l'architecture.
+#
+# Ce n'est PAS non plus une configuration de production au sens réseau : Mailpit
+# accepte n'importe quelle authentification et ne chiffre rien — c'est un
+# collecteur de développement. La Story 11.3 posera TLS et des identifiants réels.
+# ══════════════════════════════════════════════════════════════════════════════
+global:
+  smtp_smarthost: 'mailpit:1025'
+  smtp_from: 'alertes@escrow.local'
+  # Mailpit ne présente pas de certificat : exiger TLS ferait échouer TOUTE
+  # délivrance, et l'échec serait silencieux du point de vue de l'exploitant —
+  # l'alerte ne sort simplement pas. Assumé ici, à inverser en 11.3.
+  smtp_require_tls: false
+
+route:
+  receiver: exploitant
+  # Grouper par alerte ET par service : deux services qui tombent ensemble sont
+  # deux incidents, pas un. Sans `service`, ils fusionneraient dans un seul message.
+  group_by: ['alertname', 'service']
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h
+
+  routes:
+    # ── LE CRITIQUE NE SE GROUPE PAS, ET C'EST UNE EXIGENCE D'AC ──
+    # L'AC4 dit « une alerte de sévérité critique est délivrée IMMÉDIATEMENT ».
+    # Le `group_wait` par défaut de 30 s la retiendrait — une demi-minute est peu
+    # pour un humain, mais l'AC dit ce qu'elle dit, et un écart de ségrégation des
+    # fonds (AD-16) est exactement le cas où l'on ne négocie pas. `0s` sur cette
+    # route, et rappel horaire plutôt que toutes les 4 h tant qu'elle dure.
+    - matchers:
+        - severity="critical"
+      receiver: exploitant
+      group_wait: 0s
+      group_interval: 5m
+      repeat_interval: 1h
+
+receivers:
+  - name: exploitant
+    email_configs:
+      - to: 'exploitant@escrow.local'
+        # La résolution est notifiée elle aussi : sans cela, l'exploitant sait quand
+        # ça casse et jamais quand c'est réparé — et il rouvre un incident clos.
+        send_resolved: true
+        headers:
+          Subject: '[{{ .Status | toUpper }}{{ if eq .Status "firing" }} × {{ .Alerts.Firing | len }}{{ end }}] {{ .CommonLabels.alertname }}'

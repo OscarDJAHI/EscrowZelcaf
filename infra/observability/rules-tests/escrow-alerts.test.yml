@@ -1,0 +1,232 @@
+# Tests unitaires des règles d'alerte (Story 11.4, T5/T6 — `promtool test rules`).
+#
+# ══ POURQUOI CE FICHIER EXISTE ══
+# La story nomme le piège : « une règle d'alerte ou un tableau de bord ne sont pas
+# couverts par la suite JVM. Si l'on ne peut pas les faire rougir, le dire — et
+# préférer une vérification outillée à une preuve creuse. » C'est la vérification
+# outillée. Elle tourne hors de Maven :
+#
+#   docker run --rm --entrypoint promtool -v "$PWD/infra/observability:/o:ro" \
+#     -w /o/rules-tests prom/prometheus:v3.1.0 test rules escrow-alerts.test.yml
+#
+# ⚠️ CE FICHIER VIT HORS DE `rules/`, ET C'EST STRUCTUREL. Prometheus charge son
+# répertoire de règles au MOTIF (`rules/*.yml`) : un fichier de TEST posé là serait
+# lu comme un fichier de règles, n'aurait pas de clé `groups`, et **Prometheus
+# refuserait de démarrer**. Le rangement n'est donc pas une préférence de goût — il
+# est ce qui empêche le harnais de casser ce qu'il garde.
+#
+# ══ CHAQUE RÈGLE A SA PAIRE, ET LA MOITIÉ NÉGATIVE N'EST PAS DÉCORATIVE ══
+# Un cas « ça se déclenche » seul est satisfait par une règle qui se déclenche
+# TOUJOURS — c'est-à-dire par une règle inutile qui réveille l'exploitant chaque
+# nuit jusqu'à ce qu'il la coupe. Chaque alerte est donc éprouvée deux fois : sous
+# le seuil (silence attendu) et au-dessus (déclenchement attendu).
+rule_files:
+  - ../rules/escrow-alerts.yml
+
+evaluation_interval: 1m
+
+tests:
+  # ────────────────────────────────────────────────────────────────────────────
+  # HighServerErrorRate
+  # ────────────────────────────────────────────────────────────────────────────
+  - interval: 1m
+    name: "5xx sous le seuil — silence attendu"
+    input_series:
+      # 1 requête 5xx par minute pour 100 requêtes 200 : 1 %, sous le seuil de 5 %.
+      - series: 'http_server_requests_seconds_count{application="escrow-core",status="500",uri="/api/v1/escrow"}'
+        values: '0+1x20'
+      - series: 'http_server_requests_seconds_count{application="escrow-core",status="200",uri="/api/v1/escrow"}'
+        values: '0+99x20'
+    alert_rule_test:
+      - eval_time: 15m
+        alertname: HighServerErrorRate
+        exp_alerts: []
+
+  - interval: 1m
+    name: "5xx au-dessus du seuil pendant 5 min — déclenchement attendu"
+    input_series:
+      # 20 % de 5xx : franchement au-dessus des 5 %.
+      - series: 'http_server_requests_seconds_count{application="escrow-core",status="500",uri="/api/v1/escrow"}'
+        values: '0+20x20'
+      - series: 'http_server_requests_seconds_count{application="escrow-core",status="200",uri="/api/v1/escrow"}'
+        values: '0+80x20'
+    alert_rule_test:
+      - eval_time: 15m
+        alertname: HighServerErrorRate
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              service: escrow-core
+            exp_annotations:
+              summary: "Taux de 5xx élevé sur escrow-core"
+              description: "Plus de 5 % des requêtes HTTP échouent en 5xx depuis 5 minutes (valeur : 20%)."
+
+  # Le `for: 5m` est une garde à part entière : sans lui, un pic d'une minute
+  # réveille quelqu'un. Ce cas prouve qu'il retient bien le déclenchement.
+  # ⚠️ L'INSTANT D'ÉVALUATION EST LOAD-BEARING, et le premier jet l'avait mal choisi :
+  # à 7 min l'alerte est déjà partie LÉGITIMEMENT (la condition devient vraie vers
+  # 1-2 min, le `for` s'achève donc vers 6-7 min) et le test échouait en accusant la
+  # règle d'un défaut qui n'existait pas. À 4 min, la condition est vraie mais le
+  # `for` n'est pas écoulé : c'est là, et seulement là, que la garde est observable.
+  # Vérifié par mutation : `for: 5m` retiré -> ce cas rougit.
+  - interval: 1m
+    name: "5xx au-dessus du seuil mais depuis moins de 5 min — le `for: 5m` doit retenir"
+    input_series:
+      - series: 'http_server_requests_seconds_count{application="escrow-core",status="500",uri="/api/v1/escrow"}'
+        values: '0+20x20'
+      - series: 'http_server_requests_seconds_count{application="escrow-core",status="200",uri="/api/v1/escrow"}'
+        values: '0+80x20'
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: HighServerErrorRate
+        exp_alerts: []
+
+  # ────────────────────────────────────────────────────────────────────────────
+  # ConnectionPoolSaturated
+  # ────────────────────────────────────────────────────────────────────────────
+  - interval: 1m
+    name: "aucune requête en attente sur le pool — silence attendu"
+    input_series:
+      - series: 'hikaricp_connections_pending{application="escrow-core",pool="HikariPool-1"}'
+        values: '0x10'
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: ConnectionPoolSaturated
+        exp_alerts: []
+
+  - interval: 1m
+    name: "requêtes en attente depuis 2 min — déclenchement attendu"
+    input_series:
+      - series: 'hikaricp_connections_pending{application="escrow-core",pool="HikariPool-1"}'
+        values: '3x10'
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: ConnectionPoolSaturated
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              service: escrow-core
+              application: escrow-core
+              pool: HikariPool-1
+            exp_annotations:
+              summary: "Pool de connexions saturé (des requêtes attendent)"
+              description: "3 requête(s) en attente d'une connexion Hikari depuis 2 minutes sur le pool HikariPool-1."
+
+  # ────────────────────────────────────────────────────────────────────────────
+  # BrokerResourceAlarm — les trois alarmes du nœud, une par une.
+  # Les tester ensemble laisserait passer un `or` mal écrit qui n'en couvrirait
+  # qu'une : le cas nominal (tout à 0) et les trois cas positifs sont distincts.
+  # ────────────────────────────────────────────────────────────────────────────
+  - interval: 1m
+    name: "aucune alarme de ressource sur le broker — silence attendu"
+    input_series:
+      - series: 'rabbitmq_alarms_free_disk_space_watermark{instance="rabbitmq:15692"}'
+        values: '0x10'
+      - series: 'rabbitmq_alarms_memory_used_watermark{instance="rabbitmq:15692"}'
+        values: '0x10'
+      - series: 'rabbitmq_alarms_file_descriptor_limit{instance="rabbitmq:15692"}'
+        values: '0x10'
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: BrokerResourceAlarm
+        exp_alerts: []
+
+  - interval: 1m
+    name: "alarme DISQUE seule — déclenchement attendu"
+    input_series:
+      - series: 'rabbitmq_alarms_free_disk_space_watermark{instance="rabbitmq:15692"}'
+        values: '1x10'
+      - series: 'rabbitmq_alarms_memory_used_watermark{instance="rabbitmq:15692"}'
+        values: '0x10'
+      - series: 'rabbitmq_alarms_file_descriptor_limit{instance="rabbitmq:15692"}'
+        values: '0x10'
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: BrokerResourceAlarm
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              service: rabbitmq
+              instance: "rabbitmq:15692"
+            exp_annotations:
+              summary: "Alarme de ressource sur le broker RabbitMQ"
+              description: "Le broker a levé une alarme de watermark (disque, mémoire ou descripteurs de fichiers) : la publication est bloquée tant qu'elle dure."
+
+  - interval: 1m
+    name: "alarme MÉMOIRE seule — déclenchement attendu"
+    input_series:
+      - series: 'rabbitmq_alarms_free_disk_space_watermark{instance="rabbitmq:15692"}'
+        values: '0x10'
+      - series: 'rabbitmq_alarms_memory_used_watermark{instance="rabbitmq:15692"}'
+        values: '1x10'
+      - series: 'rabbitmq_alarms_file_descriptor_limit{instance="rabbitmq:15692"}'
+        values: '0x10'
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: BrokerResourceAlarm
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              service: rabbitmq
+              instance: "rabbitmq:15692"
+            exp_annotations:
+              summary: "Alarme de ressource sur le broker RabbitMQ"
+              description: "Le broker a levé une alarme de watermark (disque, mémoire ou descripteurs de fichiers) : la publication est bloquée tant qu'elle dure."
+
+  - interval: 1m
+    name: "alarme DESCRIPTEURS seule — déclenchement attendu"
+    input_series:
+      - series: 'rabbitmq_alarms_free_disk_space_watermark{instance="rabbitmq:15692"}'
+        values: '0x10'
+      - series: 'rabbitmq_alarms_memory_used_watermark{instance="rabbitmq:15692"}'
+        values: '0x10'
+      - series: 'rabbitmq_alarms_file_descriptor_limit{instance="rabbitmq:15692"}'
+        values: '1x10'
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: BrokerResourceAlarm
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              service: rabbitmq
+              instance: "rabbitmq:15692"
+            exp_annotations:
+              summary: "Alarme de ressource sur le broker RabbitMQ"
+              description: "Le broker a levé une alarme de watermark (disque, mémoire ou descripteurs de fichiers) : la publication est bloquée tant qu'elle dure."
+
+  # ────────────────────────────────────────────────────────────────────────────
+  # DeadLetterQueueNotEmpty — la règle INERTE de ce fichier.
+  #
+  # Ces deux cas prouvent sa LOGIQUE, pas son activité : aucune file `.dlq`
+  # n'existe dans le dépôt aujourd'hui (voir l'avertissement dans escrow-alerts.yml).
+  # Ce que le harnais garantit, c'est que le jour où une DLQ respectant le suffixe
+  # conventionnel apparaîtra, la règle la verra — et qu'une file ORDINAIRE non vide
+  # ne la réveillera pas, ce qui est l'autre moitié, celle qu'on oublie.
+  # ────────────────────────────────────────────────────────────────────────────
+  - interval: 1m
+    name: "file ORDINAIRE non vide — silence attendu (ce n'est pas un rebut)"
+    input_series:
+      - series: 'rabbitmq_detailed_queue_messages{queue="escrow.events.queue",vhost="/"}'
+        values: '42x10'
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: DeadLetterQueueNotEmpty
+        exp_alerts: []
+
+  - interval: 1m
+    name: "file de rebut non vide — déclenchement attendu"
+    input_series:
+      - series: 'rabbitmq_detailed_queue_messages{queue="escrow.events.queue.dlq",vhost="/"}'
+        values: '1x10'
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: DeadLetterQueueNotEmpty
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              service: rabbitmq
+              queue: "escrow.events.queue.dlq"
+              vhost: "/"
+            exp_annotations:
+              summary: "File de rebut non vide : escrow.events.queue.dlq"
+              description: "1 message(s) en rebut dans escrow.events.queue.dlq — un traitement a échoué de façon définitive et personne ne le voit côté application."
