@@ -5,9 +5,12 @@
 # puis applique les manifestes en local.
 name: Deploiement k3s
 
+# Ce depot travaille sur `develop` : `main` est la branche protegee de release,
+# et les workflows de CI n'existent que sur `develop`. Ecouter uniquement `main`
+# revenait a ne jamais declencher le deploiement.
 on:
   push:
-    branches: [main, master]
+    branches: [develop, main]
   workflow_dispatch:
 
 concurrency:
