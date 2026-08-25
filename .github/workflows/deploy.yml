@@ -67,7 +67,9 @@ jobs:
 
       - name: Verifier depuis l'exterieur
         run: |
-          code=$(curl -sS -m 30 -o /dev/null -w '%{http_code}' https://escrow.oscardjahi.com/)
+          # -L : le frontend redirige la racine, et un 301 non suivi ferait
+          # echouer la verification alors que le deploiement est sain.
+          code=$(curl -sSL -m 30 -o /dev/null -w '%{http_code}' https://escrow.oscardjahi.com/)
           echo "page d'accueil : HTTP $code"
           [ "$code" = "200" ] || exit 1
 
