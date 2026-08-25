@@ -1,0 +1,74 @@
+# Deploiement continu sur le cluster k3s de oscar-srv.
+#
+# Le runner est auto-heberge sur le serveur : il n'y a donc aucun port entrant a
+# ouvrir, et aucun kubeconfig a confier a GitHub. Le job construit les images
+# puis applique les manifestes en local.
+name: Deploiement k3s
+
+on:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-k3s
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: [self-hosted, k3s]
+    steps:
+      - uses: actions/checkout@v4
+
+      # Le tag porte le SHA du commit : chaque deploiement est tracable, et
+      # Kubernetes voit reellement un changement d'image (contrairement a
+      # :latest, qui ne declenche aucun redemarrage).
+      - name: Determiner le tag
+        id: tag
+        run: echo "value=${GITHUB_SHA::12}" >> "$GITHUB_OUTPUT"
+
+      - name: Construire les images
+        run: |
+          docker build -t "escrow/backend:${{ steps.tag.outputs.value }}" backend/
+          docker build \
+            --build-arg VITE_API_BASE=https://escrow.oscardjahi.com \
+            -t "escrow/frontend:${{ steps.tag.outputs.value }}" frontend/
+
+      # Docker et k3s ont deux magasins d'images distincts : sans cet import,
+      # k3s ne voit pas les images qui viennent d'etre construites.
+      - name: Importer les images dans containerd
+        run: |
+          for image in "escrow/backend:${{ steps.tag.outputs.value }}" \
+                       "escrow/frontend:${{ steps.tag.outputs.value }}"; do
+            docker save "$image" | sudo k3s ctr images import -
+          done
+
+      - name: Appliquer les manifestes
+        run: |
+          sudo kubectl apply -f "$HOME/k8s/escrow/10-data.yaml"
+          sudo kubectl apply -f "$HOME/k8s/escrow/20-app.yaml"
+
+      - name: Basculer sur les nouvelles images
+        run: |
+          sudo kubectl -n escrow set image deployment/backend \
+            "backend=escrow/backend:${{ steps.tag.outputs.value }}"
+          sudo kubectl -n escrow set image deployment/frontend \
+            "frontend=escrow/frontend:${{ steps.tag.outputs.value }}"
+
+      # --timeout fait echouer le job si le deploiement ne converge pas, au lieu
+      # de le declarer reussi sur un simple `apply` accepte.
+      - name: Attendre la convergence
+        run: |
+          sudo kubectl -n escrow rollout status deployment/backend --timeout=300s
+          sudo kubectl -n escrow rollout status deployment/frontend --timeout=180s
+
+      - name: Verifier depuis l'exterieur
+        run: |
+          code=$(curl -sS -m 30 -o /dev/null -w '%{http_code}' https://escrow.oscardjahi.com/)
+          echo "page d'accueil : HTTP $code"
+          [ "$code" = "200" ] || exit 1
+
+      # Retire les images de plus de 7 jours pour eviter de saturer le disque.
+      - name: Nettoyer les anciennes images
+        if: always()
+        run: docker image prune -af --filter "until=168h" || true
