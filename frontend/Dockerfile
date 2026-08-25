@@ -10,7 +10,7 @@ ENV VITE_API_BASE=$VITE_API_BASE
 RUN npm run build
 
 # --- Runtime stage ---
-FROM nginx:1.27-alpine
+FROM nginx:1.31-alpine
 # Correctifs sécurité OS (Story 11.1) + openssl pour le certificat local/staging.
 RUN apk upgrade --no-cache && apk add --no-cache openssl
 COPY --from=build /app/dist /usr/share/nginx/html
