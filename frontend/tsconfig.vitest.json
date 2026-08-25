@@ -1,0 +1,14 @@
+{
+  // Les suites vivent dans les DEUX mondes, comme le dit déjà `eslint.config.js` :
+  // elles pilotent du DOM et des horloges, mais lisent aussi le système de fichiers
+  // (garde anti-dérive du contrat ErrorCode). D'où les types Node rouverts ICI, et
+  // seulement ici.
+  "extends": "./tsconfig.app.json",
+  "include": ["env.d.ts", "src/**/*.ts", "src/**/*.vue", "vitest.setup.ts"],
+  "exclude": [],
+  "compilerOptions": {
+    "composite": true,
+    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.vitest.tsbuildinfo",
+    "types": ["node"]
+  }
+}

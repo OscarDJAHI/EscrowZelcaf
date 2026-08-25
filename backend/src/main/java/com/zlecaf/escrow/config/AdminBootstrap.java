@@ -10,6 +10,8 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.core.env.Environment;
+import org.springframework.core.env.Profiles;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
 /**
@@ -33,6 +35,13 @@ public class AdminBootstrap {
     /** Longueur minimale du mot de passe ADMIN, alignée sur la politique des comptes ordinaires. */
     private static final int MIN_ADMIN_PASSWORD_LENGTH = 6;
 
+    /** Même convention de profil que {@code SecurityConfig} et {@code ProductionApiSurfaceGuard}. */
+    private final boolean prodProfile;
+
+    public AdminBootstrap(Environment environment) {
+        this.prodProfile = environment.acceptsProfiles(Profiles.of("prod"));
+    }
+
     @Bean
     CommandLineRunner seedBootstrapAdmin(UserRepository users, PasswordEncoder passwordEncoder,
             @Value("${escrow.bootstrap.admin.email:}") String email,
@@ -49,10 +58,38 @@ public class AdminBootstrap {
                 throw new IllegalStateException(
                         "escrow.bootstrap.admin.password est trop court (< " + MIN_ADMIN_PASSWORD_LENGTH + ")");
             }
+            String normalized = email.trim().toLowerCase();
+
+            // GARDE D2 (décision du 2026-07-28) — le silence de l'idempotence ci-dessous est
+            // un angle mort : si un ADMIN existe DÉJÀ, ce runner sort sans rien dire. Or dans
+            // une base antérieure à la Story 1.1 le rôle était AUTO-ATTRIBUABLE à l'inscription.
+            // Promouvoir une telle base en production ferait donc deux choses à la fois :
+            // conserver l'ADMIN illégitime, ET supprimer l'amorçage légitime — l'amorçage
+            // croyant son travail déjà fait. Le compte le plus privilégié de la plateforme
+            // serait celui de quelqu'un qui se l'est attribué lui-même.
+            //
+            // En production, un ADMIN dont l'email n'est pas celui de la configuration ne peut
+            // donc pas être expliqué : on refuse de démarrer plutôt que d'hériter en silence.
+            //
+            // Pourquoi conditionner à la PRÉSENCE de la configuration : un exploitant qui retire
+            // les identifiants d'amorçage de l'environnement après le premier démarrage (hygiène
+            // souhaitable) ne doit pas provoquer un échec au redémarrage suivant. Ce chemin-là
+            // est couvert par le critère d'entrée de la Story 11-3 : la production part d'une
+            // base VIDE.
+            //
+            // DURÉE DE VIE : à revoir en Story 7-2, qui rendra l'octroi d'ADMIN possible depuis
+            // le back-office — un second ADMIN deviendra alors légitime et cette garde, fausse.
+            if (prodProfile && users.existsByRoleAndEmailNot(Role.ADMIN, normalized)) {
+                throw new IllegalStateException(
+                        "Un compte ADMIN autre que " + normalized + " existe déjà en base : "
+                        + "provenance inexplicable en production (base antérieure à la Story 1.1, "
+                        + "où le rôle était auto-attribuable ?). Démarrage refusé — vérifier la base "
+                        + "avant de la servir.");
+            }
+
             if (users.existsByRole(Role.ADMIN)) {
                 return; // idempotent : un ADMIN existe déjà
             }
-            String normalized = email.trim().toLowerCase();
             if (users.existsByEmail(normalized)) {
                 log.warn("Amorçage ADMIN ignoré : l'email {} existe déjà avec un autre rôle", normalized);
                 return;

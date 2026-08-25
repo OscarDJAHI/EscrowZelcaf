@@ -1,5 +1,5 @@
 # generated: 2026-07-24
-# last_updated: 2026-07-24 (sprint planning production — depuis epics.md re-dérivé, 11 epics / 64 stories)
+# last_updated: 2026-07-28 (rétrospective Epic 1 — epic-1 done, 8 action items enregistrés)
 # project: Escrow_claude (Production)
 # project_key: NOKEY
 # tracking_system: file-system
@@ -74,7 +74,8 @@
 # Epics 6-7-8 → Epics 9-10 → Epic 11 en continu (11-9 avant production).
 
 generated: 2026-07-24
-last_updated: "2026-07-24 (Story 11-1 créée ready-for-dev — piste zéro ouverte, epic-11 in-progress)"
+last_updated: "2026-08-14 (Story 11-4 : T0→T6 LIVRÉS. T5 = canal d'alerte Alertmanager→SMTP→Mailpit prouvé de bout en bout (FIRING puis RESOLVED reçus), 4 règles minimales, harnais promtool 14 cas hors Maven. T6 = jauge AD-16 par injection de dépendance, NaN au repos, aucun endpoint ajouté — C'EST LA TÂCHE QUI DÉBLOQUE L'EPIC 4. Le harnais promtool a démasqué que `NaN != 0` est VRAI en PromQL : la règle critique serait partie tous les jours sans circuit financier. Trois câblages muets corrigés en chemin (healthcheck sur le mauvais port depuis T1, rule_files sans motif, image backend périmée). 528 tests, CI verte. Reste T7/T8. ⚠️ Story 2-7 toujours en review NON LANCÉE — bloque 2-4/2-5/2-6.)"
+previous_updates: "2026-08-11 (Story 2-7 COMPLÈTE et passée en review : T0→T11, AC1→AC7, 12 commits, 550 tests / 43 fichiers — +123 depuis l'ouverture. Décision D-F tranchée en cours de route. Trois défauts ANTÉRIEURS corrigés en chemin (focus AppButton 2-2, harnais appShell contaminé, AuthView sans `<main>` 2-3) et trois entrées au registre. ⚠️ Story 2-4 reste en pause : ses T6/T8 ne doivent PAS être écrits avant que la revue de 2-7 ait figé la politique de session — c'est le motif même du réordonnancement du 2026-08-10. La seule story vraiment indépendante à ce stade est 11-4.)"
 project: Escrow_claude (Production)
 project_key: NOKEY
 tracking_system: file-system
@@ -82,32 +83,37 @@ story_location: "{project-root}/_bmad-output/implementation-artifacts"
 
 development_status:
   # Epic 1 — Sécurité & protection des données (hérité, en cours)
-  epic-1: in-progress
+  epic-1: done # 10/10 stories, rétro 2026-07-27 (epic-1-retro-2026-07-27.md)
   1-1-role-admin-non-auto-attribuable: done # fichier story: 1-1-retirer-auto-attribution-role-admin.md (commit 204def7)
-  1-2-externalisation-des-secrets: backlog
-  1-3-anti-bruteforce-authentification: backlog
-  1-4-tls-bout-en-bout-entetes-securite: backlog
-  1-5-cors-allowlist-swagger-ferme-production: backlog
-  1-6-politique-mots-de-passe-revocation-jwt: backlog
-  1-7-chiffrement-au-repos: backlog
-  1-8-scan-anti-malware-ingestion: backlog
-  1-9-hygiene-session-appareil-partage: backlog
-  1-10-anti-enumeration-ressources: backlog
-  epic-1-retrospective: optional
+  1-2-externalisation-des-secrets: done # review 2026-07-25: 12 patchs (sentinelles, JWT>=32, alignement identifiants), 247 tests, CI verte
+  1-3-anti-bruteforce-authentification: done
+  1-4-tls-bout-en-bout-entetes-securite: done
+  1-5-cors-allowlist-swagger-ferme-production: done
+  1-6-politique-mots-de-passe-revocation-jwt: done # revue 2026-07-26 : 20 correctifs (4 hauts, dont endpoints ouverts + troncature bcrypt en octets), 3 décisions tranchées, 362 tests
+  1-7-chiffrement-au-repos: done # revue 2026-07-26 : 10 correctifs (dont 1 haut, contrainte de plancher reformulée au lieu d'être supprimée), 4 reports, 403 tests backend
+  1-8-scan-anti-malware-ingestion: done # revue 2026-07-26 : 21 correctifs (dont prémisse image ClamAV inversée, route de litige non couverte, timeout d'écriture absent), 4 décisions, 5 reports, 452 tests
+  1-9-hygiene-session-appareil-partage: done # 3 passes de revue 2026-07-26 : 29 correctifs cumulés (5 hauts : drapeau hydrated menteur, purge locale après le réseau ×2, suite rouge, AuthView.vue devenu binaire), 10 reports, 11 rejets, 240 tests frontend
+  1-10-anti-enumeration-ressources: done # revue 2026-07-26 : 15 correctifs (1 haut : 7 rejets natifs Spring en 500/TRANSIENT sur une surface rejouée hors ligne), 7 reports, 4 rejets, 477 tests backend + 241 frontend ; clause « et wallets » de l'AC non livrable (aucune ressource wallet, AD-13/Epic 4) → dette portée au ledger. Revue de SUIVI 2026-07-27 close à la main : ses 3 cycles ont tous expiré (2 timeouts mur, 1 panne API), 2 patchs réels récupérés et vérifiés par mutation (Content-Type épinglé sur les 16 branches ; convention test par regex — nom qualifié et appel multiligne l'esquivaient), +1 test garde-fou. Aucun verdict de revue de suivi complet n'a jamais été rendu
+  epic-1-retrospective: done # 2026-07-27 — 8 action items, dont 2 soldés le jour même (règle de mutation, cloisonnement webhook)
 
   # Epic 2 — Onboarding & comptes d'entreprise (2-1..2-3 = fondation UI, dérogation "As a développeur" assumée)
-  epic-2: backlog
-  2-1-fondation-ui-tokens-design-i18n: backlog
-  2-2-bibliotheque-composants-base: backlog
-  2-3-layout-trois-espaces-navigation: backlog
-  2-4-inscription-otp-consentement-entreprise: backlog
+  epic-2: in-progress # ouvert le 2026-07-28 par la création de la Story 2-1
+  2-1-fondation-ui-tokens-design-i18n: done # 2026-07-28 — 3 passes de revue adversariale (sonnet), 6 commits, 305 tests frontend (241 au départ). Passe 1 : défauts du produit (démarrage bloqué si localStorage lève, AC3 non tenue, boutons non traduits, 4 angles morts des gardes). Passes 2-3 : défauts des CORRECTIFS eux-mêmes ($t(null) qui levait, distinction visuelle supprimée, correctif détruit par un git checkout -- de mon propre test de mutation, échappatoire construite par l'auditeur). Dettes tracées : PENDING_MIGRATION (6 modules) et règle d'élévation -> 2-2
+  2-2-bibliotheque-composants-base: done # 2026-07-28 — 353 tests frontend, AC1-AC5 vérifiées par audit indépendant. 2 campagnes de revue : haiku a rendu 1 couche sur 3 (mais a trouvé les try/catch gardant contre rien), sonnet 2 sur 2 (garde d'élévation aveugle au boxShadow en ligne, AppCard sans type=button donc submit, survol danger no-op). verify:no-demo tient sous 2 attaques dont l'import statique. Dette d'élévation soldée (19 ombres)
+  2-3-layout-trois-espaces-navigation: done # revue 3 couches + 3 correctifs prouvés par mutation ; dette AC5 (Lighthouse) au ledger
+  # ORDRE D'EXÉCUTION : 2-7 se place ICI, juste après 2-3 (numérotée 2.7 pour ne pas
+  # renuméroter 2-4..2-6, dont les clés sont référencées ailleurs). Décision D4 du
+  # 2026-07-28 ; ferme la faille avant que 2-4/2-5/2-6 n'empilent des parcours
+  # authentifiés, et le bouton de déconnexion a déjà sa place définitive après 2-3.
+  2-7-politique-session-appareil-partage: review # 2026-08-11 — T0→T11 LIVRÉS, AC1→AC7 TENUS, 12 commits, 550 tests / 43 fichiers (427/29 à l'ouverture, +123). Prête pour la revue de code. T8 (bouton migré dans les DEUX shells — ARBITRATOR/ADMIN n'avaient aucune sortie IHM), T9 (placement + câblage prouvés), T10 (revérification des gardes déplacées ; 2 mutations à 0 rouge ont fait RETIRER du code), T11 (4 barrières vertes). Trois défauts ANTÉRIEURS trouvés en chemin : anneau de focus absent de tous les boutons (2-2), harnais appShell.spec.ts contaminé rendant un test vert sur le mauvais écran, et AuthView sans aucun `<main>` (2-3) — les trois corrigés. Une garde creuse d'AppButton signalée au registre, NON corrigée (périmètre 2-2). ANCIEN état T0→T7 : # 2026-08-11 — T0→T7 LIVRÉS et commités, 527 tests frontend / 43 fichiers (427 au départ, +100). AC1 (jeton en sessionStorage + « rester connecté »), AC2 (inactivité 15 min, minuterie ET contrôle au démarrage), AC3 (BroadcastChannel + règle d'autorité), AC4 (attente bornée sur la révocation), AC5 (trois états du jeton — anonymous/active/incoherent — et la file offline qui les distingue) et AC6 (époque de session contre les courses de lecture A→B) TENUS. 6 décisions de spécification, dont D-F tranchée le 2026-08-11 en cours de route (veto du récepteur sur 'idle' : un onglet en arrière-plan tuait la session d'un onglet actif). Reste T8 (bouton de déconnexion migré de DashboardView vers ClientShell/DesktopShell), T9 (tests), T10 (mutations, AC7), T11 (barrières). Deux écarts NOMMÉS et non couverts : révocation serveur depuis un autre appareil (Story 2-6/NFR-P5, détectée par le 403 nu) et chemin service worker (D-E/E9). Deux trouvailles portées au registre : garde noHardcodedStrings morte sur les .ts depuis la migration TypeScript, canal d'annonces a11y du spine inexistant
+  2-4-inscription-otp-consentement-entreprise: in-progress # EN PAUSE ASSUMÉE à T6 (décision du 2026-08-10). T0→T5 et T7 faits = backend COMPLET et indépendant ; T6 (front) et T8 (tests) rouverts APRÈS 2-7, pour être écrits une seule fois contre la politique de session définitive. Blocage 1 (transport e-mail) LEVÉ le 2026-08-10 : adaptateur SMTP + Mailpit livrés (commit c3ed7f6). Restent blocage 2 (rupture contrat register, tranché en T7) et blocage 3 (notion gestionnaire -> 2.5, forme minimale assumée)
   2-5-multi-utilisateur-roles-invitations: backlog
   2-6-securite-compte-reset-2fa-totp: backlog
   epic-2-retrospective: optional
 
   # Epic 3 — Conformité KYB/AML (gate: spike 3-1 en tête d'epic)
-  epic-3: backlog
-  3-1-spike-ar-p3-fournisseur-kyb-aml: backlog # PISTE ZÉRO — spike ADR, gate de l'epic
+  epic-3: in-progress
+  3-1-spike-ar-p3-fournisseur-kyb-aml: done # ADR-AR-P3 ACCEPTÉE (ratifiée 2026-07-25): duo Smile ID + ComplyAdvantage Mesh, Ghana manuel, repli OpenSanctions — débloque 3-2..3-5
   3-2-formulaire-kyb-soumission-dossier: backlog
   3-3-file-revue-kyb-operateur: backlog
   3-4-gating-global-kyb: backlog
@@ -115,9 +121,9 @@ development_status:
   epic-3-retrospective: optional
 
   # Epic 4 — Wallet & circuit financier réel (CRITÈRE D'ENTRÉE DUR: 11-4 observabilité livrée, AD-16)
-  epic-4: backlog
-  4-1-spike-ar-p2-cantonnement-comptabilite: backlog # PISTE ZÉRO — validation plan de comptes contre partenaire bancaire
-  4-2-spike-ar-p1-choix-psp-agregateur: backlog # PISTE ZÉRO — Flutterwave vs Paystack + POC sandbox
+  epic-4: in-progress # SEULS les spikes piste zéro sont ouverts — les stories d'argent réel restent gated par 11-4 (AD-16)
+  4-1-spike-ar-p2-cantonnement-comptabilite: in-progress # ADR draft (écritures M1-M11 finales) — BLOQUÉE par l'entretien partenaire bancaire (email à envoyer)
+  4-2-spike-ar-p1-choix-psp-agregateur: in-progress # ADR pré-décision (Paystack primaire) — BLOQUÉE par création comptes sandbox (Oscard)
   4-3-grand-livre-partie-double-wallet: backlog
   4-4-depot-fonds-psp-heberge: backlog
   4-5-depot-virement-manuel-file-approbation: backlog # statuts en enums anglais, libellés i18n
@@ -178,10 +184,10 @@ development_status:
 
   # Epic 11 — Opérabilité, qualité & déploiement (piste parallèle continue)
   epic-11: in-progress
-  11-1-pipeline-ci-cd-gate-tests: ready-for-dev # PISTE ZÉRO — story créée (gate de tests d'abord, SBOM/scan ensuite) ; PRÉREQUIS: décision remote git (Task 0)
+  11-1-pipeline-ci-cd-gate-tests: done # AC1 100% clos 2026-07-25: repo public, protection posée+exportée (main dur / develop souple)
   11-2-configuration-externalisee-profils: backlog
   11-3-stack-production-durcie-hebergement: backlog # vérifier région commune aux corridors (tenabilité report AR-P5)
-  11-4-observabilite-metriques-logs-tracing: backlog # PRÉREQUIS DUR de l'ouverture de l'Epic 4 (AD-16)
+  11-4-observabilite-metriques-logs-tracing: in-progress # PRÉREQUIS DUR de l'ouverture de l'Epic 4 (AD-16). Q1→Q4 tranchées (+ 5e décision T0 : le tracing porte la corrélation). T0→T6 LIVRÉS : T1 métriques (fef3b03), T2 logs corrélés (9d88c5f), T3 trace jusqu'au stockage objet (cd6ca54), T4 tableau de bord + famille broker (49bee67), T5 canal d'alerte prouvé de bout en bout + 4 règles minimales + harnais promtool (e57066b), T6 invariant AD-16 (6050acc). 528 tests backend, 14 cas promtool, CI verte (run 31810922817). RESTE : T7 (tests et mutations — l'essentiel est déjà fait tâche par tâche, T7 devient une passe de consolidation) et T8 (barrières). ⚠️ DÉCISION D'OUVERTURE DE T5 CONSIGNÉE : la DLQ n'existe pas dans le dépôt, la règle est écrite/prouvée/INERTE avec contrat de nommage `.dlq` — la story qui créera la file doit l'honorer.
   11-5-sauvegarde-restauration-testees: backlog
   11-6-resilience-dependances-croissance-audit: backlog
   11-7-tests-e2e-offline-online-dette: backlog
@@ -190,6 +196,107 @@ development_status:
   epic-11-retrospective: optional
 
 action_items:
+  # --- Séquencement Epic 2 (2026-08-10) ---
+  - epic: 2
+    action: "DÉCISION DE SÉQUENCEMENT — 2-7 passe AVANT la fin de 2-4. La Story 2-4 avait été démarrée en enjambant la décision D4, qui plaçait 2-7 entre 2-3 et 2-4. Elle est mise en pause à T6 ; T6 (front) et T8 (tests) reprennent APRÈS 2-7."
+    owner: "Oscard"
+    status: open
+    note: >-
+      2026-08-10 : TRANCHÉE par Oscard. Le motif n'est pas la conformité au plan, c'est un
+      recouvrement de fichiers mesuré. Le jeton vit en localStorage (`TOKEN_STORAGE_KEY`,
+      api/client.ts:5) ; l'AC1 de 2-7 exige sessionStorage par défaut plus une case
+      « rester connecté ». Or les cinq fichiers que T6/T8 doivent encore écrire sont
+      exactement ceux que 2-7 réécrit : api/client.ts, stores/auth.ts, stores/session.ts,
+      views/AuthView.vue, views/VerifyEmailView.vue. Écrire T6/T8 d'abord reviendrait à
+      livrer le formulaire d'authentification et ses tests DEUX FOIS — et aucune spec
+      n'existe encore pour AuthView ni VerifyEmailView, donc rien n'est amorti.
+      Le motif n°2 de D4 (« fermer la faille avant que 2-4/2-5/2-6 n'empilent des parcours
+      authentifiés ») tient encore : le parcours de 2-4 n'est pas fini, la fenêtre se
+      refermait au moment précis où T6 serait cochée. Le motif n°1 est intact (2-3 done,
+      le bouton de déconnexion a sa place définitive).
+      Point de découpe choisi pour son coût : le backend de 2-4 (T0→T5, T7) est complet et
+      n'a aucune dépendance à la politique de session ; seule la moitié qui entre en
+      conflit reste ouverte.
+  - epic: 2
+    action: "Blocage 1 de la Story 2-4 (transport e-mail) — LEVÉ. L'« adaptateur de développement » retenu par la décision T0 du 2026-07-28 n'avait jamais été livré : le port et l'outbox existaient, mais le code d'inscription ne quittait pas le processus, rendant le parcours infinissable dans l'IHM."
+    owner: "Oscard"
+    status: done
+    note: >-
+      2026-08-10 : livré (commit c3ed7f6). SmtpEmailVerificationSender derrière le port
+      existant + collecteur Mailpit dans le compose (SMTP 1025 / UI 8025, ne relaie rien
+      vers l'extérieur). L'outbox reste écrite (AD-22) et `deliveredAt` n'est daté QUE si
+      le serveur SMTP a accepté — ce qui redonne au champ le sens que V10 lui donnait.
+      NE PRÉEMPTE PAS le spike 8.1 : SMTP est un protocole, pas un fournisseur ; le choix
+      du prestataire et la délivrabilité par corridor ZLECAf restent entiers. Le défaut du
+      CODE reste `outbox` (matchIfMissing) — seul le compose local bascule en `smtp`, un
+      déploiement muet ne livre rien. L'interdiction ferme de T0 tient : aucun endpoint de
+      lecture d'OTP n'est ajouté, le code sort par le port et se lit dans un processus
+      séparé. Preuves : 514 tests backend (507 + 7), garde d'encodage verte, circuit SMTP
+      prouvé de bout en bout (conteneur healthy, message envoyé puis relu par l'API), et
+      MUTATION du garde-fou `deliveredAt` (return retiré) faisant rougir
+      leavesDeliveredAtNullWhenTheTransportFails et lui seul (1/7), puis restauré.
+
+  # --- Rétrospective Epic 1 (2026-07-27) ---
+  - epic: 1
+    action: "Vérification par mutation OBLIGATOIRE sur tout correctif de sécurité : retirer la garde, constater le rouge, restaurer, consigner dans la spec. Trois correctifs de l'Epic 1 (1.7 CHECK trop large, 1.9 purge à moitié déplacée x2, 1.10 regex de convention contournable) étaient corrects en code et creux en preuve."
+    owner: "Oscard"
+    status: done
+    note: "2026-07-27 : règle écrite dans project-context.md (Testing Rules) avec ses trois cas fondateurs et deux gabarits."
+  - epic: 1
+    action: "Cloisonner par société les abonnements webhook : list() appelait findAll() (lecture inter-tenants) et create() prenait companyId dans le corps (canal d'exfiltration vers l'URL de l'attaquant)."
+    owner: "Oscard"
+    status: done
+    note: "2026-07-27 : findByCompanyId + companyId retiré de SubscriptionRequest + 4 tests sur un endpoint qui n'en avait aucun, vérifiés par mutation. 481 tests backend."
+  - epic: 2
+    action: "Epic 2 en mode INTERACTIF story par story, avec point de contrôle coût/diff entre chaque. Pas de run bmad-loop non surveillé : le run 1.9/1.10 a coûté ~61 M tokens/story (4x le POC) et produit 3 pannes (baseline périmée, divergence d'historique, 3 revues expirées)."
+    owner: "Oscard"
+    status: open
+  - epic: 1
+    action: "Balayer le ledger deferred-work.md : 11 entrées ouvertes jamais triées + 3 décisions en attente (spikes 4-1/4-2/3-1, email partenaire bancaire). À faire AVANT d'ouvrir l'Epic 2."
+    owner: "Oscard"
+    status: done
+    note: "2026-07-27 : fait — rapport deferred-work-sweep-2026-07-27.md. Le compte annoncé était FAUX (59 ouvertes, pas 10) : schisme de format, les sections production étant des puces sans champ status, donc invisibles au grep — y compris les 17 reports POC. Ledger normalisé (92 entrées portent désormais un statut, 55 ouvertes après triage). 6 entrées périmées closes après vérification contre le code (4 résolues par la Story 1.9, 1 par la revue de suivi 1.7, 1 mitigée). Défaut trouvé et corrigé pendant le balayage : EvidenceServiceTest.java contenait 5 octets NUL (litteral GIF en octets bruts) — 1200 lignes de test INVISIBLES a grep, meme defaut que AuthView.vue en 1.9. Partition : 6 bundles + 7 decisions humaines."
+  - epic: 11
+    action: "Bundle QUALITÉ-CI (Story 11-1) AVANT l'Epic 2 : ESLint absent, garde d'encodage/NUL en CI, classe de base Testcontainers, couplage de la suite front, et AUCUN test de composant alors que @vue/test-utils est installé depuis la 4.1 — or la Story 2-2 livre une bibliothèque de composants. Poser la barrière avant d'écrire le code qu'elle doit tenir."
+    owner: "Oscard"
+    status: done
+    note: "2026-07-28 : soldé. (1) ESLint installé (config plate, vue/flat/essential, no-await-in-loop, reportUnusedDisableDirectives en erreur), script npm run lint --max-warnings 0, gate dans le job Frontend déjà requis ; 2 défauts réels corrigés (props mort, route/useRoute morts) ; les 6 directives eslint-disable prouvées vraies par mutation dans les deux sens. (2) Garde d'encodage scripts/check-encoding.py + .gitattributes + job CI 'hygiene' ; prouvée sur 3 branches (NUL détecté, UTF-8 invalide détecté, binaire déclaré ignoré). (3) Conteneur Postgres mutualisé (PostgresTestSupport, 18 suites, -188/+39 lignes) : 484 tests verts, 2min21 contre 3min11 en local et 1min29 contre 2min21 sur le runner CI (-37%) ; a révélé et corrigé un plafond de connexions (83 erreurs, max_connections=300). (4) Suite front découplée du checkout backend (skip motivé si ../backend absent, ÉCHEC bruyant si l'autorité a bougé). (5) Deux entrées du bundle étaient PÉRIMÉES et ont été rectifiées : les tests de composant existent depuis la Story 4.4 (le harnais mount() marche ; ce qui reste est la couverture, 3/14, reroutée Epic 9), et la garde ClamAV est conditionnée à l'architecture, donc la CI amd64 exécute déjà le test pour de vrai. Check requis ajouté le 2026-07-28 sur main ET develop (app_id 15368, GitHub Actions ; endpoint required_status_checks uniquement, diff vérifié contre l'export du 2026-07-25 = 1 seul écart par branche, aucune autre protection touchée). Instantanés réexportés en branch-protection-*-2026-07-28.json. Les trois gates sont donc bloquants : Backend, Frontend (qui porte le lint) et Hygiène."
+  - epic: 2
+    action: "Bundle SESSION-PARTAGÉE (9 entrées) en tête d'Epic 2 : déconnexion non propagée aux onglets, index d'expiration Workbox, logoutUser sans timeout, courses de lecture A vers B, verrou de rejeu. Même surface que celle que l'epic réécrit."
+    owner: "Oscard"
+    status: in-progress
+    note: "2026-07-28 : TRIÉ et ROUTAGE CORRIGÉ — ce n'était pas un bundle, et sa justification était fausse. Le balayage le routait « en tête d'Epic 2, même surface que celle que l'epic réécrit » ; or epics.md dit l'inverse dans le contexte brownfield de l'epic (« Les stories étendent l'existant sans le réécrire ») et aucun AC des 6 stories ne touche le cycle de vie de session — 2-6 en est la plus proche et ne couvre que la révocation au changement de mot de passe. Les 9 entrées se partitionnent en trois familles : (a) UNE DÉCISION PRODUIT, D4, qui en commande QUATRE — tant que la politique de session n'est pas fixée, la propagation inter-onglets, la sémantique du profil illisible, le timeout de logoutUser et l'époque de session ne sont pas concevables, ce sont quatre implémentations d'une politique inexistante ; (b) TROIS entrées qui appartiennent ailleurs — index d'expiration Workbox et réponse en vol recréant le cache vont à la 11-3 / revue PWA (leurs propres évidences le disaient déjà), verrou de rejeu va à l'Epic 9 (fenêtre étroite, rejeu différé jamais perdu) ; (c) UNE entrée autonome — couverture de test du bouton de déconnexion et du câblage main.js, faisable sans attendre D4, mais à écrire AVEC la story 2-3 qui déplacera ce bouton. Faits revérifiés contre le code, aucun périmé : ttl-seconds 86400, jeton en localStorage, ni BroadcastChannel ni écouteur storage, aucun AbortController sur logoutUser, aucune expiration d'inactivité. D4 TRANCHÉE le 2026-07-28 (voir l'action item dédié). ATTERRISSAGE DÉCIDÉ le 2026-07-28 : story DÉDIÉE 2-7 (politique de session sur appareil partagé), à exécuter juste APRÈS 2-3 — numérotée 2.7 pour ne pas renuméroter 2-4..2-6. Après 2-3 le bouton de déconnexion a sa place définitive donc son test s'écrit une fois ; et la faille se ferme avant que 2-4/2-5/2-6 n'empilent des parcours authentifiés. AC rédigés dans epics.md : sessionStorage + « rester connecté », expiration d'inactivité contrôlée AUSSI au démarrage, propagation inter-onglets, attente bornée sur logoutUser, état incohérent du profil traité explicitement, époque de session contre les courses de lecture, et couverture par mutation du bouton de déconnexion et du câblage main.js."
+  - epic: 2
+    action: "DÉCISION D4 — fermer l'onglet sans se déconnecter laisse la session utilisable 24 h pour la personne suivante : mode de défaillance DOMINANT de l'appareil partagé (NFR-P8), resté entier après la Story 1.9."
+    owner: "Oscard"
+    status: done
+    note: "2026-07-28 : TRANCHÉE par Oscard — LES DEUX mesures, pas l'une ou l'autre. (1) Jeton en sessionStorage par DÉFAUT (il meurt avec l'onglet, ce qui ferme le chemin dominant à la racine) avec une option explicite « rester connecté » basculant en localStorage pour les appareils personnels ; (2) expiration d'inactivité côté client (minuterie + contrôle au démarrage), qui couvre l'utilisateur resté connecté sur son propre poste et qui s'éloigne. Motif du refus des demi-mesures : sessionStorage seul laissait ouvert le cas « connecté et je m'éloigne » ; l'inactivité seule laissait un onglet rouvert DANS la fenêtre authentifier silencieusement la personne suivante. Cette décision débloque 4 des 9 entrées du bundle SESSION-PARTAGÉE, à traiter dans la MÊME story qu'elle et non dispersées."
+  - epic: 1
+    action: "DÉCISION D1 — oracle d'énumération d'e-mails sur POST /api/v1/escrow : « No seller registered with that email » (400) se distingue d'une création réussie, donc le fichier des utilisateurs est énumérable. Même classe de défaut que tout l'Epic 1, sur une autre surface. À trancher pendant que le contexte anti-énumération est frais."
+    owner: "Oscard"
+    status: done
+    note: "2026-07-28 : TRANCHÉE — contrainte dure portée sur la Story 5-1, pas de correctif sur place. Motif : l'AC de 5-1 supprime l'oracle PAR CONSTRUCTION (un email inconnu déclenche une invitation au lieu d'un refus, donc les deux branches convergent) ; patcher l'endpoint POC aujourd'hui reviendrait à inventer une réponse indistinguable, plus son test jumeau, pour un flux réécrit deux epics plus loin. Risque borné : aucune production n'existe et la 11-3 (stack production) est au backlog. Défaut confirmé en place : EscrowService.java:69. AC d'indistinguabilité + test jumeau (gabarit AntiEnumerationIntegrationTest) AJOUTÉS aux AC de 5-1 dans epics.md, avec un encadré CONTRAINTE DURE disant que si le chemin invitation était reporté ou découpé, l'oracle devrait être fermé séparément AVANT toute mise en production."
+  - epic: 1
+    action: "DÉCISION D2 — comptes ADMIN auto-attribués AVANT la Story 1.1 : ni révoqués ni audités. Le correctif ferme la porte, il ne rattrape pas ceux qui sont déjà entrés. Migration de données à décider."
+    owner: "Oscard"
+    status: done
+    note: "2026-07-28 : TRANCHÉE, et la prémisse était partiellement fausse. Il n'existe AUCUNE production (README : déploiement cloud hors périmètre POC ; 11-3 au backlog), donc aucun compte légataire réel à révoquer et aucune migration de données à écrire. Le vrai risque est ailleurs et plus vicieux : AdminBootstrap:52 sortait EN SILENCE sur existsByRole(ADMIN), si bien que promouvoir une base de développement en production aurait conservé l'ADMIN auto-attribué ET supprimé l'amorçage légitime — l'amorçage croyant son travail fait. Ce n'est pas une migration, c'est une discipline de déploiement. Deux mesures retenues : (1) CRITÈRE D'ENTRÉE de la Story 11-3 — la production démarre sur une base VIDE ; (2) GARDE AU DÉMARRAGE LIVRÉE ce jour — en profil prod, AdminBootstrap refuse de démarrer si un ADMIN existe dont l'email n'est pas celui de la configuration (existsByRoleAndEmailNot). Bornée au profil prod pour ne pas gêner le développement, et conditionnée à la présence de la configuration pour qu'un exploitant retirant les identifiants après le premier démarrage ne casse pas les redémarrages suivants. 3 tests, dont la contre-épreuve du redémarrage légitime ; prouvée par mutation (garde neutralisée -> seul le test du scénario D2 rougit). DURÉE DE VIE : à revoir en Story 7-2, qui rendra un second ADMIN légitime."
+  - epic: 1
+    action: "Auditer les endpoints qui court-circuitent la couche service : un contrôleur qui parle directement au repository n'hérite d'aucune garde (AD-3 et consorts vivent côté service). WebhookController était le cas ; rien ne dit qu'il était le seul."
+    owner: "Oscard"
+    status: open
+  - epic: 7
+    action: "Introduire WebhookSubscriptionService pour supprimer le court-circuit contrôleur->repository plutôt que le garder au cas par cas."
+    owner: "Oscard"
+    status: open
+  - epic: 11
+    action: "Régler bmad-loop avant tout usage futur : session_timeout_min (3 revues expirées au mur de 180 min), estampille de baseline (périmée 9 min après le lancement), stratégie de commit sur branche protégée contre le force-push."
+    owner: "Oscard"
+    status: open
+  - epic: 1
+    action: "Uniformiser le nommage et le format des specs : 1-2-*.md vs spec-1-7-*.md dans le même epic, deux formats cohabitent (ancien format story / kernel SPEC), et les 5 specs au format kernel portent toutes warnings: ['oversized']."
+    owner: "Oscard"
+    status: open
   # --- Hérités du backlog production 2026-07-18 (sprint-status-production.yaml, remappés sur la numérotation 2026-07-24) ---
   - epic: 4
     action: "Scinder si besoin les stories lourdes du circuit financier (4-4 dépôt PSP, 4-7 libération/remboursement) au moment de la mise en sprint ; elles dépendent des sorties des spikes 4-1 (AR-P2) et 4-2 (AR-P1)."
@@ -202,7 +309,13 @@ action_items:
   - epic: 11
     action: "Prioriser 11-1 (pipeline CI, version lite) immédiatement : gate de tests prérequis de toutes les pistes (piste zéro)."
     owner: "Oscard"
-    status: open
+    status: done
+    note: >-
+      2026-08-11 : CLÔTURE D'UN ITEM PÉRIMÉ, pas un travail neuf. La Story 11-1 est `done`
+      depuis le 2026-07-25 (AC1 clos : dépôt public, protection de branche posée et exportée)
+      et le bundle QUALITÉ-CI qui la prolongeait est soldé depuis le 2026-07-28 (trois gates
+      bloquants : Backend, Frontend porteur du lint, Hygiène). L'item était resté ouvert par
+      simple oubli de balayage — il demandait de prioriser une story déjà livrée.
   # --- Hérités du POC Evidence Upload (sprint-status-poc-evidence-upload.yaml) ---
   - epic: 9
     action: "Triage/réconciliation des 14 reports offline ouverts du POC (Epic 4 POC) + décision durcissement vs accept — à absorber lors de l'ouverture de l'Epic 9 (offline complet) et de la Story 11-7 (dette de tests)."
@@ -221,4 +334,5 @@ action_items:
   - epic: 0
     action: "Générer project-context.md (bmad-generate-project-context) — recherché par tous les skills à chaque activation, manquant."
     owner: "Oscard"
-    status: open
+    status: done
+    note: "2026-07-25 : généré (_bmad-output/project-context.md, 58 règles) via agent."

@@ -1,71 +1,68 @@
-# Epic 1 Context: Socle — dépôt & consultation contradictoire des preuves
+# Epic 1 Context: Sécurité & protection des données
 
 <!-- Generated from planning artifacts. Regenerate with compile-epic-context if planning docs change. -->
 
 ## Goal
 
-Permettre à toute partie prenante d'une transaction (acheteur, vendeur, arbitre) d'attacher des pièces justificatives dès l'état `FUNDS_LOCKED`, puis de consulter et télécharger **toutes** les pièces du dossier — y compris celles de la partie adverse — dans une logique contradictoire tracée. La preuve est le pivot de la confiance dans un séquestre B2B transfrontalier : c'est elle qui permet à un arbitre de trancher équitablement. Cet epic porte en plus toute l'infrastructure d'ingestion (stockage objet, table `evidence_files`, port de stockage, validation du contenu, écriture d'audit, contrôle d'appartenance), car c'est ici qu'elle est requise pour la première fois ; les epics 2 à 4 s'y adossent sans la redéfinir.
+Durcir la plateforme contre les attaques et les fuites, afin que des professionnels puissent y confier de l'argent réel. C'est le lot P0 « stop-ship » du lancement commercial : tant qu'il n'est pas soldé, aucune mise en production n'est envisageable, quel que soit l'avancement fonctionnel. L'epic porte l'ensemble des exigences de sécurité transverses — secrets, anti-bruteforce, TLS et en-têtes, CORS et documentation d'API, mots de passe et révocation de session, chiffrement au repos, antivirus à l'ingestion, hygiène de session, anti-énumération — et prolonge le durcissement déjà entamé sur le rôle ADMIN. Il avance en **piste parallèle** : aucune de ses stories ne dépend du chemin critique fonctionnel, et plusieurs d'entre elles fixent des conventions que tous les epics suivants réutiliseront sans les réimplémenter.
 
 ## Stories
 
-- Story 1.1 : Fondations de stockage des preuves
-- Story 1.2 : Déposer une pièce sur une transaction
-- Story 1.3 : Consulter la liste chronologique des preuves
-- Story 1.4 : Télécharger une preuve en toute sécurité
-- Story 1.5 : Interface PWA — dépôt & liste des preuves
+- Story 1.1 : Rôle ADMIN non auto-attribuable
+- Story 1.2 : Externalisation des secrets
+- Story 1.3 : Anti-bruteforce sur l'authentification
+- Story 1.4 : TLS de bout en bout et en-têtes de sécurité
+- Story 1.5 : CORS allowlist et Swagger fermé en production
+- Story 1.6 : Politique de mots de passe et révocation JWT
+- Story 1.7 : Chiffrement au repos
+- Story 1.8 : Scan anti-malware à l'ingestion
+- Story 1.9 : Hygiène de session sur appareil partagé
+- Story 1.10 : Anti-énumération des ressources
 
 ## Requirements & Constraints
 
-**Dépôt**
-- Toute partie prenante de la transaction peut attacher 1..N pièces dès `FUNDS_LOCKED` ; un commentaire du déposant est optionnel à ce stade (il ne devient obligatoire qu'à l'ouverture d'un litige, hors epic).
-- Types acceptés : JPG, PNG, PDF **uniquement**, contrôlés sur le type réel du contenu (content-sniffing), jamais sur l'extension ou le `Content-Type` déclaré seuls ; incohérence entre les trois ⇒ rejet `400`.
-- Taille : `0 < taille ≤ 10 485 760` octets. Un fichier vide comme un fichier hors borne est rejeté `400`. La limite est **arbitrée par le service** (conteneur multipart réglé au-delà de 10 Mo, dépassement mappé vers `400`, jamais `413`/`500`).
-
-**Consultation & visibilité**
-- Visibilité contradictoire : chaque partie et l'arbitre voient **toutes** les pièces, quelle qu'en soit l'origine.
-- Liste par ordre chronologique croissant, chaque item portant déposant, type de déposant, horodatage, type MIME, taille, commentaire et statut (`ACTIVE`/`WITHDRAWN`). Une pièce retirée reste visible, jamais masquée.
-- Téléchargement du binaire original, servi uniquement après contrôle d'appartenance.
-
-**Sécurité (autorité serveur)**
-- Toute validation est serveur ; le client ne fait que du confort d'UX, il n'est jamais l'autorité.
-- Anti-IDOR : le téléchargement vérifie que la pièce appartient bien à la transaction de l'URL (`{eid}.transaction_id == {id}`) **et** que le demandeur est partie prenante ; sinon `404`/`403`.
-- Pas de nom de stockage dérivé du nom fourni (anti-path-traversal) ; le nom d'origine n'est conservé qu'en métadonnée assainie.
-- Restitution en `Content-Disposition: attachment`, jamais *inline* (anti-XSS stocké via PDF).
-- Aucun scan antivirus : risque explicitement accepté pour le POC.
-
-**Intégrité & rétention**
-- Chaque dépôt (et retrait) génère une entrée d'audit immuable, cohérente transactionnellement (ACID) avec l'opération métier.
-- Rétention illimitée : aucune purge planifiée pour le POC.
-
-**Codes de refus attendus** : `400` (type/taille/contenu invalide), `403` (non partie prenante), `409`/`400` (fenêtre de dépôt fermée / état terminal), `404`/`403` (pièce étrangère à la transaction).
+- **Preuve par test, jamais par déclaration.** Chaque durcissement doit être démontré par un test automatisé (intégration de préférence) : c'est le critère d'acceptation implicite de tout l'epic.
+- **Démarrage fail-fast** : l'absence d'une variable critique (JWT, base, stockage objet, clés HMAC) fait échouer le boot en **nommant la variable manquante**. Aucun secret en dur ne subsiste dans le code, les migrations ou la composition de conteneurs ; les valeurs historiquement exposées sont révoquées/rotées, pas seulement retirées.
+- **Anti-bruteforce** : au-delà d'un seuil de tentatives échouées depuis une même origine, réponse 429 avec backoff progressif et journalisation dans le journal d'audit. Un utilisateur légitime retrouve l'accès **sans intervention manuelle** après la fenêtre.
+- **Transport** : redirection HTTPS et HSTS au reverse-proxy ; CSP et X-Frame-Options sur toutes les réponses HTML.
+- **Surface d'API bornée en production uniquement** : origines CORS restreintes à une allowlist, documentation d'API et spec OpenAPI non servies (404/403). Les profils de développement et la CI doivent rester pleinement utilisables — le durcissement est conditionné au profil, jamais global.
+- **Mots de passe et session** : règles explicitées au rejet ; la révocation doit être **effective côté serveur** — un jeton révoqué est refusé par le backend, pas seulement oublié par le client.
+- **Chiffrement au repos** avec clés gérées hors du code, et **rotation documentée et testée** : la rotation fait partie du livrable, pas d'un plan futur.
+- **Antivirus obligatoire à l'ingestion** de tout fichier, quelle que soit sa provenance (preuve, pièce KYB, pièce de ticket) : rejet motivé et audité en cas de détection, flux normal sans dégradation sensible du temps de réponse sinon. Cette story lève formellement le risque « pas d'antivirus » accepté en phase POC.
+- **Hygiène de session** : la déconnexion vide la file offline et les stores locaux ; la file est **scopée par utilisateur** pour qu'un appareil partagé ne laisse rien fuir.
+- **Anti-énumération** : les réponses à une ressource inexistante et à une ressource appartenant à un tiers sont **indistinguables**, au minimum sur transactions, preuves et wallets.
+- Tout événement de sécurité significatif (blocage, rejet de fichier, révocation) est audité.
 
 ## Technical Decisions
 
-**Contexte brownfield.** La plateforme Spring Boot + Vue existe déjà : ratifier les conventions présentes (injection par constructeur, controllers minces, `@Transactional` porté par le service, DTOs en records avec `static from()`, enveloppe d'erreur globale existante, migrations Flyway avec `ddl-auto=none`). Aucun nouveau handler d'exception : lever les exceptions applicatives existantes. Découpage `web → service → {repository, audit, port}` ; aucune dépendance remontante.
-
-- **Port de stockage (invariant central)** — le binaire n'est manipulé qu'à travers une interface exposant `store(bytes, contentType) → storageKey` / `load(storageKey) → stream` par **clé opaque** de forme `{transaction_id}/{uuid}`, jamais dérivée du nom fourni. Implémentation POC = adaptateur MinIO (S3-compatible, AWS SDK Java v2 S3 `2.47.6`). **Aucun code hors de l'adaptateur ne connaît MinIO/S3** — c'est ce qui rendra la bascule future (S3 managé, chiffrement) indolore.
-- **Modèle de données** — table net-new `evidence_files` (migration `V2`) : transaction, déposant (nullable — un dépôt partenaire n'a pas d'utilisateur), type de déposant, société partenaire (nullable), nom d'origine, MIME, taille, clé de stockage, commentaire, statut, `created_at`, `withdrawn_at`, `withdrawn_by`. Idiomes de `V1` obligatoires (BIGSERIAL PK, TIMESTAMPTZ, FK). Index `(transaction_id, created_at)` = clé du tri chronologique. Enums en `VARCHAR` : déposant ∈ {BUYER, SELLER, ADMIN, CARRIER_PARTNER}, statut ∈ {ACTIVE, WITHDRAWN}. Contraintes de validation : `mime_type` ∈ {image/jpeg, image/png, application/pdf}, `size_bytes` ≤ 10485760.
-- **Intégrité tenue en base (migration `V3`, déjà appliquée)** — les invariants ne reposent pas sur la seule discipline applicative : `CHECK` sur `uploader_type`/`status`, `CHECK` d'attribution (`CARRIER_PARTNER` ⟺ société non-null ∧ user null ; humain ⟺ l'inverse), `CHECK` de retrait (`ACTIVE` ⟺ champs de retrait null ; `WITHDRAWN` ⟺ non-null), `UNIQUE(storage_key)`. Toute écriture de ligne (y compris Epic 2/3) doit les respecter.
-- **Fenêtre fondée sur l'état, pas sur l'événement** — dépôt/retrait autorisés **ssi** l'état ∈ {`FUNDS_LOCKED`, `SHIPPED`, `DISPUTED`} ; verrou dès {`RELEASED`, `REFUNDED`}. Jamais dérivé du dernier événement enregistré.
-- **Contrôle d'appartenance unique** — tout endpoint preuve charge d'abord la transaction et passe par le **même** contrôle « X est-il partie de Y ? » (`resolveRole`/`authorizeView` existants). Deux endpoints avec des règles d'accès divergentes = défaut.
-- **Audit dans la même transaction** — écriture via le writer d'audit unique existant en **propagation MANDATORY** (commit atomique avec l'opération métier). Payload JSONB schemaless enrichi (`action ∈ {EVIDENCE_ADDED, EVIDENCE_WITHDRAWN}`, identifiant de pièce, sha256, heure client de capture si dépôt différé). **Pas** de nouvelle colonne `action_type` : le schéma d'audit ne bouge pas.
-- **Horodatage : serveur source de vérité** — `created_at` = heure serveur à la réception, seule clé de tri. L'heure client de capture n'est conservée que dans le payload d'audit et n'ordonne jamais rien.
-- **Contrat multipart figé** — noms de champs identiques sur **tous** les points d'entrée (dépôt simple, ouverture composite, partenaire, rejeu offline) : `files[]` (1..N), `comment`, `clientCapturedAt` (ISO-8601, optionnel). Une divergence ici casserait le rejeu offline des epics ultérieurs.
-- **Endpoints de l'epic** — `POST /api/v1/escrow/{id}/evidence` (dépôt), `GET /api/v1/escrow/{id}/evidence` (liste), `GET /api/v1/escrow/{id}/evidence/{eid}/download`.
-- **Infrastructure** — service MinIO ajouté à `infra/docker-compose.yml` (volume persistant + bucket `escrow-evidence` provisionné) ; endpoint et credentials injectés via `${ENV:default}`, aucun secret en dur. Image épinglée `minio/minio:RELEASE.2025-09-07T16-13-09Z`.
-- **Preuve par test observable** — le round-trip de stockage doit être prouvé par un test automatisé (binaire restitué identique octet pour octet, via Testcontainers), pas par « ça compile ». La garde de fenêtre d'état étend le test de machine à états existant plutôt que de le contourner.
+- **Rôles plateforme = whitelist fermée** `{BUYER, SELLER, ADMIN, ARBITRATOR}`. Ni ADMIN ni ARBITRATOR ne sont attribuables à l'inscription ; ADMIN est semé par un bootstrap serveur idempotent, ARBITRATOR est octroyé/révoqué par un ADMIN via une action motivée et auditée. Le routage des trois espaces de l'interface se fonde exclusivement sur ce rôle.
+- **Trois canaux d'authentification distincts et non interchangeables** : JWT pour les utilisateurs, HMAC + nonce pour les partenaires, signature pour les webhooks du prestataire de paiement.
+- **Rate-limiting applicatif** implémenté comme filtre sur les routes d'authentification ; le reverse-proxy vient en complément, jamais en substitut.
+- **Révocation de session** : refresh tokens persistés et révocables ; déconnexion et réinitialisation de mot de passe révoquent.
+- **Secrets par variables d'environnement.** Le choix de l'outil de gestion de secrets et la rotation opérationnelle sont une décision d'architecture encore ouverte, traitée dans une story d'opérabilité distincte — ne pas la préempter ici.
+- **Périmètre du chiffrement au repos** (fixé ; ne pas l'élargir ni le réduire arbitrairement) : binaires de preuves et justificatifs KYB côté stockage objet, derrière le port de stockage existant ; coordonnées bancaires/mobile money de retrait ; résultats de screening AML ; secrets TOTP et codes de récupération (ces derniers de plus hachés) ; secrets HMAC partenaires et webhooks. Règle permanente : aucune nouvelle catégorie de donnée sensible n'est persistée sans statuer explicitement son chiffrement.
+- **Gardes centralisées, jamais recodées par endpoint** : appartenance (anti-IDOR), gating KYB/suspension, rôle interne d'entreprise. Elles s'exécutent **avant** toute opération. L'uniformisation 403/404 est une convention transverse du même rang : toute nouvelle ressource protégée s'y conforme d'office.
+- **Audit** : writer unique, écriture obligatoire dans la même transaction que l'action auditée. Horodatage serveur = source de vérité.
+- **WORM** : aucun DELETE applicatif sur preuves, justificatifs KYB, résultats de screening, messages et journaux d'audit — retrait logique uniquement, avec échéance de purge calculée.
+- **Ingestion de fichiers** : le scan antivirus s'insère dans le pipeline de validation existant (type/taille, service en `attachment`), derrière le même port de stockage, pour bénéficier automatiquement aux briques d'upload créées plus tard.
+- Conventions transverses applicables : enums et codes machine en anglais (les libellés français sont de l'affichage i18n) ; enveloppe d'erreur globale unique ; API sous `/api/v1`, endpoints d'administration sous `/api/v1/admin` ; migrations Flyway `V<n>__desc.sql`, une par story qui en a besoin.
 
 ## UX & Interaction Patterns
 
-Aucun document UX formel n'existe ; les besoins ci-dessous sont dérivés des parcours décrits dans le PRD (PWA Vue 3 / Pinia) et restent à préciser avec l'utilisateur.
-
-- **Composant de dépôt** sur l'écran de détail transaction, disponible dès `FUNDS_LOCKED`/`SHIPPED`/`DISPUTED` : sélection de fichier, aperçu type/taille, champ commentaire optionnel, soumission. Le client signale un type ou une taille invalides avant l'envoi — confort d'UX, le serveur restant l'autorité.
-- **Liste chronologique des preuves** sur ce même écran (déposant, horodatage, type, taille, statut actif/retiré), avec action « télécharger » et action « retirer » visible seulement pour le déposant de la pièce.
+- **Session expirée** : un 403 nu est traité comme une expiration de session — retour à l'écran de connexion avec **conservation de la cible** ; le cache de lecture et la file offline survivent à la ré-authentification, à distinguer de la déconnexion explicite, qui, elle, purge tout.
+- **Erreurs** : tout rejet affiche un motif **et** une action de reprise. Erreur réseau = toast avec relance et saisie conservée ; erreur serveur = carte d'erreur avec référence d'incident.
+- **Formulaires** (politique de mot de passe) : validation à la volée, erreurs sous le champ, saisie conservée.
+- **i18n** : toute chaîne visible passe par une clé EN/FR, y compris les messages de sécurité ; les codes machine renvoyés par l'API restent en anglais et pilotent le rendu.
+- Annonces d'état via le canal `aria-live` centralisé ; plancher d'accessibilité WCAG 2.2 AA.
 
 ## Cross-Story Dependencies
 
-- **Story 1.1 est bloquante pour tout le reste** : table, port de stockage et backend objet conditionnent les stories 1.2 à 1.4.
-- Story 1.2 (dépôt) établit la logique de validation, la clé opaque et l'écriture d'audit que **l'ouverture composite de l'Epic 2 doit réutiliser telle quelle** — aucune règle de validation dupliquée. La concevoir comme un service réutilisable, pas comme une méthode de controller.
-- Stories 1.3 et 1.4 dépendent de 1.2 pour exister avec des données ; 1.5 (PWA) consomme les endpoints de 1.2 et 1.3.
-- Le contrôle d'appartenance introduit ici est le point unique réutilisé par les epics 2 à 4.
-- Epics aval : Epic 2 (litige) et Epic 3 (partenaire) dépendent de cet epic pour la table, le port, la validation et l'audit ; Epic 4 (hors-ligne) en dépend via le contrat multipart figé.
+- **État à date** : 1.1, 1.2 et 1.3 sont livrées ; 1.4 est en revue ; 1.5 à 1.10 sont au backlog.
+- **Aucune dépendance amont** vers les epics fonctionnels : cet epic peut avancer en continu, en parallèle du chemin critique.
+- **1.2 → 1.7** : l'externalisation des secrets conditionne la gestion des clés de chiffrement au repos. La rotation opérationnelle et le choix d'outil sont complétés par la story d'opérabilité dédiée aux environnements et profils.
+- **1.4 et 1.5** dépendent de la configuration du reverse-proxy et des profils d'environnement ; 1.5 est complétée plus tard par la story d'opérabilité « stack durcie et hébergement ».
+- **1.6 → 2.6** : la révocation de session est le socle sur lequel s'appuie la 2FA TOTP de l'epic Onboarding.
+- **1.8** vaut pour **toutes** les briques d'upload, y compris celles créées ultérieurement (justificatifs KYB de l'epic Conformité, pièces de tickets du back-office) : la livrer tôt évite un rétrofit coûteux.
+- **1.9** touche la couche offline (file IndexedDB) partagée avec l'epic Offline — à coordonner avec la story de fondation de cette file pour éviter deux implémentations concurrentes du scoping par utilisateur.
+- **1.10** fixe une convention réutilisée dans une douzaine de stories réparties sur les autres epics ; toute ressource protégée créée ailleurs s'y aligne.
+- **Point de vigilance** : la note d'epic annonce « porte NFR-P1..P10 », mais l'exigence d'**idempotence du rejeu offline** n'est couverte par aucune story de cet epic — elle relève de la fondation de l'epic Offline, étendue au périmètre financier par l'epic Wallet. Ne pas la traiter ici.

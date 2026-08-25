@@ -665,6 +665,51 @@ So that je garde l'accès à mon compte et le protège à la hauteur des fonds q
 **Then** un écran d'erreur i18n l'indique et propose de relancer la procédure depuis le début (UX-DR28)
 **And** des tests backend prouvent l'usage unique du jeton, y compris en cas de soumissions concurrentes.
 
+### Story 2.7: Politique de session sur appareil partagé (NFR-P8)
+
+> **SÉQUENCEMENT : à exécuter juste APRÈS la Story 2.3, pas en fin d'epic.** Numérotée 2.7 pour ne pas renuméroter 2.4–2.6 (les clés de `sprint-status.yaml` et les références croisées y sont adossées), mais elle se place dans l'ordre d'exécution entre 2.3 et 2.4. Deux raisons : après 2.3 le bouton de déconnexion a sa place définitive dans le layout trois espaces, donc son test s'écrit une seule fois ; et la faille se ferme avant que 2.4/2.5/2.6 n'ajoutent des parcours authentifiés par-dessus.
+
+As a personne utilisant la plateforme depuis un poste partagé,
+I want que ma session ne survive pas à mon départ,
+So that la personne suivante ne se retrouve pas silencieusement authentifiée à ma place, avec mes transactions et mes preuves (NFR-P8).
+
+**Origine :** décision produit D4 tranchée le 2026-07-28. Le mode de défaillance DOMINANT de l'appareil partagé — fermer l'onglet sans se déconnecter — était resté entier après la Story 1.9 : `ttl-seconds: 86400`, jeton en `localStorage`, aucune expiration d'inactivité. Cette story porte la politique **et ses quatre conséquences directes**, qui sont des implémentations de cette politique et non des correctifs indépendants (ledger, ex-bundle SESSION-PARTAGÉE).
+
+**Acceptance Criteria:**
+
+**Given** un utilisateur qui se connecte sans cocher « rester connecté »
+**When** il ferme l'onglet puis qu'une autre personne rouvre l'application sur le même poste
+**Then** aucune session n'est restaurée — le jeton vit en `sessionStorage` et meurt avec l'onglet
+**And** l'option « rester connecté », explicite et non cochée par défaut, bascule le stockage en `localStorage` pour les appareils personnels.
+
+**Given** une session active laissée sans interaction
+**When** le délai d'inactivité est dépassé, que l'onglet soit resté ouvert ou que l'application soit rouverte après ce délai
+**Then** la session est terminée par le chemin existant `endSession` (purge locale complète avant l'appel réseau) et l'utilisateur est renvoyé vers l'authentification avec un motif affiché
+**And** le contrôle s'exerce aussi AU DÉMARRAGE, pas seulement par minuterie — sinon un onglet rouvert échappe à la mesure.
+
+**Given** plusieurs onglets ouverts sur le même appareil
+**When** l'utilisateur se déconnecte, ou que sa session expire, dans l'un d'eux
+**Then** les autres onglets terminent leur session sans intervention et cessent d'afficher une interface authentifiée
+**And** ni `BroadcastChannel` ni écouteur `storage` n'existant aujourd'hui, le mécanisme retenu est documenté avec sa règle d'autorité entre onglets.
+
+**Given** une déconnexion sur un réseau qui ne répond pas (portail captif, DNS suspendu)
+**When** l'utilisateur clique sur « se déconnecter »
+**Then** la navigation vers l'écran d'authentification n'attend pas indéfiniment la révocation serveur — l'attente est bornée, `keepalive` garantissant que la requête aboutit même après la navigation
+**And** l'hygiène locale reste inchangée : tout le local est purgé AVANT l'appel réseau, ordre déjà prouvé par test.
+
+**Given** un jeton présent dont le profil `escrow_user` est illisible
+**When** l'application démarre
+**Then** cet état incohérent est traité explicitement — soit le jeton est effacé, soit la file signale « session incohérente » — au lieu d'être lu comme « personne n'est connectée », ce qui fait naître des entrées hors-ligne orphelines, supprimées à la déconnexion suivante.
+
+**Given** une réponse de lecture émise pendant la session de A
+**When** elle se résout après la connexion de B
+**Then** elle est rejetée : une époque de session monotone, portée par `stores/session.js`, est capturée à l'émission et comparée à la résolution
+**And** le compteur anti-course d'`evidence` ne peut plus être rembobiné à 0 par un `$reset()` au point de rendre une réponse de A égale à la première lecture de B.
+
+**Given** la politique livrée
+**When** la suite de tests est exécutée
+**Then** chaque garde est prouvée par mutation (règle du `project-context.md`) — en particulier le test du bouton de déconnexion et du câblage de `main.js`, aujourd'hui sans aucune couverture alors que ce sont les deux seuls appelants de production des primitives de session.
+
 ## Epic 3 : Conformité KYB/AML
 
 **Goal :** L'entreprise est vérifiée (formulaire ZLECAf fixe, revue opérateur sous SLA ≤ 2 j ouvrés) et peut opérer légalement ; screening AML/sanctions à l'onboarding et en continu ; justificatifs et audit conservés ≥ 5 ans en WORM ; tant qu'elle n'est pas approuvée, la plateforme reste en consultation seule (FR-P7, FR-P8, FR-P10, FR-P30, FR-P31, FR-P33).
@@ -920,6 +965,10 @@ So that je peux engager une transaction sécurisée même avec un partenaire com
 **Given** un email de contrepartie ne correspondant à aucun compte **When** la création est confirmée **Then** une invitation par email est émise et la transaction reste « en attente d'acceptation » jusqu'à inscription + KYB approuvé de la contrepartie (FR-P29) **And** le créateur voit l'état « Invitation en attente » avec date d'expiration affichée et action « Renvoyer l'invitation » (UX-DR30).
 
 **Given** un utilisateur sans KYB approuvé **When** il tente d'accéder au wizard **Then** l'action est visible mais désactivée avec explication (FR-P31, UX-DR33) et le serveur rejette toute tentative directe d'appel API (AD-3).
+
+**Given** deux emails de contrepartie, l'un inscrit et l'autre non **When** la création est confirmée dans les deux cas **Then** les deux réponses sont INDISTINGUABLES par un appelant — même statut, même corps, mêmes en-têtes (horodatage normalisé) — et la transaction est créée dans les deux cas, l'une notifiée et l'autre en attente d'acceptation **And** un test jumeau au niveau HTTP le prouve, sur le gabarit d'`AntiEnumerationIntegrationTest` (NFR-P9, AD-10).
+
+> **CONTRAINTE DURE héritée de la décision D1 (2026-07-28) — ne pas la perdre en route.** L'endpoint POC `POST /api/v1/escrow` porte aujourd'hui un oracle d'énumération d'e-mails : `EscrowService.java:69` lève `BadRequestException("No seller registered with that email")`, réponse qui se distingue d'une création réussie. N'importe quel porteur de JWT peut donc tester l'appartenance d'une adresse au fichier des utilisateurs — la même classe de défaut que tout l'Epic 1, sur une autre surface. Il a été décidé de NE PAS le corriger sur place, précisément parce que les AC ci-dessus le suppriment par construction : un email inconnu ne produit plus un refus mais une invitation, donc les deux branches convergent. Cette story est le seul endroit où le trou se referme — **si le chemin « invitation » était reporté ou découpé, l'oracle devrait être fermé séparément avant toute mise en production.** Aucune production ne doit ouvrir avec le message de refus actuel en place.
 
 ### Story 5.2: Acceptation, demande de financement et expirations SLA amont
 

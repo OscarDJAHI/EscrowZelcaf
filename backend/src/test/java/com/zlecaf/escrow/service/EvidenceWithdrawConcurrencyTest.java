@@ -12,10 +12,15 @@ import com.zlecaf.escrow.repository.EscrowTransactionRepository;
 import com.zlecaf.escrow.repository.EvidenceFileRepository;
 import com.zlecaf.escrow.repository.UserRepository;
 import com.zlecaf.escrow.security.AuthPrincipal;
+import com.zlecaf.escrow.security.crypto.EncryptedStringConverter;
+import com.zlecaf.escrow.security.crypto.SecretCipher;
+import com.zlecaf.escrow.service.scan.MalwareScanGateway;
+import com.zlecaf.escrow.service.scan.ScanVerdict;
 import com.zlecaf.escrow.service.storage.EvidenceNotFoundException;
 import com.zlecaf.escrow.service.storage.EvidenceStorage;
 import com.zlecaf.escrow.web.ApiExceptions.ConflictException;
 import com.zlecaf.escrow.web.dto.EvidenceDtos.EvidenceDto;
+import com.zlecaf.escrow.support.PostgresTestSupport;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -28,9 +33,6 @@ import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
-import org.testcontainers.containers.PostgreSQLContainer;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.io.ByteArrayInputStream;
 import java.io.InputStream;
@@ -63,21 +65,17 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 @DataJpaTest
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
+// SecretCipher + EncryptedStringConverter : les colonnes de secrets sont converties
+// depuis la Story 1.7, Hibernate les réclame à la construction du métamodèle.
 @Import({EvidenceService.class, AuditService.class, EvidenceContentValidator.class,
-        TransactionAccess.class, EvidenceWithdrawConcurrencyTest.TestConfig.class})
-@Testcontainers
+        TransactionAccess.class, SecretCipher.class, EncryptedStringConverter.class,
+        EvidenceWithdrawConcurrencyTest.TestConfig.class})
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
 class EvidenceWithdrawConcurrencyTest {
 
-    @Container
-    static final PostgreSQLContainer<?> POSTGRES =
-            new PostgreSQLContainer<>("postgres:16-alpine");
-
     @DynamicPropertySource
     static void datasource(DynamicPropertyRegistry registry) {
-        registry.add("spring.datasource.url", POSTGRES::getJdbcUrl);
-        registry.add("spring.datasource.username", POSTGRES::getUsername);
-        registry.add("spring.datasource.password", POSTGRES::getPassword);
+        PostgresTestSupport.registerDatabase(registry, EvidenceWithdrawConcurrencyTest.class);
         registry.add("spring.flyway.enabled", () -> "true");
         // Flyway owns the schema; Hibernate must not try to create-drop it.
         registry.add("spring.jpa.hibernate.ddl-auto", () -> "none");
@@ -93,6 +91,18 @@ class EvidenceWithdrawConcurrencyTest {
         @Bean
         ObjectMapper objectMapper() {
             return new ObjectMapper();
+        }
+
+        /**
+         * Story 1.8 : {@code MalwareScanGateway} est desormais une dependance
+         * OBLIGATOIRE d'{@code EvidenceService}. Ce faux scanner rend TOUJOURS
+         * « sain » pour que cette classe continue de prouver exactement ce qu'elle
+         * prouvait — jamais en desactivant le scan, qui n'a volontairement aucun
+         * interrupteur.
+         */
+        @Bean
+        MalwareScanGateway malwareScanner() {
+            return content -> ScanVerdict.clean();
         }
     }
 

@@ -10,8 +10,32 @@ backend/target/
 .playwright-mcp/
 .claude/settings.local.json
 _bmad/config.toml.bak
+_bmad/config.user.yaml
+_bmad/config.user.toml
 
 # bmad-loop runtime state
 .bmad-loop/runs/
 .bmad-loop/cache/
 .bmad-loop/policy.toml
+# archives de runs concluis (bmad-loop archive) : etat runtime local, jamais du code.
+# Non ignorees, elles salissaient l'arbre et faisaient echouer le preflight du loop.
+.bmad-loop/archive/
+
+# Références lourdes non versionnées (maquettes + PDF ZLECAf)
+Docs/Maquettes/
+Docs/PDF/
+
+# Secrets locaux (Story 1.2) — jamais versionnés (toutes variantes, sauf l'exemple)
+.env
+*.env
+*.env.*
+!*.env.example
+
+# Identifiants de bacs à sable fournisseurs (PSP, KYB…) — JAMAIS versionnés.
+# Ajouté le 2026-08-14 : `sandbox/flutterwave` (identifiants Flutterwave sandbox)
+# se trouvait non suivi ET non ignoré à la racine, à un `git add -A` du dépôt —
+# lequel est PUBLIC depuis la Story 11.1. Le scan de secrets de la CI l'aurait
+# peut-être attrapé après coup ; une clé poussée sur un dépôt public est de toute
+# façon à considérer comme brûlée, pas comme rattrapable par un revert.
+# Le contenu doit vivre dans un gestionnaire de secrets, pas dans l'arbre de travail.
+sandbox/

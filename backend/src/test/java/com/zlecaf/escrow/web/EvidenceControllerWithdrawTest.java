@@ -5,9 +5,9 @@ import com.zlecaf.escrow.domain.Role;
 import com.zlecaf.escrow.domain.UploaderType;
 import com.zlecaf.escrow.security.AuthPrincipal;
 import com.zlecaf.escrow.service.EvidenceService;
+import com.zlecaf.escrow.web.ApiExceptions;
 import com.zlecaf.escrow.web.ApiExceptions.ConflictException;
 import com.zlecaf.escrow.web.ApiExceptions.ForbiddenException;
-import com.zlecaf.escrow.web.ApiExceptions.NotFoundException;
 import com.zlecaf.escrow.web.dto.EvidenceDtos.EvidenceDto;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -65,24 +65,53 @@ class EvidenceControllerWithdrawTest {
                 .andExpect(jsonPath("$.status").value("WITHDRAWN"));
     }
 
+    // Story 1.10 : le cas fourre-tout « not the owner / not a party » est SCINDE en
+    // deux. Il couvrait deux causes sous une seule attente, si bien que le jour ou
+    // l'une des deux a diverge — le non-partie est passe en 404 opaque, le
+    // non-proprietaire est reste en 403 — aucun test n'aurait bronche. Un test qui
+    // reste vert quand la moitie de ce qu'il decrit a change ne prouve plus rien.
+
     @Test
-    @DisplayName("403: a ForbiddenException (not the owner / not a party) maps to 403")
-    void forbiddenMapsTo403() throws Exception {
+    @DisplayName("403: the caller IS a party but not the piece's owner — an honest refusal, kept")
+    void notTheOwnerMapsTo403() throws Exception {
+        // L'exception assumee : l'appelant voit deja cette piece par GET /{id}/evidence,
+        // donc lui repondre 404 ne cacherait rien et degraderait un message legitime.
         when(service.withdraw(any(), any(), any()))
                 .thenThrow(new ForbiddenException("You can only withdraw your own evidence"));
 
         mvc.perform(post("/api/v1/escrow/{id}/evidence/{eid}/withdraw", 42L, 99L))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("FORBIDDEN"));
     }
 
     @Test
-    @DisplayName("404: a NotFoundException (unknown transaction or piece) maps to 404")
-    void notFoundMapsTo404() throws Exception {
+    @DisplayName("404: a non-party is served the SAME opaque 404 as an unknown transaction")
+    void nonPartyMapsTo404() throws Exception {
+        // Le refus d'appartenance ne passe plus par ce statut du tout : il sort par la
+        // fabrique unique, avec le code et le message d'un identifiant inconnu.
         when(service.withdraw(any(), any(), any()))
-                .thenThrow(new NotFoundException("Evidence 99 not found"));
+                .thenThrow(ApiExceptions.transactionNotFound());
 
         mvc.perform(post("/api/v1/escrow/{id}/evidence/{eid}/withdraw", 42L, 99L))
-                .andExpect(status().isNotFound());
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("TRANSACTION_NOT_FOUND"))
+                .andExpect(jsonPath("$.message").value("Transaction not found"));
+    }
+
+    @Test
+    @DisplayName("404: an unknown OR foreign piece is the opaque RESOURCE_NOT_FOUND, with no id in the message")
+    void unknownOrForeignPieceMapsTo404() throws Exception {
+        // Meme fabrique pour « piece inconnue » et « piece d'une autre transaction »
+        // (la requete scellee findByIdAndTransactionId ne les distingue pas), et plus
+        // aucun identifiant dans le message : c'est ce qui rend les deux reponses
+        // comparables litteralement plutot qu'« a identifiant pres ».
+        when(service.withdraw(any(), any(), any()))
+                .thenThrow(ApiExceptions.evidenceNotFound());
+
+        mvc.perform(post("/api/v1/escrow/{id}/evidence/{eid}/withdraw", 42L, 99L))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("RESOURCE_NOT_FOUND"))
+                .andExpect(jsonPath("$.message").value("Evidence not found"));
     }
 
     @Test

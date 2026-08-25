@@ -5,7 +5,7 @@ import com.zlecaf.escrow.domain.EvidenceStatus;
 import com.zlecaf.escrow.domain.UploaderType;
 import com.zlecaf.escrow.service.PartnerEvidenceService;
 import com.zlecaf.escrow.web.ApiExceptions.ConflictException;
-import com.zlecaf.escrow.web.ApiExceptions.ForbiddenException;
+import com.zlecaf.escrow.web.ApiExceptions;
 import com.zlecaf.escrow.web.ApiExceptions.NotFoundException;
 import com.zlecaf.escrow.web.ApiExceptions.UnauthorizedException;
 import org.junit.jupiter.api.BeforeEach;
@@ -36,7 +36,7 @@ import static org.springframework.test.web.servlet.setup.MockMvcBuilders.standal
  * {@link PartnerEvidenceService} and the {@link GlobalExceptionHandler} advice.
  * Covers what only the HTTP surface can prove — multipart binding, the four
  * required {@code X-Escrow-*} headers, EvidenceDto serialization, and the
- * service-exception → status mapping (201 / 400 / 401 / 403) in the envelope.
+ * service-exception → status mapping (201 / 400 / 401 / 404 / 409) in the envelope.
  */
 class PartnerEvidenceControllerTest {
 
@@ -87,13 +87,19 @@ class PartnerEvidenceControllerTest {
     }
 
     @Test
-    @DisplayName("403: a ForbiddenException (company not a party) maps to 403")
-    void forbiddenMapsTo403() throws Exception {
+    @DisplayName("404: a non-party company is served the SAME opaque 404 as an unknown transaction (Story 1.10)")
+    void nonPartyCompanyMapsTo404() throws Exception {
+        // L'anti-enumeration ne s'arrete pas au canal humain : une signature HMAC
+        // valide autorise a agir sur SES transactions, jamais a cartographier l'espace
+        // des identifiants de la plateforme. Meme statut, meme code, meme message que
+        // le test « transaction inconnue » juste en dessous.
         when(service.deposit(anyString(), anyString(), anyString(), anyString(), anyLong(), anyList(), any(), any()))
-                .thenThrow(new ForbiddenException("The partner company is not a party to this transaction"));
+                .thenThrow(ApiExceptions.transactionNotFound());
 
         mvc.perform(signed(multipart("/api/v1/partner/escrow/42/evidence").file(pdf())))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("TRANSACTION_NOT_FOUND"))
+                .andExpect(jsonPath("$.message").value("Transaction not found"));
     }
 
     @Test

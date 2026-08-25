@@ -7,7 +7,7 @@ import com.zlecaf.escrow.domain.UploaderType;
 import com.zlecaf.escrow.security.AuthPrincipal;
 import com.zlecaf.escrow.service.EscrowService;
 import com.zlecaf.escrow.web.ApiExceptions.ConflictException;
-import com.zlecaf.escrow.web.ApiExceptions.ForbiddenException;
+import com.zlecaf.escrow.web.ApiExceptions;
 import com.zlecaf.escrow.web.ApiExceptions.NotFoundException;
 import com.zlecaf.escrow.web.dto.EscrowDtos.DisputeOpenedDto;
 import com.zlecaf.escrow.web.dto.EscrowDtos.TransactionDto;
@@ -122,13 +122,20 @@ class EscrowControllerDisputeTest {
     }
 
     @Test
-    @DisplayName("403: a ForbiddenException (not a party) maps to 403")
-    void forbiddenMapsTo403() throws Exception {
+    @DisplayName("404: a non-party is served the SAME opaque 404 as an unknown transaction (Story 1.10)")
+    void nonPartyMapsTo404() throws Exception {
+        // Le stub leve desormais ce que le service leve reellement : la fabrique
+        // unique ApiExceptions.transactionNotFound(). Le test d'a cote (transaction
+        // inconnue) construit sa propre NotFoundException et attend le meme 404 —
+        // c'est l'egalite HTTP des deux reponses qui est prouvee de bout en bout par
+        // AntiEnumerationIntegrationTest, pas seulement le statut.
         when(service.openDispute(any(), any(), anyList(), any(), any()))
-                .thenThrow(new ForbiddenException("not a party to this transaction"));
+                .thenThrow(ApiExceptions.transactionNotFound());
 
         mvc.perform(multipart("/api/v1/escrow/42/dispute").file(pdf()).param("comment", COMMENT))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("TRANSACTION_NOT_FOUND"))
+                .andExpect(jsonPath("$.message").value("Transaction not found"));
     }
 
     // --- helpers ---

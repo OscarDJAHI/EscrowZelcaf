@@ -1,0 +1,212 @@
+{
+  "common": {
+    "back": "← Retour au tableau de bord",
+    "backPlain": "Retour au tableau de bord",
+    "cancel": "Annuler",
+    "close": "Fermer",
+    "create": "Créer",
+    "creating": "Création…",
+    "currentState": "État actuel :",
+    "download": "Télécharger",
+    "downloading": "Téléchargement…",
+    "logout": "Se déconnecter",
+    "loggingOut": "Déconnexion en cours… ({seconds} s au plus)",
+    "pleaseWait": "Veuillez patienter…",
+    "sending": "Envoi…",
+    "tryAgain": "Réessayer"
+  },
+  "language": {
+    "label": "Langue",
+    "en": "EN",
+    "fr": "FR"
+  },
+  "auth": {
+    "brand": "ZLECAf Escrow",
+    "tagline": "Le commerce B2B sécurisé à travers l'Afrique",
+    "tabLogin": "Se connecter",
+    "tabRegister": "Créer un compte",
+    "firstName": "Prénom",
+    "lastName": "Nom",
+    "role": "Rôle",
+    "roleBuyer": "Acheteur",
+    "roleSeller": "Vendeur",
+    "email": "E-mail",
+    "password": "Mot de passe",
+    "companyName": "Raison sociale",
+    "consent": "J'accepte les conditions générales et la politique de confidentialité",
+    "consentRequired": "Le consentement est obligatoire pour créer un compte.",
+    "companyRequired": "La raison sociale est obligatoire.",
+    "rememberMe": "Rester connecté sur cet appareil",
+    "sessionIdleNotice": "Votre session a pris fin après {minutes} minutes sans activité. Reconnectez-vous pour reprendre où vous en étiez."
+  },
+  "dashboard": {
+    "createFailed": "La création de la transaction a échoué.",
+    "createFirst": "Créez la première pour commencer.",
+    "empty": "Aucune transaction pour l'instant.",
+    "loading": "Chargement des transactions…",
+    "myTransactions": "Mes transactions",
+    "newTransaction": "+ Nouvelle transaction"
+  },
+  "transaction": {
+    "back": "← Retour au tableau de bord",
+    "loading": "Chargement de la transaction…",
+    "auditHistory": "Historique d'audit",
+    "evidence": "Preuves",
+    "actionFailed": "L'action a échoué. Veuillez réessayer.",
+    "noActions": "Aucune action disponible pour votre rôle à ce stade.",
+    "openDispute": "Ouvrir un litige",
+    "counterparty": "Contrepartie : {email}",
+    "reference": "Transaction n° {id}",
+    "queuedEvent": "« {event} » est en file d'attente hors ligne et sera envoyé automatiquement dès votre retour en ligne.",
+    "queuedDispute": "Ce litige et ses pièces justificatives sont en file d'attente hors ligne et seront envoyés automatiquement dès votre retour en ligne."
+  },
+  "newTransaction": {
+    "title": "Nouvelle transaction sous séquestre",
+    "sellerEmail": "E-mail du vendeur",
+    "sellerEmailPlaceholder": "vendeur@entreprise.com",
+    "amount": "Montant",
+    "currency": "Devise",
+    "description": "Description",
+    "descriptionPlaceholder": "Détail des marchandises ou du service",
+    "invalid": "Veuillez indiquer un e-mail de vendeur valide et un montant positif."
+  },
+  "evidence": {
+    "commentOptional": "Commentaire (facultatif)",
+    "downloadFailed": "Impossible de télécharger ce fichier.",
+    "empty": "Aucune preuve pour l'instant.",
+    "filesLabel": "Fichiers (JPG, PNG ou PDF, 10 Mo maximum chacun)",
+    "notePlaceholder": "Ajoutez un contexte à cette preuve",
+    "statusActive": "Active",
+    "statusWithdrawn": "Retirée",
+    "upload": "Déposer une preuve",
+    "uploadFailed": "L'envoi a échoué. Veuillez réessayer.",
+    "uploading": "Envoi…",
+    "withdraw": "Retirer",
+    "withdrawFailed": "Impossible de retirer cette preuve.",
+    "withdrawing": "Retrait…"
+  },
+  "dispute": {
+    "commentRequired": "Commentaire (obligatoire)",
+    "filesLabel": "Pièces justificatives (JPG, PNG ou PDF, 10 Mo maximum chacune)",
+    "offlineNotice": "Vous êtes hors ligne : le litige et ses pièces seront enregistrés sur cet appareil et envoyés automatiquement dès votre retour en ligne.",
+    "open": "Ouvrir un litige",
+    "openFailed": "Impossible d'ouvrir le litige. Veuillez réessayer.",
+    "opening": "Ouverture…",
+    "reasonPlaceholder": "Expliquez pourquoi vous ouvrez ce litige (10 caractères minimum)",
+    "requirements": "Ouvrir un litige exige au moins un fichier et un commentaire d'au moins 10 caractères."
+  },
+  "audit": {
+    "empty": "Aucun historique d'audit pour l'instant.",
+    "by": "Par {who}"
+  },
+  "sync": {
+    "checkTransaction": "Vérifier la transaction n° {id}",
+    "filesStillHere": "{count} pièce(s) jointe(s) sont toujours stockées sur cet appareil.",
+    "neverCreated": "Cette transaction n'a jamais été créée.",
+    "recoverFiles": "Récupérer les fichiers",
+    "refused": "{count} action(s) n'ont pas pu être synchronisées et ont été refusées par le serveur.",
+    "reviewEntry": "Examiner cette entrée"
+  },
+  "recovery": {
+    "acknowledgeAndDelete": "Prendre acte et supprimer",
+    "acknowledgeExplain": "Prendre acte la retire de cet appareil et fait disparaître le bandeau d'avertissement.",
+    "confirmDelete": "Oui, supprimer définitivement",
+    "confirmQuestion": "Confirmez-vous ?",
+    "deleteFailed": "L'entrée n'a pas pu être supprimée. Vos fichiers sont toujours sur cet appareil.",
+    "deleteWarningPlain": "Cette action retirera définitivement cette entrée de cet appareil.",
+    "deleteWarningWithFiles": "Cette action supprimera définitivement de cet appareil les {count} fichier(s) ci-dessus. Ils ne sont stockés nulle part ailleurs et seront irrécupérables. Téléchargez-les d'abord si vous en avez encore besoin.",
+    "doneWithEntry": "En avez-vous terminé avec cette entrée ?",
+    "entryGone": "Cette entrée n'existe pas, ou a déjà été traitée.",
+    "filesKept": "Vos pièces jointes, conservées sur cet appareil",
+    "loading": "Chargement de vos fichiers en attente…",
+    "neverSent": "Elles n'ont jamais été envoyées. Téléchargez-les avant de prendre acte de cette entrée.",
+    "nothingToRecover": "Rien à récupérer.",
+    "recoverFiles": "Récupérer vos fichiers",
+    "refusedSuffix": "— cette action a été refusée par le serveur et ne sera pas réessayée.",
+    "reviewEntry": "Examiner cette entrée",
+    "storageBlocked": "Vos fichiers en attente ne sont pas perdus : ils sont toujours sur cet appareil, mais le navigateur en a refusé l'accès. Cela peut arriver en navigation privée ou lorsque le stockage est bloqué.",
+    "storageUnreadable": "Le stockage de cet appareil n'a pas pu être lu.",
+    "deleteFailedWithReason": "L'entrée n'a pas pu être supprimée : {reason}"
+  },
+  "role": {
+    "SELLER": "Vendeur",
+    "BUYER": "Acheteur",
+    "ADMIN": "Administrateur"
+  },
+  "offline": {
+    "banner": "Vous êtes hors ligne. Vos actions seront enregistrées et synchronisées automatiquement dès la reconnexion",
+    "cardPending": "Synchronisation en attente",
+    "cardQueued": "En file hors ligne",
+    "queuedCount": "({count} en attente)",
+    "syncing": "Synchronisation de {count} action(s) en attente…",
+    "waiting": "{count} action(s) en attente de synchronisation."
+  },
+  "state": {
+    "INITIATED": "En attente de financement",
+    "FUNDS_LOCKED": "Fonds bloqués",
+    "SHIPPED": "Expédiée",
+    "RELEASED": "Libérée",
+    "DISPUTED": "En litige",
+    "REFUNDED": "Remboursée",
+    "NONE": "Aucun"
+  },
+  "event": {
+    "PAY_FUNDS": "Payer les fonds",
+    "SHIP_GOODS": "Marquer comme expédiée",
+    "DELIVERY_CONFIRMED": "Confirmer la livraison",
+    "OPEN_DISPUTE": "Ouvrir un litige",
+    "RESOLVE_RELEASE": "Arbitrer : libérer au vendeur",
+    "RESOLVE_REFUND": "Arbitrer : rembourser l’acheteur"
+  },
+  "wallet": {
+    "title": "Solde du portefeuille",
+    "segregated": "Adossé au compte cantonné",
+    "lastKnown": "Dernière valeur connue au {at}",
+    "deposit": "Déposer",
+    "withdraw": "Retirer"
+  },
+  "demo": {
+    "title": "Bibliothèque de composants",
+    "onePrimary": "Un seul bouton primaire par surface : il désigne l’action que l’écran attend. Deux primaires n’en désignent aucune.",
+    "noSpinner": "Jamais de spinner plein écran après la première peinture. Toute attente a une couleur et un libellé."
+  },
+  "nav": {
+    "primary": "Navigation principale",
+    "home": "Accueil",
+    "transactions": "Transactions",
+    "wallet": "Portefeuille",
+    "support": "Assistance",
+    "profile": "Profil",
+    "notifications": "Notifications (à venir)",
+    "disputeQueue": "File des litiges",
+    "decisions": "Décisions",
+    "users": "Utilisateurs",
+    "kybQueue": "File KYB",
+    "supervision": "Supervision"
+  },
+  "space": {
+    "client": "Client",
+    "arbitration": "Console d'arbitrage",
+    "admin": "Back-office"
+  },
+  "shell": {
+    "desktopOnly": "Cette surface est conçue pour un écran d'ordinateur. Sur petit écran, certaines informations ne sont pas affichées."
+  },
+  "comingSoon": {
+    "body": "Cet écran n'est pas encore disponible. Il arrivera dans une prochaine livraison."
+  },
+  "access": {
+    "deniedTitle": "Cette page n'est pas disponible",
+    "deniedBody": "Vérifiez l'adresse, ou revenez à votre écran d'accueil.",
+    "backHome": "Revenir à mon accueil"
+  },
+  "verify": {
+    "title": "Vérifiez votre adresse e-mail",
+    "intro": "Nous avons envoyé un code à 6 chiffres à {email}. Saisissez-le ci-dessous.",
+    "codeLabel": "Code à 6 chiffres",
+    "submit": "Vérifier",
+    "resend": "Renvoyer le code",
+    "resendIn": "Nouveau renvoi possible dans {seconds} s",
+    "invalid": "Ce code est incorrect ou n'est plus valable. Demandez-en un nouveau."
+  }
+}

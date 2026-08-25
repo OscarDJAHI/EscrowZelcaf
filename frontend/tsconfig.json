@@ -1,0 +1,13 @@
+{
+  // Fichier de SOLUTION : il ne type rien lui-même, il assemble trois projets qui
+  // n'ont pas les mêmes globales. La séparation reprend exactement celle qu'impose
+  // déjà `eslint.config.js` — code navigateur, tests (navigateur + Node), outillage
+  // (Node) — parce qu'une frontière tracée par le linter et ignorée par le
+  // compilateur n'est pas une frontière : `fs` resterait typé dans un composant.
+  "files": [],
+  "references": [
+    { "path": "./tsconfig.app.json" },
+    { "path": "./tsconfig.vitest.json" },
+    { "path": "./tsconfig.node.json" }
+  ]
+}

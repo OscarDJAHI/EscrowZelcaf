@@ -1,0 +1,229 @@
+import { createRouter, createWebHistory } from 'vue-router'
+import { useAuthStore } from '@/stores/auth'
+import { HOME_BY_SPACE, SPACES, resolveSpaceAccess, spaceForRole } from '@/router/spaces'
+import type { Space } from '@/router/spaces'
+
+/**
+ * `meta` DÉCLARÉ, et non deviné.
+ *
+ * <p>Vue Router type `meta` en `unknown` par défaut : `to.meta.space` se lisait donc sans
+ * que rien ne dise ce qu'on y trouve, et une route qui aurait écrit `spaces:` au pluriel
+ * — ou `public: 'true'` en chaîne — aurait désactivé sa propre garde en silence. C'est la
+ * surface de sécurité de la Story 2.3 ; elle mérite d'être déclarée.
+ */
+declare module 'vue-router' {
+  interface RouteMeta {
+    /** Route accessible sans session. */
+    public?: boolean
+    /** Espace propriétaire de la route. `null` = aucun (refus, page inconnue). */
+    space?: Space | null
+  }
+}
+
+/**
+ * Une seule application, trois espaces, une seule authentification (UX-DR20).
+ *
+ * <p>Chaque route protégée déclare `meta.space`. La garde compare cet espace à celui du
+ * rôle et sert, en cas de refus, la MÊME réponse que pour une route inconnue — voir
+ * `AccessDeniedView` et `spaces.js` pour la raison (NFR-P9).
+ */
+const routes = [
+  {
+    path: '/auth',
+    name: 'auth',
+    component: () => import('@/views/AuthView.vue'),
+    meta: { public: true },
+  },
+  // Publique PAR NÉCESSITÉ : elle sert un compte qui n'a pas encore de session — c'est même
+  // sa seule raison d'être. L'adresse voyage en paramètre de requête, jamais le code : une
+  // URL part dans l'historique, les journaux serveur et l'en-tête `Referer`.
+  {
+    path: '/verify-email',
+    name: 'verify-email',
+    component: () => import('@/views/VerifyEmailView.vue'),
+    meta: { public: true },
+  },
+
+  // --- Espace CLIENT ---------------------------------------------------------
+  {
+    path: '/',
+    name: 'dashboard',
+    component: () => import('@/views/DashboardView.vue'),
+    meta: { space: SPACES.CLIENT },
+  },
+  {
+    path: '/transactions',
+    name: 'transactions',
+    component: () => import('@/views/ComingSoonView.vue'),
+    props: { titleKey: 'nav.transactions' },
+    meta: { space: SPACES.CLIENT },
+  },
+  {
+    path: '/wallet',
+    name: 'wallet',
+    component: () => import('@/views/ComingSoonView.vue'),
+    props: { titleKey: 'nav.wallet' },
+    meta: { space: SPACES.CLIENT },
+  },
+  {
+    path: '/support',
+    name: 'support',
+    component: () => import('@/views/ComingSoonView.vue'),
+    props: { titleKey: 'nav.support' },
+    meta: { space: SPACES.CLIENT },
+  },
+  {
+    path: '/profile',
+    name: 'profile',
+    component: () => import('@/views/ComingSoonView.vue'),
+    props: { titleKey: 'nav.profile' },
+    meta: { space: SPACES.CLIENT },
+  },
+  {
+    path: '/escrow/:id',
+    name: 'escrow-detail',
+    component: () => import('@/views/TransactionDetailView.vue'),
+    props: true,
+    meta: { space: SPACES.CLIENT },
+  },
+  // No `meta.public`: routes are protected by default (see the guard below), and this
+  // one hands back the binaries of a frozen queue entry. Marking it public would
+  // be the exact inversion of what it needs.
+  {
+    path: '/recovery/:entryId',
+    name: 'recovery',
+    component: () => import('@/views/RecoveryView.vue'),
+    props: true,
+    meta: { space: SPACES.CLIENT },
+  },
+
+  // --- Espace ARBITRAGE ------------------------------------------------------
+  // Inatteignable tant que la Story 7-2 n'octroie pas le rôle ARBITRATOR (AD-21) :
+  // la porte est livrée et gardée, c'est le porteur de la clé qui manque.
+  {
+    path: '/arbitration',
+    name: 'arbitration-home',
+    component: () => import('@/views/ArbitrationHomeView.vue'),
+    meta: { space: SPACES.ARBITRATION },
+  },
+
+  // --- Espace BACK-OFFICE ----------------------------------------------------
+  {
+    path: '/admin',
+    name: 'admin-home',
+    component: () => import('@/views/AdminHomeView.vue'),
+    meta: { space: SPACES.ADMIN },
+  },
+
+  // Galerie de composants — DÉVELOPPEMENT UNIQUEMENT.
+  //
+  // Déclarée dans un spread conditionnel sur `import.meta.env.DEV`, que Vite remplace par
+  // `false` au build : le tableau est alors vide et l'import dynamique n'est jamais
+  // atteint, donc son chunk n'est pas émis. Un import STATIQUE en tête de fichier aurait
+  // embarqué la galerie dans le bundle malgré la condition — c'est le piège que la story
+  // signale, et c'est pourquoi l'import reste dynamique.
+  //
+  // La condition n'est pas une preuve : `npm run verify:no-demo` cherche la sentinelle
+  // ESCROW_COMPONENT_GALLERY_DEV_ONLY dans `dist/` et échoue si elle y est. Ce script
+  // tourne en CI juste après le build.
+  ...(import.meta.env.DEV
+    ? [
+        {
+          path: '/_components',
+          name: 'component-gallery',
+          component: () => import('@/views/ComponentGalleryView.vue'),
+          meta: { public: true },
+        },
+      ]
+    : []),
+
+  // Route inconnue : MÊME écran qu'un accès refusé.
+  //
+  // L'ancien catch-all redirigeait vers `/`. Cela révélait la différence entre « cette
+  // adresse n'existe pas » (redirection) et « elle existe mais pas pour vous » (autre
+  // chose) : exactement l'oracle d'énumération que NFR-P9 interdit et que la Story 1.10 a
+  // fermé côté API. Les deux cas servent désormais le même écran.
+  {
+    path: '/:pathMatch(.*)*',
+    name: 'not-found',
+    component: () => import('@/views/AccessDeniedView.vue'),
+    meta: { space: null },
+  },
+]
+
+const router = createRouter({
+  history: createWebHistory(),
+  routes,
+})
+
+router.beforeEach((to) => {
+  const auth = useAuthStore()
+
+  if (!to.meta.public && !auth.isAuthenticated) {
+    // UX-DR32: a deep link opened without a session must come back to its target
+    // once signed in. Omitted for the dashboard — `redirect=/` is where the sign-
+    // in screen sends people anyway, and spelling it out only makes the URL
+    // longer and the open-redirect guard's job less obvious.
+    return to.fullPath === '/' ? { name: 'auth' } : { name: 'auth', query: { redirect: to.fullPath } }
+  }
+
+  // SESSION INCOHÉRENTE : jeton valide, profil sans rôle exploitable.
+  //
+  // Ce n'est ni une absence d'authentification, ni un refus d'accès — c'est un état que
+  // le ledger de la Story 1.9 documente déjà (`escrow_user` illisible pendant que
+  // `escrow_token` survit). Le traiter comme un refus condamnerait l'écran de
+  // récupération, qui rend à l'utilisateur des fichiers n'existant NULLE PART ailleurs.
+  // On renvoie donc vers la connexion, qui répare le profil, plutôt que vers une impasse.
+  //
+  // Aucun oracle : la décision ne dépend que de l'état de l'utilisateur, jamais de la
+  // cible demandée — toutes les cibles donnent le même résultat.
+  //
+  // <p>Story 2.7 (AC5) : la MÊME notion existe désormais sous le nom `auth.sessionState`
+  // (`stores/auth.ts`), et la file hors-ligne s'en sert — elle ne l'avait pas et lisait
+  // « jeton + profil illisible » comme « personne n'est connecté ». Cette branche-ci n'a
+  // pas été récrite en `sessionState === 'incoherent'`, et ce n'est pas un oubli : elle
+  // interroge le RÔLE, parce qu'un routeur a besoin d'un espace, quand la file interroge
+  // l'IDENTIFIANT, parce qu'une entrée a besoin d'un propriétaire. Les deux prédicats se
+  // recouvrent sans coïncider — un profil lisible portant un rôle inconnu est routable
+  // « nulle part » sans être incohérent. Fusionner les deux élargirait l'un des deux en
+  // silence.
+  const space = spaceForRole(auth.user?.role)
+  if (auth.isAuthenticated && space === null) {
+    return to.name === 'auth' ? true : { name: 'auth', query: { redirect: to.fullPath } }
+  }
+
+  // `space !== null` est répété ici plutôt qu'assumé du bloc précédent. Il l'est
+  // effectivement — ce bloc-là rend la main quand l'espace est nul — mais l'invariant
+  // n'existait que dans l'enchaînement des deux `if`, où une insertion entre les deux
+  // l'aurait rompu sans bruit. Écrit, il est vérifié.
+  if (to.name === 'auth' && auth.isAuthenticated && space !== null) {
+    // Chacun chez soi : la connexion renvoie vers l'accueil de l'espace du RÔLE, et non
+    // vers un tableau de bord client que tout le monde n'a pas vocation à voir.
+    return { name: HOME_BY_SPACE[space] }
+  }
+
+  if (!to.meta.public && to.name !== 'not-found') {
+    const { allowed } = resolveSpaceAccess(auth.user?.role, to.meta.space)
+    if (!allowed) {
+      // L'URL DEMANDÉE DOIT RESTER AFFICHÉE — d'où `pathMatch`.
+      //
+      // Un simple `{ name: 'not-found' }` semble équivalent, et ne l'est pas : le
+      // catch-all vaut `/:pathMatch(.*)*`, et le résoudre sans paramètre produit `/`.
+      // L'espace interdit renvoyait donc vers `/` pendant qu'une adresse inconnue, elle,
+      // conservait la sienne. Même écran, deux URL : il suffisait de regarder la barre
+      // d'adresse pour savoir laquelle des deux cibles existait. C'est l'oracle que la
+      // Story 1.10 a fermé côté API, rouvert ici par la seule forme de la redirection.
+      // `guards.spec.js` compare les deux chemins et repasse au rouge si on l'oublie.
+      return {
+        name: 'not-found',
+        params: { pathMatch: to.path.slice(1).split('/') },
+        query: to.query,
+        hash: to.hash,
+      }
+    }
+  }
+
+  return true
+})
+
+export default router

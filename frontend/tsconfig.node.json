@@ -1,0 +1,21 @@
+{
+  // Outillage exécuté par Node : configurations Vite/Vitest et scripts de
+  // vérification. Aucun type DOM — ces fichiers ne tournent jamais dans un
+  // navigateur, et laisser `document` typé ici masquerait une vraie erreur.
+  //
+  // `eslint.config.js` et `scripts/*.mjs` restent DEHORS volontairement. Les inclure
+  // avec `allowJs` faisait échouer la compilation sur une erreur qui ne dit rien de
+  // leur qualité (TS2883) : un projet `composite` doit émettre des déclarations, donc
+  // nommer le type inféré de chaque export — et le type de la configuration ESLint
+  // n'est pas nommable depuis ici. `checkJs: false` ne l'évite pas, l'émission n'étant
+  // pas la vérification. Ces fichiers sont exécutés par des outils qui les valident
+  // eux-mêmes ; les typer aurait coûté une annotation par export pour rien.
+  "extends": "@vue/tsconfig/tsconfig.json",
+  "include": ["vite.config.ts", "vitest.config.ts"],
+  "compilerOptions": {
+    "composite": true,
+    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.node.tsbuildinfo",
+    "lib": ["ES2023"],
+    "types": ["node"]
+  }
+}

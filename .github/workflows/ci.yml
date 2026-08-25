@@ -1,0 +1,224 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main, develop]
+  push:
+    branches: [main, develop]
+  # Scan hebdomadaire : détecte les CVE publiées entre deux pushes
+  # (le job supply-chain est le seul intéressé, mais une passe complète
+  # hebdomadaire sert aussi de check de non-régression d'environnement).
+  schedule:
+    - cron: '0 6 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  TRIVY_VERSION: v0.72.0
+
+jobs:
+  # Hygiène du dépôt : barrière contre le défaut qui a mordu DEUX fois (AuthView.vue
+  # en Story 1.9, EvidenceServiceTest.java au balayage 2026-07-27). Un littéral à
+  # octets bruts rend un fichier source binaire pour git et INVISIBLE à `grep` —
+  # donc aux greps de vérification sur lesquels chaque story s'appuie comme preuve —
+  # sans casser la compilation ni rougir une seule assertion. Aucun outil ne
+  # regardait ; c'est ce job qui regarde.
+  # Job séparé et sans dépendance (ni Java ni npm) : il rend son verdict en
+  # quelques secondes, avant que les suites longues n'aient chauffé.
+  hygiene:
+    name: Hygiène (encodage / octets NUL)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: Garde d'encodage (aucun octet NUL, UTF-8 valide)
+        run: python3 scripts/check-encoding.py
+
+  backend:
+    name: Backend (Maven + Testcontainers)
+    runs-on: ubuntu-latest
+    # Relevé de 25 à 45 à la revue 1.8 : la story ajoute un conteneur clamav qui
+    # télécharge ~113 Mo de signatures avant d'écouter (l'image « _base » n'en
+    # embarque aucune, contrairement à ce qui était supposé), plus un
+    # withStartupTimeout de 5 min et une boucle de disponibilité de 3 min. Le budget
+    # de 25 min pouvait être consommé par ce seul test avant même de rendre un verdict.
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+      - name: Build & tests (Testcontainers requiert Docker, présent sur ubuntu-latest)
+        run: ./mvnw -B verify
+
+  frontend:
+    name: Frontend (Vitest + build PWA)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      # Avant les tests, délibérément : le lint rend son verdict en secondes et
+      # attrape une classe de défauts que la suite ne voit pas (le littéral à
+      # octets bruts d'AuthView.vue en Story 1.9 laissait 241 tests verts).
+      # `--max-warnings 0` : un avertissement toléré est un avertissement qui
+      # s'accumule — le dépôt en portait déjà six sous forme de directives
+      # `eslint-disable` qu'aucun analyseur ne lisait.
+      - run: npm run lint
+      # Après le lint, avant les tests : `vue-tsc` attrape une classe de défauts que
+      # ni l'un ni les autres ne voient — un champ lu sur une forme que le serveur
+      # n'envoie pas, une fixture amputée d'un champ requis. La migration en a
+      # trouvé plusieurs sur des suites entièrement vertes.
+      # NB : `npm run build` le relance (le script en dépend) ; le garder ici sert à
+      # rendre le verdict en secondes plutôt qu'après un build complet.
+      - run: npm run type-check
+      - run: npm run test
+      - run: npm run build
+      # APRÈS le build, forcément : ce contrôle lit `dist/`. Il vérifie que la galerie de
+      # composants (route de développement) n'est dans aucun artefact de production — par
+      # son nom de chunk ET par un marqueur rendu. Une première version cherchait une
+      # chaîne vivant dans un commentaire, que la minification supprime : elle passait
+      # donc TOUJOURS, y compris quand la galerie était bel et bien dans le bundle.
+      - run: npm run verify:no-demo
+      # Également après le build : manifeste PWA, icônes (présence ET dimensions réelles,
+      # une taille déclarée n'étant pas une taille vérifiée), couleurs recopiées depuis
+      # les tokens, service worker émis avec le shell pré-caché.
+      # PORTÉE ASSUMÉE : ce n'est PAS l'audit Lighthouse que l'AC de la Story 2.3
+      # demande — ni HTTPS, ni portée à l'exécution, ni performances. C'est ce qui tient
+      # en CI sans Chromium, et cela couvre les pannes qui rendent l'app non installable.
+      - run: npm run verify:pwa
+
+  # Chaîne d'approvisionnement (AC2) : SBOM + scans de vulnérabilités et de
+  # secrets. HORS des required status checks (statut advisory documenté au
+  # README) tant que le triage des findings est jeune ; le cron hebdomadaire
+  # garantit qu'un rouge finit par être vu même sans push.
+  # Les 4 scans tournent TOUS (continue-on-error) puis un gate final agrège —
+  # un échec backend ne masque plus les findings frontend/images.
+  supply-chain:
+    name: SBOM + scan vulnérabilités (Trivy CRITICAL/HIGH)
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: '24'
+
+      # Cache de la DB de vulnérabilités : évite 6 téléchargements ghcr.io
+      # par run (TOOMANYREQUESTS fréquent sur runners partagés).
+      - name: Cache DB Trivy
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: ~/.cache/trivy
+          key: trivy-db-${{ github.run_id }}
+          restore-keys: |
+            trivy-db-
+
+      # Version épinglée (reproductibilité des findings) ; script d'install
+      # tiré du TAG correspondant, pas de main.
+      - name: Installer Trivy ${{ env.TRIVY_VERSION }}
+        run: curl -sfL "https://raw.githubusercontent.com/aquasecurity/trivy/${TRIVY_VERSION}/contrib/install.sh" | sh -s -- -b /usr/local/bin "${TRIVY_VERSION}"
+
+      # Scan de secrets sur le dépôt (0 bruit vérifié au triage 2026-07-25).
+      # --skip-files backend/pom.xml : l'analyseur pom de trivy résout l'arbre
+      # via Maven Central et se fait rate-limiter (429) — les dépendances
+      # backend sont couvertes par le scan SBOM ci-dessous.
+      - name: Scan secrets du dépôt
+        id: scan_secrets
+        continue-on-error: true
+        run: trivy fs --scanners secret --exit-code 1 --skip-files backend/pom.xml --skip-dirs frontend/node_modules,frontend/dist .
+
+      - name: SBOM backend (CycloneDX Maven)
+        working-directory: backend
+        run: ./mvnw -B -DskipTests cyclonedx:makeAggregateBom && cp target/bom.json ../sbom-backend.cdx.json
+
+      # SBOM sur l'arbre installé (npm ci) : complet et cohérent avec la
+      # surface scannée — le mode --package-lock-only échoue en ESBOMPROBLEMS
+      # sur les deps bundled de @tailwindcss/oxide-wasm32-wasi.
+      - name: SBOM frontend (npm sbom CycloneDX)
+        working-directory: frontend
+        run: npm ci --ignore-scripts && npm sbom --sbom-format cyclonedx > ../sbom-frontend.cdx.json
+
+      - name: Build image backend
+        run: docker build -t escrow-backend:ci backend
+      - name: Build image frontend
+        run: docker build -t escrow-frontend:ci frontend
+
+      - name: SBOM des images (Trivy CycloneDX)
+        run: |
+          trivy image --format cyclonedx --output sbom-image-backend.cdx.json escrow-backend:ci
+          trivy image --format cyclonedx --output sbom-image-frontend.cdx.json escrow-frontend:ci
+
+      - name: Archiver les SBOM
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: sbom
+          path: sbom-*.cdx.json
+          if-no-files-found: error
+
+      # Backend scanné via son SBOM (versions résolues, pas d'appels Maven
+      # Central — trivy fs sur un pom.xml se fait rate-limiter en 429).
+      # Ignorefile scopé backend UNIQUEMENT (exemptions datées avec exp:).
+      - name: Scan dépendances backend
+        id: scan_backend_deps
+        continue-on-error: true
+        run: trivy sbom --severity CRITICAL,HIGH --exit-code 1 --ignorefile .trivyignore-backend sbom-backend.cdx.json
+
+      # Frontend et images : AUCUNE exemption (toute nouvelle CVE doit être
+      # triée explicitement, pas absorbée par les exemptions backend).
+      - name: Scan dépendances frontend
+        id: scan_frontend_deps
+        continue-on-error: true
+        run: trivy fs --scanners vuln --severity CRITICAL,HIGH --exit-code 1 frontend
+
+      # L'image backend embarque le JAR Boot 3.3.5 : les exemptions backend
+      # (mêmes CVE, même source, même purge 11.9) s'appliquent aussi ici.
+      - name: Scan image backend
+        id: scan_backend_img
+        continue-on-error: true
+        run: trivy image --severity CRITICAL,HIGH --exit-code 1 --ignorefile .trivyignore-backend escrow-backend:ci
+
+      - name: Scan image frontend
+        id: scan_frontend_img
+        continue-on-error: true
+        run: trivy image --severity CRITICAL,HIGH --exit-code 1 escrow-frontend:ci
+
+      - name: Gate agrégé des scans
+        run: |
+          echo "secrets:          ${{ steps.scan_secrets.outcome }}"
+          echo "deps backend:     ${{ steps.scan_backend_deps.outcome }}"
+          echo "deps frontend:    ${{ steps.scan_frontend_deps.outcome }}"
+          echo "image backend:    ${{ steps.scan_backend_img.outcome }}"
+          echo "image frontend:   ${{ steps.scan_frontend_img.outcome }}"
+          if [ "${{ steps.scan_secrets.outcome }}" != "success" ] || \
+             [ "${{ steps.scan_backend_deps.outcome }}" != "success" ] || \
+             [ "${{ steps.scan_frontend_deps.outcome }}" != "success" ] || \
+             [ "${{ steps.scan_backend_img.outcome }}" != "success" ] || \
+             [ "${{ steps.scan_frontend_img.outcome }}" != "success" ]; then
+            echo "::error::Au moins un scan a des findings non exemptés — voir les steps ci-dessus."
+            exit 1
+          fi

@@ -9,7 +9,9 @@ RUN mvn -B -q clean package -DskipTests
 # --- Runtime stage ---
 FROM eclipse-temurin:21-jre-alpine
 WORKDIR /app
-RUN addgroup -S app && adduser -S app -G app
+# Correctifs sécurité OS (Story 11.1) : l'image temurin traîne derrière les
+# fixes Alpine (libexpat, p11-kit…) ; upgrade à chaque build.
+RUN apk upgrade --no-cache && addgroup -S app && adduser -S app -G app
 COPY --from=build /app/target/escrow-core-*.jar app.jar
 USER app
 EXPOSE 8080

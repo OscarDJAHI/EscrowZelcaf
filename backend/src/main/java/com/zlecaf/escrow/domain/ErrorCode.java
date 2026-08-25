@@ -51,6 +51,16 @@ public enum ErrorCode {
     /** The file itself is unacceptable: empty, off-whitelist, inconsistent type, or over the size cap. */
     EVIDENCE_INVALID(Retryability.PERMANENT),
 
+    /**
+     * L'analyse antivirus à l'ingestion a déclenché sur le fichier (Story 1.8,
+     * NFR-P7). PERMANENT, et non « transitoire le temps que les bases changent » :
+     * rejouer le MÊME fichier redéclenchera à l'identique, donc la file offline doit
+     * geler l'entrée et afficher le motif plutôt que la rejouer indéfiniment. Le nom
+     * de la signature reste au journal serveur et dans l'entrée d'audit — jamais
+     * dans la réponse, qui serait sinon un banc d'essai d'évasion.
+     */
+    EVIDENCE_MALWARE_DETECTED(Retryability.PERMANENT),
+
     /** Withdrawing would leave a DISPUTED transaction with no active evidence (FR-6). */
     EVIDENCE_FLOOR_VIOLATION(Retryability.PERMANENT),
 
@@ -62,10 +72,24 @@ public enum ErrorCode {
 
     // --- Access / identity ---------------------------------------------------
 
-    /** The actor (or the partner's company) is not a party to the transaction. */
-    NOT_A_PARTY(Retryability.PERMANENT),
-
-    /** The referenced transaction does not exist. */
+    /**
+     * The referenced transaction cannot be served to this caller. Deliberately
+     * opaque (Story 1.10, NFR-P9), on the model of {@link #AUTH_FAILED}: "no such
+     * transaction" and "exists but is not yours" share this one code and the one
+     * message {@code ApiExceptions.transactionNotFound()} builds. Splitting them
+     * would let any holder of a valid JWT — or of a partner HMAC key — walk the id
+     * space; the {@code code} is an oracle at the same rank as the status, so a
+     * uniform 404 carrying two codes would have changed nothing.
+     *
+     * <p>The dedicated membership-refusal code that used to sit here was
+     * <em>deleted</em>, not left unused: a constant nothing emits is what the next
+     * developer reaches for on their own protected resource. Deletion turns that
+     * mistake into a compile error, and
+     * {@code web.AntiEnumerationConventionTest} keeps both halves honest — the
+     * deleted name appears nowhere under {@code src/main}, and refusals are built
+     * only by the whitelisted factories, so the oracle cannot come back through an
+     * interpolated message either.
+     */
     TRANSACTION_NOT_FOUND(Retryability.PERMANENT),
 
     /**
@@ -75,6 +99,24 @@ public enum ErrorCode {
      * which key-ids exist and are active.
      */
     AUTH_FAILED(Retryability.PERMANENT),
+
+    /**
+     * The one and only answer to every failed e-mail verification attempt
+     * (Story 2.4, AC3). Deliberately opaque, on the model of {@link #AUTH_FAILED}:
+     * wrong code, expired code, already-consumed code, code invalidated by the
+     * attempt cap, and <em>no pending code at all</em> share this single value.
+     *
+     * <p>Splitting them would hand back exactly what the registration flow refuses
+     * to disclose. "Expired" instead of "wrong" confirms that a code was issued for
+     * this address, which is the same as confirming the address is registered — the
+     * oracle AC4 exists to close. The distinction is worthless to a legitimate user
+     * anyway: in every case the next move is to ask for a new code.
+     *
+     * <p>PERMANENT and not TRANSIENT: replaying the same code will never start
+     * working, so the offline replay queue (AD-10) must surface it rather than
+     * retry it.
+     */
+    OTP_INVALID(Retryability.PERMANENT),
 
     // --- Transient -----------------------------------------------------------
 
@@ -94,10 +136,35 @@ public enum ErrorCode {
     /** The object store is unreachable or failed; the deposit may succeed later. */
     STORAGE_UNAVAILABLE(Retryability.TRANSIENT),
 
+    /**
+     * Aucun verdict d'analyse n'a pu être obtenu : moteur injoignable, timeout,
+     * réponse incomprise (Story 1.8, NFR-P7). TRANSIENT — le fichier n'est pas en
+     * cause, le scanner l'était : la file DOIT rejouer, faute de quoi une preuve
+     * parfaitement légitime serait gelée définitivement par une panne d'infra.
+     * Symétrique de {@link #STORAGE_UNAVAILABLE}, l'autre dépendance sortante du
+     * dépôt.
+     */
+    SCAN_UNAVAILABLE(Retryability.TRANSIENT),
+
+    /**
+     * Anti-bruteforce (Story 1.3, NFR-P2) : l'origine a depasse le seuil de
+     * tentatives sur /auth/login ou /auth/register. TRANSIENT — l'acces se
+     * retablit seul a l'expiration de la fenetre (Retry-After la porte).
+     */
+    RATE_LIMITED(Retryability.TRANSIENT),
+
     // --- Framework / completeness defaults ------------------------------------
 
     /** Bean-validation rejected the request body. */
     VALIDATION_ERROR(Retryability.PERMANENT),
+
+    /**
+     * Le mot de passe fourni (inscription ou changement) ne respecte pas la
+     * politique de robustesse (Story 1.6, NFR-P5). PERMANENT : rejouer le même mot
+     * de passe échouera à l'identique. Le message énumère les règles (endpoint
+     * public, PAS anti-énumération — contrairement à AUTH_FAILED).
+     */
+    WEAK_PASSWORD(Retryability.PERMANENT),
 
     /** A required multipart part, request parameter or header is absent. */
     MISSING_REQUEST_PART(Retryability.PERMANENT),
@@ -105,14 +172,29 @@ public enum ErrorCode {
     /** Default for a {@code BadRequestException} raised without an explicit code. */
     INVALID_REQUEST(Retryability.PERMANENT),
 
-    /** Default for a {@code NotFoundException} raised without an explicit code. */
+    /**
+     * Default for a {@code NotFoundException} raised without an explicit code —
+     * and, since Story 1.10, the opaque answer at sub-resource level: an unknown
+     * evidence piece, a piece belonging to another transaction and a piece whose
+     * binary is missing from the object store are all
+     * {@code ApiExceptions.evidenceNotFound()}. Same reasoning as
+     * {@link #TRANSACTION_NOT_FOUND}, one level down.
+     */
     RESOURCE_NOT_FOUND(Retryability.PERMANENT),
 
     /** Default for a {@code ConflictException} raised without an explicit code. */
     CONFLICT(Retryability.PERMANENT),
 
     /** Default for a {@code ForbiddenException} raised without an explicit code. */
-    FORBIDDEN(Retryability.PERMANENT);
+    FORBIDDEN(Retryability.PERMANENT),
+
+    /**
+     * Défaut du filet de sécurité : une exception non prévue a atteint
+     * {@code GlobalExceptionHandler} (revue 1.6). TRANSIENT — un défaut interne est
+     * par nature circonstanciel (panne de base, indisponibilité passagère), et le
+     * client a raison de réessayer plus tard plutôt que d'abandonner la requête.
+     */
+    INTERNAL_ERROR(Retryability.TRANSIENT);
 
     /** Whether replaying the identical request could plausibly succeed later. */
     public enum Retryability {

@@ -1,4 +1,5 @@
-<script setup>
+<script setup lang="ts">
+import { OFFLINE_CLASSES, SYNCING_CLASSES } from '@/utils/stateMachine'
 import { computed } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useOfflineQueueStore } from '@/stores/offlineQueue'
@@ -13,13 +14,13 @@ const visible = computed(() => !isOnline.value || pendingCount.value > 0)
   <div
     v-if="visible"
     class="w-full px-4 py-2 text-center text-xs font-medium sm:text-sm"
-    :class="isOnline ? 'bg-amber-100 text-amber-800' : 'bg-red-100 text-red-800'"
+    :class="isOnline ? SYNCING_CLASSES.badge : OFFLINE_CLASSES.badge"
   >
     <span v-if="!isOnline">
-      You're offline. Actions will be saved and synced automatically once you reconnect
-      <span v-if="pendingCount > 0"> ({{ pendingCount }} queued)</span>.
+      {{ $t('offline.banner') }}
+      <span v-if="pendingCount > 0"> {{ $t('offline.queuedCount', { count: pendingCount }) }}</span>.
     </span>
-    <span v-else-if="flushing">Syncing {{ pendingCount }} queued action(s)…</span>
-    <span v-else>{{ pendingCount }} action(s) queued, waiting to sync.</span>
+    <span v-else-if="flushing">{{ $t('offline.syncing', { count: pendingCount }) }}</span>
+    <span v-else>{{ $t('offline.waiting', { count: pendingCount }) }}</span>
   </div>
 </template>

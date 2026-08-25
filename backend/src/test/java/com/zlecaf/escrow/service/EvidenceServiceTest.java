@@ -3,6 +3,7 @@ package com.zlecaf.escrow.service;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.zlecaf.escrow.domain.AuditLog;
+import com.zlecaf.escrow.domain.ErrorCode;
 import com.zlecaf.escrow.domain.EscrowState;
 import com.zlecaf.escrow.domain.EscrowTransaction;
 import com.zlecaf.escrow.domain.EvidenceFile;
@@ -13,6 +14,11 @@ import com.zlecaf.escrow.domain.User;
 import com.zlecaf.escrow.repository.AuditLogRepository;
 import com.zlecaf.escrow.repository.EvidenceFileRepository;
 import com.zlecaf.escrow.security.AuthPrincipal;
+import com.zlecaf.escrow.security.crypto.EncryptedStringConverter;
+import com.zlecaf.escrow.security.crypto.SecretCipher;
+import com.zlecaf.escrow.service.scan.MalwareScanUnavailableException;
+import com.zlecaf.escrow.service.scan.MalwareScanGateway;
+import com.zlecaf.escrow.service.scan.ScanVerdict;
 import com.zlecaf.escrow.service.storage.EvidenceNotFoundException;
 import com.zlecaf.escrow.service.storage.EvidenceStorage;
 import com.zlecaf.escrow.web.ApiExceptions.ConflictException;
@@ -20,6 +26,7 @@ import com.zlecaf.escrow.web.ApiExceptions.ForbiddenException;
 import com.zlecaf.escrow.web.ApiExceptions.BadRequestException;
 import com.zlecaf.escrow.web.ApiExceptions.NotFoundException;
 import com.zlecaf.escrow.web.dto.EvidenceDtos.EvidenceDto;
+import com.zlecaf.escrow.support.PostgresTestSupport;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -36,9 +43,6 @@ import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.web.multipart.MultipartFile;
-import org.testcontainers.containers.PostgreSQLContainer;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.io.ByteArrayInputStream;
 import java.io.InputStream;
@@ -64,20 +68,16 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  */
 @DataJpaTest
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
+// SecretCipher + EncryptedStringConverter : les colonnes de secrets sont converties
+// depuis la Story 1.7, Hibernate les réclame à la construction du métamodèle.
 @Import({EvidenceService.class, AuditService.class, EvidenceContentValidator.class,
-        TransactionAccess.class, EvidenceServiceTest.TestConfig.class})
-@Testcontainers
+        TransactionAccess.class, SecretCipher.class, EncryptedStringConverter.class,
+        EvidenceServiceTest.TestConfig.class})
 class EvidenceServiceTest {
-
-    @Container
-    static final PostgreSQLContainer<?> POSTGRES =
-            new PostgreSQLContainer<>("postgres:16-alpine");
 
     @DynamicPropertySource
     static void datasource(DynamicPropertyRegistry registry) {
-        registry.add("spring.datasource.url", POSTGRES::getJdbcUrl);
-        registry.add("spring.datasource.username", POSTGRES::getUsername);
-        registry.add("spring.datasource.password", POSTGRES::getPassword);
+        PostgresTestSupport.registerDatabase(registry, EvidenceServiceTest.class);
         registry.add("spring.flyway.enabled", () -> "true");
         // Flyway owns the schema; Hibernate must not try to create-drop it.
         registry.add("spring.jpa.hibernate.ddl-auto", () -> "none");
@@ -91,8 +91,45 @@ class EvidenceServiceTest {
         }
 
         @Bean
+        MalwareScanGateway malwareScanner() {
+            return new ProgrammableMalwareScanGateway();
+        }
+
+        @Bean
         ObjectMapper objectMapper() {
             return new ObjectMapper();
+        }
+    }
+
+    /**
+     * Faux {@link MalwareScanGateway} programmable (Story 1.8). « Sain » par défaut pour
+     * que tout ce que cette classe prouvait déjà reste prouvé ; les cas de rejet et
+     * d'indisponibilité sont armés test par test.
+     *
+     * <p>Il compte ses appels : c'est le seul moyen de prouver l'ORDRE des gardes —
+     * qu'un fichier de 12 Mo ou un GIF déguisé en {@code .pdf} est refusé <em>sans
+     * jamais</em> atteindre le moteur. Un test qui vérifierait seulement le code
+     * d'erreur passerait tout aussi bien si le scan tournait d'abord.
+     */
+    static class ProgrammableMalwareScanGateway implements MalwareScanGateway {
+        /** Nombre d'octets exact des contenus à déclarer infectés (identité par taille + hash suffirait ; la taille suffit ici). */
+        volatile java.util.function.Predicate<byte[]> infectedWhen = content -> false;
+        volatile boolean unavailable = false;
+        final java.util.concurrent.atomic.AtomicInteger calls = new java.util.concurrent.atomic.AtomicInteger();
+
+        @Override
+        public ScanVerdict scan(byte[] content) {
+            calls.incrementAndGet();
+            if (unavailable) {
+                throw new MalwareScanUnavailableException("panne simulée");
+            }
+            return infectedWhen.test(content) ? ScanVerdict.infected("Test.Simulated-Signature") : ScanVerdict.clean();
+        }
+
+        void reset() {
+            infectedWhen = content -> false;
+            unavailable = false;
+            calls.set(0);
         }
     }
 
@@ -140,6 +177,20 @@ class EvidenceServiceTest {
     private AuditLogRepository auditLogs;
     @Autowired
     private EvidenceStorage storage;
+    @Autowired
+    private MalwareScanGateway scanner;
+
+    /**
+     * Le faux scanner et le faux stockage sont des singletons de contexte, partagés
+     * par toutes les méthodes : sans remise à zéro, un test qui arme le scanner — ou
+     * qui laisse un objet dans la carte — contaminerait les suivants. La transaction
+     * de test, elle, est rejouée à zéro par Spring ; ces deux doubles ne le sont pas.
+     */
+    @org.junit.jupiter.api.BeforeEach
+    void resetDoubles() {
+        ((ProgrammableMalwareScanGateway) scanner).reset();
+        ((InMemoryEvidenceStorage) storage).objects.clear();
+    }
 
     private static byte[] pdfBytes() {
         return ("%PDF-1.4\n1 0 obj<</Type/Catalog>>endobj\ntrailer<</Root 1 0 R>>\n%%EOF")
@@ -220,17 +271,20 @@ class EvidenceServiceTest {
     }
 
     @Test
-    @DisplayName("A non-party is rejected with ForbiddenException and writes nothing")
-    void nonPartyIsForbidden() {
+    @DisplayName("A non-party gets the SAME opaque 404 as an unknown id and writes nothing")
+    void nonPartyIsNotFound() {
         User buyer = persistUser("buyer2@example.com", Role.BUYER);
         User seller = persistUser("seller2@example.com", Role.SELLER);
         User stranger = persistUser("stranger@example.com", Role.BUYER);
         EscrowTransaction tx = persistTransaction(buyer.getId(), seller.getId(), EscrowState.FUNDS_LOCKED);
         AuthPrincipal actor = new AuthPrincipal(stranger.getId(), stranger.getEmail(), Role.BUYER);
 
+        // Story 1.10 : 404 et non 403. Le stranger ne doit pas pouvoir distinguer
+        // « cette transaction existe mais n'est pas la tienne » de « cet identifiant
+        // n'existe pas » — les deux passent par ApiExceptions.transactionNotFound().
         assertThatThrownBy(() -> evidenceService.deposit(actor, tx.getId(),
                 List.of(pdf("proof.pdf")), null, null))
-                .isInstanceOf(ForbiddenException.class);
+                .isInstanceOf(NotFoundException.class);
 
         assertThat(evidenceFiles.count()).isZero();
         assertThat(auditLogs.findByTransactionIdOrderByTimestampAsc(tx.getId())).isEmpty();
@@ -495,8 +549,8 @@ class EvidenceServiceTest {
     }
 
     @Test
-    @DisplayName("list rejects a non-party with ForbiddenException")
-    void listNonPartyIsForbidden() {
+    @DisplayName("list rejects a non-party with the SAME opaque 404 as an unknown id")
+    void listNonPartyIsNotFound() {
         User buyer = persistUser("buyerL5@example.com", Role.BUYER);
         User seller = persistUser("sellerL5@example.com", Role.SELLER);
         User stranger = persistUser("strangerL5@example.com", Role.BUYER);
@@ -504,7 +558,7 @@ class EvidenceServiceTest {
         AuthPrincipal actor = new AuthPrincipal(stranger.getId(), stranger.getEmail(), Role.BUYER);
 
         assertThatThrownBy(() -> evidenceService.list(actor, tx.getId()))
-                .isInstanceOf(ForbiddenException.class);
+                .isInstanceOf(NotFoundException.class);
     }
 
     @Test
@@ -596,8 +650,8 @@ class EvidenceServiceTest {
     }
 
     @Test
-    @DisplayName("download by a non-party is a 403, before any piece lookup")
-    void downloadNonPartyIsForbidden() {
+    @DisplayName("download by a non-party is the opaque 404, before any piece lookup")
+    void downloadNonPartyIsNotFound() {
         User buyer = persistUser("buyerD5@example.com", Role.BUYER);
         User seller = persistUser("sellerD5@example.com", Role.SELLER);
         User stranger = persistUser("strangerD5@example.com", Role.BUYER);
@@ -608,7 +662,7 @@ class EvidenceServiceTest {
                 Instant.parse("2026-07-15T10:00:00Z"));
 
         assertThatThrownBy(() -> evidenceService.download(actor, tx.getId(), piece.getId()))
-                .isInstanceOf(ForbiddenException.class);
+                .isInstanceOf(NotFoundException.class);
     }
 
     @Test
@@ -705,6 +759,42 @@ class EvidenceServiceTest {
         assertThat(evidenceFiles.findById(foreign.getId()).orElseThrow().getStatus())
                 .isEqualTo(EvidenceStatus.ACTIVE);
         assertThat(auditLogs.findByTransactionIdOrderByTimestampAsc(tx.getId())).isEmpty();
+    }
+
+    @Test
+    @DisplayName("Story 1.10 : le 403 « piece a soi » ne revele rien — l'appelant VOIT deja cette piece par list()")
+    void withdrawForeignPieceStays403BecauseTheCallerAlreadySeesIt() {
+        // L'exception assumee de la Story 1.10, rendue PROUVEE plutot que declaree.
+        //
+        // L'invariant n'est pas « tout refus devient 404 », c'est « ne jamais reveler
+        // ce que l'appelant n'a pas le droit de savoir ». Le test jumeau ci-dessus
+        // prouve la premiere moitie (le refus reste un 403 honnete) ; celui-ci prouve
+        // la seconde, la seule qui rend le 403 defendable : la piece refusee est deja
+        // listee a cet appelant par GET /{id}/evidence. Repondre 404 sur une piece
+        // qu'il vient de lire ne cacherait rien et degraderait un message legitime.
+        //
+        // Sans cette seconde assertion, l'exception ne se distinguerait pas d'un oubli
+        // — et le jour ou la visibilite de list() se restreindrait aux pieces propres,
+        // le 403 deviendrait un veritable oracle sans qu'aucun test ne bronche.
+        User buyer = persistUser("buyerW3b@example.com", Role.BUYER);
+        User seller = persistUser("sellerW3b@example.com", Role.SELLER);
+        EscrowTransaction tx = persistTransaction(buyer.getId(), seller.getId(), EscrowState.FUNDS_LOCKED);
+        AuthPrincipal actor = new AuthPrincipal(buyer.getId(), buyer.getEmail(), Role.BUYER);
+
+        EvidenceFile foreign = persistActiveEvidence(tx.getId(), seller.getId(), UploaderType.SELLER,
+                Instant.parse("2026-07-15T10:00:00Z"));
+
+        // (1) Le refus reste un 403 code FORBIDDEN, et non le 404 opaque.
+        assertThatThrownBy(() -> evidenceService.withdraw(actor, tx.getId(), foreign.getId()))
+                .isInstanceOf(ForbiddenException.class)
+                .extracting(e -> ((ForbiddenException) e).getCode())
+                .isEqualTo(ErrorCode.FORBIDDEN);
+
+        // (2) ... parce que la MEME piece lui est deja visible. C'est ce qui fait que
+        // le refus honnete n'apprend rien a personne.
+        assertThat(evidenceService.list(actor, tx.getId()))
+                .extracting(EvidenceDto::id)
+                .contains(foreign.getId());
     }
 
     @Test
@@ -810,21 +900,22 @@ class EvidenceServiceTest {
     }
 
     @Test
-    @DisplayName("withdraw by a non-party (neither buyer nor seller) is a 403 and mutates nothing")
-    void withdrawByNonPartyIsForbidden() {
+    @DisplayName("withdraw by a non-party (neither buyer nor seller) is the opaque 404 and mutates nothing")
+    void withdrawByNonPartyIsNotFound() {
         User buyer = persistUser("buyerW9@example.com", Role.BUYER);
         User seller = persistUser("sellerW9@example.com", Role.SELLER);
         User stranger = persistUser("strangerW9@example.com", Role.BUYER);
         EscrowTransaction tx = persistTransaction(buyer.getId(), seller.getId(), EscrowState.FUNDS_LOCKED);
-        // A user who is party to no side of this transaction: resolveRole must 403
-        // before the own-piece guard is ever reached.
+        // A user who is party to no side of this transaction: resolveRole must answer
+        // the opaque 404 before the own-piece guard is ever reached (Story 1.10) —
+        // which is exactly what keeps that guard's honest 403 from leaking anything.
         AuthPrincipal actor = new AuthPrincipal(stranger.getId(), stranger.getEmail(), Role.BUYER);
 
         EvidenceFile piece = persistActiveEvidence(tx.getId(), buyer.getId(), UploaderType.BUYER,
                 Instant.parse("2026-07-15T10:00:00Z"));
 
         assertThatThrownBy(() -> evidenceService.withdraw(actor, tx.getId(), piece.getId()))
-                .isInstanceOf(ForbiddenException.class);
+                .isInstanceOf(NotFoundException.class);
 
         assertThat(evidenceFiles.findById(piece.getId()).orElseThrow().getStatus())
                 .isEqualTo(EvidenceStatus.ACTIVE);
@@ -1004,5 +1095,137 @@ class EvidenceServiceTest {
                 .findFirst().orElseThrow();
         assertThat(activeDto.withdrawnAt()).isNull();
         assertThat(activeDto.withdrawnByUserId()).isNull();
+    }
+
+    // --- Story 1.8: malware scan at ingestion ---
+
+    /** PDF valide portant un marqueur, pour que le faux scanner puisse cibler UN fichier d'un lot. */
+    private static byte[] markedPdfBytes(String marker) {
+        return ("%PDF-1.4\n1 0 obj<</Type/Catalog>>endobj\n% " + marker + "\ntrailer<</Root 1 0 R>>\n%%EOF")
+                .getBytes(StandardCharsets.US_ASCII);
+    }
+
+    private static MockMultipartFile markedPdf(String filename, String marker) {
+        return new MockMultipartFile("files", filename, "application/pdf", markedPdfBytes(marker));
+    }
+
+    private ProgrammableMalwareScanGateway fakeScanner() {
+        return (ProgrammableMalwareScanGateway) scanner;
+    }
+
+    private int storedObjectCount() {
+        return ((InMemoryEvidenceStorage) storage).objects.size();
+    }
+
+    @Test
+    @DisplayName("A clean deposit calls the scanner exactly once per file — the scan is really wired in")
+    void cleanDepositScansEveryFileOnce() {
+        User buyer = persistUser("buyerAV0@example.com", Role.BUYER);
+        User seller = persistUser("sellerAV0@example.com", Role.SELLER);
+        EscrowTransaction tx = persistTransaction(buyer.getId(), seller.getId(), EscrowState.FUNDS_LOCKED);
+        AuthPrincipal actor = new AuthPrincipal(buyer.getId(), buyer.getEmail(), Role.BUYER);
+
+        // Deux fichiers sains : le comportement observable est INCHANGÉ (mêmes lignes,
+        // mêmes audits) et le scan n'ajoute qu'un aller-retour par fichier, sur les
+        // octets déjà en mémoire — aucune relecture.
+        evidenceService.deposit(actor, tx.getId(),
+                List.of(pdf("a.pdf"), markedPdf("b.pdf", "SECOND")), null, null);
+
+        assertThat(fakeScanner().calls.get()).isEqualTo(2);
+        assertThat(evidenceFiles.count()).isEqualTo(2);
+        assertThat(auditLogs.findByTransactionIdOrderByTimestampAsc(tx.getId()))
+                .extracting(a -> a.getPayload().path("action").asText())
+                .containsOnly("EVIDENCE_ADDED");
+    }
+
+    // Les cas à VERDICT POSITIF (fichier infecté, lot dont un fichier est infecté,
+    // contenu du message de rejet) ne peuvent pas vivre ici : ils auditent, et
+    // `recordEvidenceRejectedByScan` est en REQUIRES_NEW. Cette classe est un slice
+    // dont la transaction de test ne commite JAMAIS, si bien que la seconde
+    // transaction ne voit pas la ligne `escrow_transactions` du test et l'INSERT
+    // d'audit échoue sur `audit_logs_transaction_id_fkey` — un artefact du harnais,
+    // pas du code. Ils sont donc dans EvidenceMalwareAuditIntegrationTest
+    // (Propagation.NOT_SUPPORTED), où les assertions portent en plus sur la vérité
+    // COMMITÉE : c'est le seul endroit où « l'audit survit au rollback » veut dire
+    // quelque chose.
+
+    @Test
+    @DisplayName("A scanner that cannot answer fails the deposit (never a silent store-without-scan)")
+    void scannerUnavailableFailsTheDeposit() {
+        User buyer = persistUser("buyerAV4@example.com", Role.BUYER);
+        User seller = persistUser("sellerAV4@example.com", Role.SELLER);
+        EscrowTransaction tx = persistTransaction(buyer.getId(), seller.getId(), EscrowState.FUNDS_LOCKED);
+        AuthPrincipal actor = new AuthPrincipal(buyer.getId(), buyer.getEmail(), Role.BUYER);
+
+        fakeScanner().unavailable = true;
+
+        // Le service laisse remonter l'exception du port ; c'est GlobalExceptionHandler
+        // qui la traduit en 502 SCAN_UNAVAILABLE (prouvé par EvidenceScanErrorMappingTest).
+        assertThatThrownBy(() -> evidenceService.deposit(actor, tx.getId(),
+                List.of(pdf("proof.pdf")), null, null))
+                .isInstanceOf(MalwareScanUnavailableException.class);
+
+        assertThat(evidenceFiles.count()).isZero();
+        assertThat(storedObjectCount()).isZero();
+        // Aucun audit : une panne de scanner n'est PAS un événement de sécurité à
+        // consigner dans une table append-only à rétention >= 5 ans.
+        assertThat(auditLogs.findByTransactionIdOrderByTimestampAsc(tx.getId())).isEmpty();
+    }
+
+    @Test
+    @DisplayName("An oversized file is refused by the cheap guard WITHOUT ever reaching the scanner")
+    void oversizedFileNeverReachesTheScanner() {
+        User buyer = persistUser("buyerAV5@example.com", Role.BUYER);
+        User seller = persistUser("sellerAV5@example.com", Role.SELLER);
+        EscrowTransaction tx = persistTransaction(buyer.getId(), seller.getId(), EscrowState.FUNDS_LOCKED);
+        AuthPrincipal actor = new AuthPrincipal(buyer.getId(), buyer.getEmail(), Role.BUYER);
+
+        byte[] tooBig = new byte[(int) (EvidenceService.MAX_FILE_SIZE + 1)];
+        MockMultipartFile file = new MockMultipartFile("files", "big.pdf", "application/pdf", tooBig);
+
+        assertThatThrownBy(() -> evidenceService.deposit(actor, tx.getId(), List.of(file), null, null))
+                .isInstanceOf(BadRequestException.class);
+
+        assertThat(fakeScanner().calls.get()).isZero();
+    }
+
+    @Test
+    @DisplayName("A GIF disguised as a .pdf is refused by Tika WITHOUT ever reaching the scanner")
+    void offWhitelistTypeNeverReachesTheScanner() {
+        User buyer = persistUser("buyerAV6@example.com", Role.BUYER);
+        User seller = persistUser("sellerAV6@example.com", Role.SELLER);
+        EscrowTransaction tx = persistTransaction(buyer.getId(), seller.getId(), EscrowState.FUNDS_LOCKED);
+        AuthPrincipal actor = new AuthPrincipal(buyer.getId(), buyer.getEmail(), Role.BUYER);
+
+        // Magic bytes GIF87a, extension et Content-Type mensongers.
+        // Ecrit en tableau d'octets et NON en litteral de chaine : la forme precedente
+        // portait les octets de controle BRUTS (0x00 compris), ce qui rendait ce fichier
+        // binaire aux yeux de git et INVISIBLE a grep (code de sortie 1, aucune ligne) —
+        // exactement le defaut trouve sur AuthView.vue a la 2e revue de suivi de la Story
+        // 1.9. Un fichier de test que grep ne voit pas echappe en silence a toutes les
+        // greps de verification des stories, y compris celles qui pretendent le couvrir.
+        byte[] gif = {'G', 'I', 'F', '8', '7', 'a', 0x01, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, ','};
+        MockMultipartFile file = new MockMultipartFile("files", "invoice.pdf", "application/pdf", gif);
+
+        assertThatThrownBy(() -> evidenceService.deposit(actor, tx.getId(), List.of(file), null, null))
+                .isInstanceOf(BadRequestException.class);
+
+        assertThat(fakeScanner().calls.get()).isZero();
+    }
+
+    @Test
+    @DisplayName("An empty file is refused before the scanner too — the cheap guards keep their precedence")
+    void emptyFileNeverReachesTheScanner() {
+        User buyer = persistUser("buyerAV7@example.com", Role.BUYER);
+        User seller = persistUser("sellerAV7@example.com", Role.SELLER);
+        EscrowTransaction tx = persistTransaction(buyer.getId(), seller.getId(), EscrowState.FUNDS_LOCKED);
+        AuthPrincipal actor = new AuthPrincipal(buyer.getId(), buyer.getEmail(), Role.BUYER);
+
+        MockMultipartFile file = new MockMultipartFile("files", "empty.pdf", "application/pdf", new byte[0]);
+
+        assertThatThrownBy(() -> evidenceService.deposit(actor, tx.getId(), List.of(file), null, null))
+                .isInstanceOf(BadRequestException.class);
+
+        assertThat(fakeScanner().calls.get()).isZero();
     }
 }

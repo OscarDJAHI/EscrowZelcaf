@@ -5,6 +5,8 @@ import com.zlecaf.escrow.repository.AuditLogRepository;
 import com.zlecaf.escrow.repository.EscrowTransactionRepository;
 import com.zlecaf.escrow.repository.UserRepository;
 import com.zlecaf.escrow.security.AuthPrincipal;
+import com.zlecaf.escrow.service.scan.MalwareScanUnavailableException;
+import com.zlecaf.escrow.web.ApiExceptions;
 import com.zlecaf.escrow.web.ApiExceptions.BadRequestException;
 import com.zlecaf.escrow.web.ApiExceptions.NotFoundException;
 import com.zlecaf.escrow.web.dto.EscrowDtos.*;
@@ -105,8 +107,7 @@ public class EscrowService {
         }
 
         EscrowTransaction tx = transactions.findByIdForUpdate(txId)
-                .orElseThrow(() -> new NotFoundException(ErrorCode.TRANSACTION_NOT_FOUND,
-                        "Transaction " + txId + " not found"));
+                .orElseThrow(ApiExceptions::transactionNotFound);
 
         ParticipantRole role = transactionAccess.resolveRole(actor, tx);
         EscrowState previous = tx.getState();
@@ -161,8 +162,7 @@ public class EscrowService {
         }
 
         EscrowTransaction tx = transactions.findByIdForUpdate(txId)
-                .orElseThrow(() -> new NotFoundException(ErrorCode.TRANSACTION_NOT_FOUND,
-                        "Transaction " + txId + " not found"));
+                .orElseThrow(ApiExceptions::transactionNotFound);
 
         ParticipantRole role = transactionAccess.resolveRole(actor, tx);
         EscrowState previous = tx.getState();
@@ -188,6 +188,20 @@ public class EscrowService {
         List<EvidenceFile> evidence;
         try {
             evidence = evidenceService.deposit(actor, txId, files, comment, clientCapturedAt);
+        } catch (MalwareScanUnavailableException ex) {
+            // Panne d'analyse : NON auditée (revue 1.8). C'est l'invariant que la
+            // Story 1.8 pose explicitement — auditer une indisponibilité inonderait
+            // une table append-only à rétention >= 5 ans (AD-25) dès le premier
+            // incident d'infrastructure, une ligne par tentative. Le `catch
+            // (RuntimeException)` d'origine avalait cette exception comme les autres
+            // et écrivait la ligne que l'invariant interdit — en y persistant, via
+            // ex.getMessage(), l'hôte et le port de clamd que GlobalExceptionHandler
+            // prend soin de tenir hors de la réponse HTTP.
+            //
+            // Le rejet d'un fichier INFECTÉ reste audité, lui : par
+            // EvidenceService.requireCleanContent, en REQUIRES_NEW, avant que
+            // l'exception ne remonte ici.
+            throw ex;
         } catch (RuntimeException ex) {
             // A deposit-stage failure (bad file 400, storage down 502) rolls the
             // whole composite back — including the recordSuccess above. Durably
@@ -208,10 +222,10 @@ public class EscrowService {
     @Transactional(readOnly = true)
     public TransactionDetailDto getDetail(AuthPrincipal actor, Long txId) {
         EscrowTransaction tx = transactions.findById(txId)
-                .orElseThrow(() -> new NotFoundException(ErrorCode.TRANSACTION_NOT_FOUND,
-                        "Transaction " + txId + " not found"));
-        // Membership check: throws ForbiddenException for non-parties. The
-        // resolved role is irrelevant for a read, so it is intentionally ignored.
+                .orElseThrow(ApiExceptions::transactionNotFound);
+        // Membership check: a non-party gets the very same 404 the findById above
+        // would have produced (Story 1.10), so the two cases are indistinguishable.
+        // The resolved role is irrelevant for a read, so it is intentionally ignored.
         transactionAccess.resolveRole(actor, tx);
         // Hard cap the audit trail read (unsorted Pageable → LIMIT only; ordering
         // stays from the method name). Query DESC so the LIMIT keeps the MOST

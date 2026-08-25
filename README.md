@@ -1,5 +1,7 @@
 # Escrow B2B Platform — POC (ZLECAf intra-African trade)
 
+[![CI](https://github.com/OscarDJAHI/EscrowZelcaf/actions/workflows/ci.yml/badge.svg?branch=develop)](https://github.com/OscarDJAHI/EscrowZelcaf/actions/workflows/ci.yml)
+
 Proof of Concept for a **B2B escrow (séquestre) platform** securing cross-border
 trade under the African Continental Free Trade Area (ZLECAf). A buyer's funds are
 held by the platform and only released to the seller once delivery is validated —
@@ -78,13 +80,51 @@ rollback.
 Requires Docker + Docker Compose.
 
 ```bash
+# 1. Secrets locaux (une fois) — infra/.env n'est JAMAIS versionné :
+cp infra/.env.example infra/.env   # puis remplacez chaque valeur (openssl rand -base64 48)
+
+# 2. Stack complète :
 docker compose -f infra/docker-compose.yml up --build
 ```
+
+Without `infra/.env`, compose fails fast naming the **first** missing variable
+(`:?` syntax, Docker Compose v2 required). The backend goes further: it refuses
+to boot unless its critical secrets (`ESCROW_JWT_SECRET`,
+`SPRING_DATASOURCE_PASSWORD`, `SPRING_RABBITMQ_PASSWORD`,
+`ESCROW_STORAGE_SECRET_KEY`, `ESCROW_CRYPTO_KEYS`) are present, **not left at the
+`remplacez-moi` sentinel values**, and ≥ 32 bytes for the JWT. The keyring is
+validated in that same pass (each key exactly 32 decoded bytes, ids unique and
+well-formed, `ESCROW_CRYPTO_ACTIVE_KEY_ID` inside the keyring) rather than at bean
+initialisation — every problem listed in one error.
+
+> **Chiffrement au repos** (Story 1.7) : `ESCROW_CRYPTO_KEYS` porte le trousseau
+> (`id:cléBase64,…`, 32 octets par clé) qui chiffre les secrets HMAC en base et les
+> binaires de preuves dans le stockage objet. **Ces clés ne sont nulle part
+> ailleurs** : les perdre rend les données irrécupérables, les sauvegarder à part.
+> Rotation (ajout d'une clé, bascule, re-chiffrement au redémarrage) :
+> [`Docs/runbook-rotation-cles-chiffrement.md`](Docs/runbook-rotation-cles-chiffrement.md).
+
+> **Analyse anti-malware** (Story 1.8) : le service `clamav` fait partie du
+> **minimum vital** de la stack locale, pas des extras. Tout fichier déposé est
+> analysé avant d'être stocké et **il n'existe aucun moyen de désactiver le scan** :
+> si `clamav` n'est pas démarré (ou pas encore `healthy` — il charge ~1,3 Go de
+> signatures, d'où un premier `up` plus long et ~2 Go de RAM), tout dépôt de preuve
+> échoue en `502 SCAN_UNAVAILABLE`. Exploitation, symptômes et lecture des entrées
+> d'audit : [`Docs/runbook-antivirus-ingestion.md`](Docs/runbook-antivirus-ingestion.md).
+
+> **Stack déjà initialisée ?** Postgres/pgAdmin/MinIO n'appliquent les mots de
+> passe qu'à la création de leurs volumes. Après un changement de secrets :
+> `docker compose -f infra/docker-compose.yml down -v` (supprime les données locales).
+
+**Backend hors Docker** (IDE, `./mvnw spring-boot:run`) : exporter les mêmes
+variables avant de lancer — par exemple `set -a; source infra/.env; set +a`.
+Les identifiants non secrets (utilisateur RabbitMQ `escrow`, access-key MinIO
+`escrow-storage`) ont des défauts alignés sur la stack compose.
 
 - PWA:            http://localhost:5173
 - API:            http://localhost:8080
 - Health:         http://localhost:8080/actuator/health
-- RabbitMQ admin: http://localhost:15672  (guest / guest)
+- RabbitMQ admin: http://localhost:15672  (credentials: your `infra/.env`)
 
 > **Port note:** the backend publishes on host port `8080`. If another service
 > already holds `8080` (e.g. a local nginx), stop it or change the mapping in
@@ -116,6 +156,8 @@ npm install && npm run dev   # http://localhost:5173
 |---|---|---|
 | `POST /api/v1/auth/register` | Create account, returns JWT | public |
 | `POST /api/v1/auth/login` | Authenticate, returns JWT | public |
+| `POST /api/v1/auth/logout` | Revoke every session of the caller's account | JWT |
+| `POST /api/v1/auth/change-password` | Rotate the password, then revoke every session | JWT |
 | `POST /api/v1/escrow` | Buyer initiates a contract | JWT |
 | `GET  /api/v1/escrow` | List the caller's transactions | JWT |
 | `GET  /api/v1/escrow/{id}` | Transaction + audit trail | JWT (party/admin) |
@@ -125,12 +167,16 @@ npm install && npm run dev   # http://localhost:5173
 
 ### End-to-end example
 
+Passwords must satisfy the policy (12–72 UTF-8 bytes, at least 3 of lowercase /
+uppercase / digit / symbol — see `escrow.auth.password.*`); a weaker one is
+rejected with `WEAK_PASSWORD`.
+
 ```bash
 API=http://localhost:8080
 BUY=$(curl -s -X POST $API/api/v1/auth/register -H 'Content-Type: application/json' \
-  -d '{"email":"buyer@ke.co","password":"secret123","role":"BUYER"}' | jq -r .token)
+  -d '{"email":"buyer@ke.co","password":"Str0ng!Passw0rd","role":"BUYER"}' | jq -r .token)
 curl -s -X POST $API/api/v1/auth/register -H 'Content-Type: application/json' \
-  -d '{"email":"seller@za.co","password":"secret123","role":"SELLER"}' > /dev/null
+  -d '{"email":"seller@za.co","password":"Str0ng!Passw0rd","role":"SELLER"}' > /dev/null
 
 # Buyer creates the escrow, then pays; seller ships; buyer confirms → RELEASED.
 ID=$(curl -s -X POST $API/api/v1/escrow -H "Authorization: Bearer $BUY" -H 'Content-Type: application/json' \
@@ -156,6 +202,38 @@ An HTTP end-to-end scenario (register → escrow lifecycle → dispute → resol
 plus audit-trail and RabbitMQ-fan-out assertions) was validated against a live
 PostgreSQL + RabbitMQ stack.
 
+> The backend suite needs a running **Docker** daemon (Testcontainers spins up
+> PostgreSQL/MinIO, plus a real ClamAV since Story 1.8). Frontend:
+> `cd frontend && npm run test` (Vitest).
+>
+> On Apple Silicon, `clamav/clamav` publishes **amd64 manifests only**: pre-pull it
+> once with `docker pull --platform linux/amd64 clamav/clamav:1.4.3_base`, otherwise
+> `ClamavMalwareScannerIntegrationTest` fails on "no matching manifest".
+
+---
+
+## CI (gate de tests)
+
+Every push / pull request on `develop` and `main` runs
+[`ci.yml`](.github/workflows/ci.yml):
+
+| Job | What it runs | Gate |
+|-----|--------------|------|
+| **Backend (Maven + Testcontainers)** | `./mvnw -B verify` — full suite, real PostgreSQL via Docker | required check (branch protection: `main` strict, `develop` admin-bypassable) |
+| **Frontend (Vitest + build PWA)** | `npm ci && npm run test && npm run build` | required check (idem) |
+| **SBOM + scan vulnérabilités** | CycloneDX SBOMs (deps + Docker images, artefact `sbom`) + Trivy: secrets, deps, images — fail on unexempted CRITICAL/HIGH | advisory + weekly cron (until triage stabilises) |
+
+**Reading a CI failure:**
+
+- *Backend red* — open the job log and search `Tests run:` / `FAILURE`; a test
+  that is green locally but red in CI is an environment issue (fix the workflow,
+  not the test).
+- *Frontend red* — Vitest prints the failing spec; `npm run build` failures are
+  usually import/PWA config errors.
+- *SBOM/scan red* — a new CRITICAL/HIGH CVE appeared. Either bump the dependency
+  (trivial patch) or add a **dated, `exp:`-bounded** entry to [`.trivyignore-backend`](.trivyignore-backend) (backend-scoped only — frontend/images run without exemptions)
+  (all current exemptions trace to the Boot 3.3.5 EOL debt, purged by Story 11.9).
+
 ---
 
 ## Mapping to the implementation plan
@@ -175,6 +253,6 @@ PostgreSQL + RabbitMQ stack.
 ```
 backend/     Spring Boot escrow core (Maven)
 frontend/    Vue 3 PWA (Vite)
-infra/       docker-compose.yml (postgres, rabbitmq, backend, frontend)
+infra/       docker-compose.yml (postgres, rabbitmq, minio, clamav, backend, frontend)
 Docs/        Product & technical specifications (PRD, tech stack, schema, plan)
 ```

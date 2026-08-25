@@ -1,0 +1,24 @@
+# Profil PRODUCTION (Story 1.5, NFR-P4) — ne porte QUE la surface d'API.
+# Il n'est activé nulle part par défaut (ni application.yml, ni Dockerfile, ni CI,
+# ni compose) : l'opérateur pose SPRING_PROFILES_ACTIVE=prod à l'exécution.
+# Les durcissements d'environnement et d'hébergement restent aux Stories 11.2/11.3.
+escrow:
+  api:
+    # 1re fermeture : plus aucun matcher permitAll sur le trio Swagger dans
+    # SecurityConfig -> les chemins retombent sur anyRequest().authenticated() (403).
+    docs-exposed: false
+    # Défaut VIDE volontaire : sans allowlist, ProductionApiSurfaceGuard refuse le
+    # démarrage en nommant ESCROW_CORS_ALLOWED_ORIGINS. Un repli permissif ici
+    # rendrait l'oubli indétectable — c'est exactement ce qu'on interdit.
+    cors-allowed-origins: ${ESCROW_CORS_ALLOWED_ORIGINS:}
+
+springdoc:
+  # 2de fermeture, indépendante de la 1re : plus de handler springdoc du tout
+  # (-> 404, aucune spec OpenAPI ni page Swagger servie). Les deux commutateurs
+  # convergent vers « fermé » ; aucune combinaison ne rouvre la documentation.
+  # OpenApiConfig et la dépendance springdoc restent en place : la doc reste
+  # vivante hors production.
+  api-docs:
+    enabled: false
+  swagger-ui:
+    enabled: false

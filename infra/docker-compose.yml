@@ -1,5 +1,11 @@
-# Escrow POC — full local stack.
-# Run from the repository root:  docker compose -f infra/docker-compose.yml up --build
+# Escrow — full local stack.
+# Prérequis (Story 1.2) : cp infra/.env.example infra/.env  (jamais versionné)
+# puis :  docker compose -f infra/docker-compose.yml up --build
+# Sans .env, compose échoue en nommant la variable manquante (syntaxe :?).
+#
+# Ingress (Story 1.4) : tout passe par le reverse-proxy TLS (service frontend).
+#   Accès local : https://localhost:8443  (HTTP :8080 -> redirigé HTTPS).
+#   Le backend n'est PAS publié — joignable seulement via /api sur le proxy.
 name: escrow-poc
 
 services:
@@ -8,7 +14,7 @@ services:
     environment:
       POSTGRES_DB: escrow
       POSTGRES_USER: escrow
-      POSTGRES_PASSWORD: escrow
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD manquant — cp infra/.env.example infra/.env}
     ports:
       - "5432:5432"
     volumes:
@@ -33,7 +39,7 @@ services:
     image: dpage/pgadmin4:8
     environment:
       PGADMIN_DEFAULT_EMAIL: admin@escrow.com
-      PGADMIN_DEFAULT_PASSWORD: admin
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_DEFAULT_PASSWORD:?PGADMIN_DEFAULT_PASSWORD manquant}
       PGADMIN_CONFIG_SERVER_MODE: "False"
       PGADMIN_CONFIG_MASTER_PASSWORD_REQUIRED: "False"
     ports:
@@ -48,11 +54,18 @@ services:
   rabbitmq:
     image: rabbitmq:3.13-management-alpine
     environment:
-      RABBITMQ_DEFAULT_USER: guest
-      RABBITMQ_DEFAULT_PASS: guest
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER:-escrow}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS:?RABBITMQ_DEFAULT_PASS manquant}
+    volumes:
+      # Story 11.4 (T4) : active `rabbitmq_prometheus` en plus de la console. Voir
+      # l'en-tête du fichier — il REMPLACE la liste par défaut de l'image.
+      - ./observability/rabbitmq-enabled-plugins:/etc/rabbitmq/enabled_plugins:ro
     ports:
       - "5672:5672"    # AMQP
       - "15672:15672"  # management UI
+      # Métriques Prometheus du broker (Story 11.4). Sur la boucle locale comme le
+      # reste de l'observabilité : cet endpoint ne s'authentifie pas.
+      - "127.0.0.1:15692:15692"
     healthcheck:
       test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
       interval: 10s
@@ -63,8 +76,8 @@ services:
     image: minio/minio:RELEASE.2025-09-07T16-13-09Z
     command: server /data --console-address ":9001"
     environment:
-      MINIO_ROOT_USER: minioadmin
-      MINIO_ROOT_PASSWORD: minioadmin
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-escrow-storage}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?MINIO_ROOT_PASSWORD manquant}
     ports:
       - "9000:9000"    # S3 API
       - "9001:9001"    # console UI
@@ -82,28 +95,154 @@ services:
     depends_on:
       minio:
         condition: service_healthy
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-escrow-storage}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?MINIO_ROOT_PASSWORD manquant}
     entrypoint: >
       /bin/sh -c "
-      mc alias set local http://minio:9000 minioadmin minioadmin &&
+      mc alias set local http://minio:9000 \"$$MINIO_ROOT_USER\" \"$$MINIO_ROOT_PASSWORD\" &&
       mc mb --ignore-existing local/escrow-evidence
       "
+
+  # Analyse anti-malware à l'ingestion (Story 1.8, NFR-P7). Sans ce service,
+  # TOUT dépôt de fichier échoue en 502 SCAN_UNAVAILABLE : c'est voulu (fail-closed,
+  # aucun interrupteur de désactivation), et c'est pourquoi le backend l'attend
+  # explicitement via depends_on ci-dessous. Exploitation : Docs/runbook-antivirus-ingestion.md
+  clamav:
+    # Variante « _base » : l'image ne PORTE PAS les bases virales (revue 1.8 —
+    # vérifié : image ~79 Mo, /var/lib/clamav vide, et l'/init de l'image lance
+    # freshclam dès que le dossier est vide). Le premier démarrage télécharge donc
+    # ~113 Mo (main + daily + bytecode) AVANT que clamd n'écoute. C'est le volume
+    # nommé ci-dessous qui rend les démarrages suivants hors ligne, pas l'image.
+    image: clamav/clamav:1.4.3_base
+    environment:
+      # Coupe le DAEMON de mise à jour, pas le téléchargement initial (celui-ci est
+      # inconditionnel quand /var/lib/clamav est vide). Le nom exact compte : l'image
+      # lit CLAMAV_NO_FRESHCLAMD (avec un D final) — la variante sans D, posée
+      # jusqu'ici, n'était lue par personne et freshclam tournait quand même.
+      CLAMAV_NO_FRESHCLAMD: "true"
+      # Plafond de flux INSTREAM. DOIT rester au-dessus de la limite métier de 10 Mo
+      # par fichier (PlatformLimits) : en dessous, clamd coupe la connexion en cours
+      # d'envoi et des fichiers parfaitement légitimes échouent en 502. Posé ici
+      # explicitement plutôt que laissé au défaut de l'image (25 Mo), pour que
+      # l'invariant soit vérifiable dans le dépôt et non seulement affirmé.
+      CLAMAV_STREAM_MAX_LENGTH: "26214400"
+    volumes:
+      # Persiste les bases virales entre recréations de conteneur. Sans lui, chaque
+      # `docker compose up --build` re-télécharge ~113 Mo et, réseau lent, dépasse le
+      # budget du healthcheck ci-dessous : le backend étant gaté par
+      # `depends_on: service_healthy`, la stack ENTIÈRE refuse alors de démarrer —
+      # au lieu de dégrader proprement en 502 SCAN_UNAVAILABLE.
+      - clamavdb:/var/lib/clamav
+    expose:
+      - "3310"
+    # Un clamd mort doit revenir seul : sinon 502 permanent sur les TROIS routes
+    # d'upload, et la file offline du frontend se bouche derrière le premier échec
+    # transitoire, bloquant même les actions sans rapport.
+    restart: unless-stopped
+    # Budget = start_period + retries × interval. Le premier démarrage cumule le
+    # téléchargement des bases (~113 Mo) ET leur chargement en mémoire ; 240 s ne
+    # suffisaient pas sur un lien lent. Les démarrages suivants, volume peuplé, ne
+    # paient que le chargement (~30 s) et n'utilisent pas ce budget.
+    healthcheck:
+      test: ["CMD", "clamdcheck.sh"]
+      interval: 10s
+      timeout: 10s
+      retries: 30
+      start_period: 300s
+    # clamd charge l'intégralité des signatures en mémoire (~1,3 Go aujourd'hui).
+    # La borne est documentée haut : sous ~1,5 Go le processus est tué par l'OOM
+    # killer pendant le chargement, et le symptôme (conteneur qui redémarre en
+    # boucle, jamais healthy) ne dit pas qu'il s'agit de mémoire.
+    mem_limit: 2g
+
+  # Collecteur SMTP local (Story 2.4, décision T0 : « adaptateur de développement »).
+  #
+  # POURQUOI IL EXISTE : sans transport, l'OTP d'inscription ne quitte jamais le
+  # processus backend — le parcours est complet côté serveur mais INFINISSABLE dans
+  # l'IHM, faute de pouvoir lire le code. Mailpit capte le message et l'affiche.
+  #
+  # CE QU'IL N'EST PAS : un fournisseur d'e-mail. Il ne RELAIE rien vers l'extérieur ;
+  # tout message entrant reste dans sa boîte en mémoire. Le choix du prestataire de
+  # production appartient au spike 8.1 (délivrabilité par corridor ZLECAf, coûts,
+  # conformité) et n'est en rien préempté ici : SMTP est un protocole.
+  #
+  # LECTURE DE L'OTP : http://localhost:8025 (UI web). C'est la seule voie prévue —
+  # l'interdiction ferme de T0 tient, aucun endpoint de lecture d'OTP n'existe côté
+  # application, et il ne doit jamais en exister, fût-il gardé par un profil.
+  mailpit:
+    image: axllent/mailpit:v1.21
+    environment:
+      # Boîte en mémoire, purgée à l'arrêt : aucune donnée personnelle ne persiste
+      # sur le poste après un `down`, et rien à sauvegarder.
+      MP_MAX_MESSAGES: "500"
+      MP_SMTP_AUTH_ACCEPT_ANY: "true"
+      MP_SMTP_AUTH_ALLOW_INSECURE: "true"
+    ports:
+      # 1025 = SMTP (le backend y écrit) ; 8025 = UI web (vous y lisez le code).
+      - "${MAILPIT_SMTP_PORT:-1025}:1025"
+      - "${MAILPIT_UI_PORT:-8025}:8025"
+    healthcheck:
+      # L'image est distroless : ni wget ni curl. Mailpit embarque sa propre sonde.
+      test: ["CMD", "/mailpit", "readyz"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
 
   backend:
     build:
       context: ../backend
     environment:
+      # Transport e-mail (Story 2.4). `smtp` ici parce que cette stack est le poste
+      # de développement : c'est ce qui rend l'inscription finissable dans l'IHM.
+      # Le défaut du code reste `outbox` — un déploiement qui ne dit rien ne livre rien.
+      ESCROW_MAIL_TRANSPORT: ${ESCROW_MAIL_TRANSPORT:-smtp}
+      SPRING_MAIL_HOST: mailpit
+      SPRING_MAIL_PORT: "1025"
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/escrow
       SPRING_DATASOURCE_USERNAME: escrow
-      SPRING_DATASOURCE_PASSWORD: escrow
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD manquant}
+      # Observabilité (Story 11.4). L'endpoint OTLP est INJECTÉ et non codé en dur :
+      # sans cette variable, le défaut d'application.yml vise localhost, ce qui est juste
+      # pour un `mvn spring-boot:run` et faux dans un conteneur.
+      ESCROW_OTLP_ENDPOINT: http://jaeger:4318/v1/traces
       SPRING_RABBITMQ_HOST: rabbitmq
       SPRING_RABBITMQ_PORT: "5672"
-      ESCROW_JWT_SECRET: local-dev-secret-please-change-32-bytes-minimum-value
+      SPRING_RABBITMQ_USERNAME: ${RABBITMQ_DEFAULT_USER:-escrow}
+      SPRING_RABBITMQ_PASSWORD: ${RABBITMQ_DEFAULT_PASS:?RABBITMQ_DEFAULT_PASS manquant}
+      ESCROW_JWT_SECRET: ${ESCROW_JWT_SECRET:?ESCROW_JWT_SECRET manquant (>= 32 octets)}
       ESCROW_STORAGE_ENDPOINT: http://minio:9000
       ESCROW_STORAGE_BUCKET: escrow-evidence
-      ESCROW_STORAGE_ACCESS_KEY: minioadmin
-      ESCROW_STORAGE_SECRET_KEY: minioadmin
-    ports:
-      - "8080:8080"
+      ESCROW_STORAGE_ACCESS_KEY: ${MINIO_ROOT_USER:-escrow-storage}
+      ESCROW_STORAGE_SECRET_KEY: ${MINIO_ROOT_PASSWORD:?MINIO_ROOT_PASSWORD manquant}
+      # Chiffrement au repos (Story 1.7) : sans le trousseau, plus rien de ce qui a
+      # été chiffré n'est relisible — ces clés se sauvegardent comme un backup.
+      # active-key-id reste vide tant qu'il n'y a qu'une clé (déduite) ; on ne le
+      # renseigne que pendant une rotation (cf. runbook).
+      ESCROW_CRYPTO_KEYS: ${ESCROW_CRYPTO_KEYS:?ESCROW_CRYPTO_KEYS manquant (format id:cle_base64, 32 octets)}
+      ESCROW_CRYPTO_ACTIVE_KEY_ID: ${ESCROW_CRYPTO_ACTIVE_KEY_ID:-}
+      # Analyse anti-malware (Story 1.8) : ni l'hôte ni le port ne sont des secrets,
+      # d'où des valeurs en clair ici et non des variables du .env. Les timeouts sont
+      # paramétrables pour un clamd lent (poste chargé) sans reconstruire l'image.
+      ESCROW_ANTIVIRUS_HOST: clamav
+      ESCROW_ANTIVIRUS_PORT: "3310"
+      ESCROW_ANTIVIRUS_CONNECT_TIMEOUT_MS: ${ESCROW_ANTIVIRUS_CONNECT_TIMEOUT_MS:-2000}
+      ESCROW_ANTIVIRUS_READ_TIMEOUT_MS: ${ESCROW_ANTIVIRUS_READ_TIMEOUT_MS:-30000}
+      # Optionnels (Story 1.1) — vides = aucun ADMIN créé au démarrage.
+      ESCROW_BOOTSTRAP_ADMIN_EMAIL: ${ESCROW_BOOTSTRAP_ADMIN_EMAIL:-}
+      ESCROW_BOOTSTRAP_ADMIN_PASSWORD: ${ESCROW_BOOTSTRAP_ADMIN_PASSWORD:-}
+      # Surface d'API (Story 1.5) — passe-plats, VIDES par défaut : cette stack
+      # reste local/staging en mode dev (Swagger ouvert, CORS permissif). Poser
+      # SPRING_PROFILES_ACTIVE=prod + ESCROW_CORS_ALLOWED_ORIGINS dans le .env
+      # bascule le durcissement sans éditer ce fichier ; le backend refusera alors
+      # de démarrer si l'allowlist est absente ou permissive.
+      SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-}
+      ESCROW_CORS_ALLOWED_ORIGINS: ${ESCROW_CORS_ALLOWED_ORIGINS:-}
+    # Pas de publication de port (Story 1.4) : le backend n'est joignable QUE via
+    # le reverse-proxy TLS (frontend), sur le réseau interne compose. C'est la
+    # frontière de confiance qui rend X-Forwarded-For fiable (résolution DEF2).
+    expose:
+      - "8080"
     depends_on:
       postgres:
         condition: service_healthy
@@ -114,25 +253,146 @@ services:
       # first upload with NoSuchBucket.
       minio-init:
         condition: service_completed_successfully
+      # Attente explicite (Story 1.8) : le scan est fail-closed, donc un backend
+      # démarré avant clamd refuserait tout dépôt en 502. Le healthcheck de clamav
+      # a un start_period de 120 s — le premier `up` est donc plus long qu'avant,
+      # et c'est le prix de l'absence d'interrupteur.
+      clamav:
+        condition: service_healthy
+      # Pas fail-closed comme clamav : un transport muet n'échoue PAS l'inscription
+      # (contrat du port), la ligne d'outbox reste simplement non livrée. L'attente
+      # est là pour éviter que les premiers OTP de la session partent dans le vide.
+      mailpit:
+        condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/actuator/health | grep -q UP"]
+      # ⚠️ 9091 ET NON 8080 — corrigé le 2026-08-14 (défaut introduit par le T1 de la
+      # Story 11.4). Le port de management sépare l'actuator du port applicatif : il
+      # déplace TOUS ses endpoints, `/actuator/health` compris. La sonde pointait
+      # encore sur 8080 et y recevait un 404, donc le backend restait `unhealthy` À
+      # JAMAIS — et avec lui tout ce qui l'attend (`condition: service_healthy` :
+      # frontend, prometheus, grafana). Défaut resté invisible 13 h : l'image tournant
+      # sur le poste était périmée, donc l'actuator y était encore sur 8080 ; il n'est
+      # apparu qu'après la reconstruction, et la vérification de T4 regardait la cible
+      # de scraping (9091 en direct), pas la sonde de santé.
+      test: ["CMD-SHELL", "wget -qO- http://localhost:9091/actuator/health | grep -q UP"]
       interval: 10s
       timeout: 5s
       retries: 12
       start_period: 40s
 
+  # Reverse-proxy TLS + PWA (Story 1.4) : ingress unique de la stack.
   frontend:
     build:
       context: ../frontend
       args:
-        VITE_API_BASE: http://localhost:8080
+        # Vide = appels API en MÊME ORIGINE (/api/v1/...), proxifiés vers le
+        # backend par nginx. Plus d'appel HTTP direct au backend depuis le PWA.
+        VITE_API_BASE: ""
     ports:
-      - "5173:80"
+      # Redirection HTTP -> HTTPS sur le port HTTP, PWA + API sur le port HTTPS.
+      # Ports hôte paramétrables (défauts hors des collisions connues 8080/5432).
+      - "${INGRESS_HTTP_PORT:-8080}:80"
+      - "${INGRESS_HTTPS_PORT:-8443}:443"
     depends_on:
       backend:
         condition: service_healthy
+
+  # ════════════════════════════════════════════════════════════════════════════
+  # OBSERVABILITÉ (Story 11.4) — POSTE DE DÉVELOPPEMENT UNIQUEMENT
+  #
+  # Écart NOMMÉ, décision Q1 du 2026-08-11 : le déploiement de cette pile en
+  # PRODUCTION appartient à la Story 11.3, qui tranche la cible d'hébergement
+  # (spike AR-P5). Ce qui est ici sert le poste de développement et rend l'AC3
+  # (« une alerte de test est délivrée ») démontrable dès maintenant.
+  #
+  # AUCUN de ces services n'est joignable depuis l'extérieur : ils ne publient
+  # de port que sur la boucle locale (127.0.0.1), à la différence des services
+  # applicatifs. La 11.3 devra faire le même choix — ou mieux — derrière son
+  # reverse-proxy : ni Prometheus ni Jaeger ne s'authentifient.
+  # ════════════════════════════════════════════════════════════════════════════
+  prometheus:
+    image: prom/prometheus:v3.1.0
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+    volumes:
+      - ./observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      # Règles d'alerte (T5/T6). Le répertoire ENTIER est monté, pas chaque fichier :
+      # une règle ajoutée plus tard n'exigera pas de toucher au compose — c'est
+      # précisément le genre d'oubli qui laisse une règle écrite mais jamais chargée.
+      - ./observability/rules:/etc/prometheus/rules:ro
+    ports:
+      # 9090 est libre : 9000/9001 sont pris par MinIO, 5432/5672/15672/8081/5050
+      # par le reste de la pile. Lié à la boucle locale, jamais à 0.0.0.0.
+      - "127.0.0.1:${PROMETHEUS_PORT:-9090}:9090"
+    depends_on:
+      backend:
+        condition: service_healthy
+
+  jaeger:
+    # Collecteur OTLP ET interface de consultation dans une seule image : l'AC2
+    # demande une trace « consultable », pas une pile de collecte complète. Un
+    # collecteur OpenTelemetry séparé s'ajoutera si la 11.3 en a besoin.
+    image: jaegertracing/all-in-one:1.62.0
+    environment:
+      COLLECTOR_OTLP_ENABLED: "true"
+    ports:
+      - "127.0.0.1:${JAEGER_UI_PORT:-16686}:16686"
+
+  alertmanager:
+    # Acheminement des alertes (Story 11.4, T5 — AC3). Ce qu'il N'EST PAS est écrit
+    # en tête d'`observability/alertmanager.yml` : ni canal de production, ni
+    # décision du spike AR-P6.
+    image: prom/alertmanager:v0.33.1
+    command:
+      - --config.file=/etc/alertmanager/alertmanager.yml
+    volumes:
+      - ./observability/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+    ports:
+      # 9093 est libre. Boucle locale comme le reste de l'observabilité : cette
+      # console ne s'authentifie pas, et elle permet de FAIRE TAIRE des alertes.
+      - "127.0.0.1:${ALERTMANAGER_PORT:-9093}:9093"
+    depends_on:
+      # Le canal de délivrance doit être debout AVANT le routeur, sinon la première
+      # alerte part dans le vide — et un envoi perdu ne laisse aucune trace côté
+      # exploitant, ce qui est exactement le mode de défaut que l'AC3 veut exclure.
+      mailpit:
+        condition: service_healthy
+
+  grafana:
+    # Tableau de bord (Story 11.4, T4 — AC1 « restituées dans un dashboard »).
+    image: grafana/grafana:12.4.8
+    environment:
+      # ── AUCUN SECRET EN CLAIR (Story 1.2, externalisation des secrets) ──
+      # `:?` et non `:-` : le compose REFUSE de démarrer si la variable manque,
+      # au lieu de retomber sur un défaut. C'est ce qui empêche le mot de passe
+      # `admin/admin` de l'image de rester en place sans que personne ne le voie —
+      # même posture que POSTGRES_PASSWORD et RABBITMQ_DEFAULT_PASS ci-dessus.
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-escrow-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?GRAFANA_ADMIN_PASSWORD manquant}
+      # Pas de création de compte, pas d'accès anonyme : cette instance n'a qu'un
+      # seul utilisateur et aucune raison d'en accepter d'autres.
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      # Le poste de développement n'a pas de réseau sortant à consommer : ni
+      # télémétrie, ni sondage de mises à jour, ni catalogue de greffons distant.
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+    volumes:
+      # LECTURE SEULE, et c'est la couche qui compte : provisioning et tableaux de
+      # bord viennent du dépôt. Grafana ne peut pas réécrire ce que la revue lit.
+      - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    ports:
+      # 3000 est libre (relevé au T0 de la story). Boucle locale comme Prometheus
+      # et Jaeger : la publication en production est portée par la Story 11.3.
+      - "127.0.0.1:${GRAFANA_PORT:-3000}:3000"
+    depends_on:
+      - prometheus
 
 volumes:
   pgdata:
   pgadmin-data:
   miniodata:
+  # Bases virales ClamAV (revue 1.8) : l'image « _base » ne les embarque pas, ce
+  # volume est donc ce qui évite ~113 Mo de téléchargement à chaque recréation.
+  clamavdb:

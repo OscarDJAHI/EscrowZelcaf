@@ -1,0 +1,29 @@
+# Fichiers binaires du dépôt.
+#
+# Deux effets, dont le second est le seul qui compte ici :
+#   1. git ne tente plus de differ/fusionner ces fichiers ;
+#   2. `scripts/check-encoding.py` les EXCLUT de la garde d'encodage.
+#
+# La liste est délibérément une DÉNYLIST explicite plutôt qu'une allowlist de
+# types texte : un nouveau type de fichier inconnu fait ROUGIR la garde (faux
+# positif bruyant, corrigé en une ligne ici) au lieu d'être silencieusement
+# ignoré. Le mode de défaillance silencieux est précisément celui qui a laissé
+# passer AuthView.vue et EvidenceServiceTest.java.
+
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.webp binary
+*.pdf binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.eot binary
+*.gz binary
+*.tgz binary
+*.zip binary
+*.jar binary
+*.keystore binary
+*.p12 binary

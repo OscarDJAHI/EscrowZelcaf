@@ -1,7 +1,10 @@
-<script setup>
+<script setup lang="ts">
+import { useI18n } from 'vue-i18n'
 import { computed } from 'vue'
 import { useAuthStore } from '@/stores/auth'
 import StateBadge from './StateBadge.vue'
+
+const { t, locale } = useI18n()
 
 const props = defineProps({
   transaction: { type: Object, required: true },
@@ -17,12 +20,15 @@ const counterparty = computed(() => {
 })
 
 const counterpartyRoleLabel = computed(() =>
-  props.transaction._queuedOffline || isBuyerSide.value ? 'Seller' : 'Buyer',
+  props.transaction._queuedOffline || isBuyerSide.value ? t('auth.roleSeller') : t('auth.roleBuyer'),
 )
 
 const formattedAmount = computed(() => {
   try {
-    return new Intl.NumberFormat(undefined, {
+    // Langue de l'APPLICATION et non du navigateur : `Intl` appelé avec `undefined` suit
+    // la locale du poste, si bien que basculer l'interface en FR ne changeait ni les
+    // montants ni les dates (AC3, constat de revue).
+    return new Intl.NumberFormat(locale.value, {
       style: 'currency',
       currency: props.transaction.currency,
     }).format(props.transaction.amount)
@@ -36,8 +42,8 @@ const formattedAmount = computed(() => {
   <component
     :is="transaction._queuedOffline ? 'div' : 'router-link'"
     :to="transaction._queuedOffline ? undefined : `/escrow/${transaction.id}`"
-    class="block rounded-xl border border-gray-200 bg-white p-4 shadow-sm transition"
-    :class="transaction._queuedOffline ? 'opacity-70' : 'hover:border-brand-300 hover:shadow-md'"
+    class="block rounded-xl border border-gray-200 bg-white p-4 transition"
+    :class="transaction._queuedOffline ? 'opacity-70' : 'hover:border-primary'"
   >
     <div class="flex items-start justify-between gap-2">
       <div class="min-w-0">
@@ -50,14 +56,14 @@ const formattedAmount = computed(() => {
           v-else
           class="inline-flex shrink-0 items-center rounded-full bg-orange-100 px-2.5 py-1 text-xs font-semibold text-orange-700"
         >
-          Queued offline
+          {{ $t('offline.cardQueued') }}
         </span>
         <!-- The badge above shows the optimistic DISPUTED: say it isn't confirmed yet. -->
         <span
           v-if="transaction._queuedDispute"
           class="inline-flex shrink-0 items-center rounded-full bg-orange-100 px-2.5 py-1 text-xs font-semibold text-orange-700"
         >
-          Pending sync
+          {{ $t('offline.cardPending') }}
         </span>
       </div>
     </div>

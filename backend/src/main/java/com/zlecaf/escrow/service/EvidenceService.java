@@ -10,8 +10,11 @@ import com.zlecaf.escrow.domain.UploaderType;
 import com.zlecaf.escrow.repository.EscrowTransactionRepository;
 import com.zlecaf.escrow.repository.EvidenceFileRepository;
 import com.zlecaf.escrow.security.AuthPrincipal;
+import com.zlecaf.escrow.service.scan.MalwareScanGateway;
+import com.zlecaf.escrow.service.scan.ScanVerdict;
 import com.zlecaf.escrow.service.storage.EvidenceNotFoundException;
 import com.zlecaf.escrow.service.storage.EvidenceStorage;
+import com.zlecaf.escrow.web.ApiExceptions;
 import com.zlecaf.escrow.web.ApiExceptions.BadRequestException;
 import com.zlecaf.escrow.web.ApiExceptions.ConflictException;
 import com.zlecaf.escrow.web.ApiExceptions.ForbiddenException;
@@ -43,14 +46,29 @@ import java.util.List;
  * all-or-nothing: every file is validated before any is written, so a single
  * rejection leaves the store and the database untouched. Designed as a reusable
  * service (not a controller method) so Epic 2's composite opening can reuse it.
+ *
+ * <p><strong>Analyse antivirus depuis la Story 1.8.</strong> Aucun octet
+ * non analysé n'atteint {@link EvidenceStorage#store} : le scan est dans la passe
+ * de validation d'{@link #ingest}, le tronc commun des trois routes d'upload, donc
+ * toute brique d'upload future en hérite sans rétrofit. La politique est
+ * fail-closed : détection -> rejet 400 audité, scanner injoignable -> 502
+ * transitoire, jamais un dépôt non analysé.
  */
 @Service
 public class EvidenceService {
 
     private static final Logger log = LoggerFactory.getLogger(EvidenceService.class);
 
-    /** Per-file business limit (bytes), arbitrated here, not by the container. */
-    static final long MAX_FILE_SIZE = 10_485_760L;
+    /**
+     * Per-file business limit (bytes), arbitrated here, not by the container.
+     *
+     * <p>{@code public} depuis la Story 1.7 : l'adaptateur de stockage en dérive son
+     * plafond de matérialisation (limite métier + marge d'enveloppe). Recopier la
+     * valeur là-bas ferait diverger les deux au premier relèvement — les dépôts
+     * passeraient et les téléchargements des pièces devenues trop grosses
+     * échoueraient en 502, longtemps après la modification qui l'aurait causé.
+     */
+    public static final long MAX_FILE_SIZE = 10_485_760L;
 
     /**
      * Dispute evidence floor (FR-6): a DISPUTED transaction must keep at least this
@@ -65,6 +83,7 @@ public class EvidenceService {
     private final TransactionAccess access;
     private final EvidenceContentValidator validator;
     private final EvidenceStorage storage;
+    private final MalwareScanGateway scanner;
     private final AuditService auditService;
 
     public EvidenceService(EscrowTransactionRepository transactions,
@@ -72,12 +91,17 @@ public class EvidenceService {
                            TransactionAccess access,
                            EvidenceContentValidator validator,
                            EvidenceStorage storage,
+                           MalwareScanGateway scanner,
                            AuditService auditService) {
         this.transactions = transactions;
         this.evidenceFiles = evidenceFiles;
         this.access = access;
         this.validator = validator;
         this.storage = storage;
+        // Dépendance OBLIGATOIRE (Story 1.8, NFR-P7) : ni Optional, ni @Nullable, ni
+        // défaut « pas de scan ». Un dépôt sans scanner câblé ne doit même pas
+        // pouvoir démarrer, c'est la garantie que porte le type.
+        this.scanner = scanner;
         this.auditService = auditService;
     }
 
@@ -85,8 +109,8 @@ public class EvidenceService {
      * Deposits one or more files against a transaction the actor is party to.
      *
      * @return the persisted {@link EvidenceFile} rows (status {@code ACTIVE}).
-     * @throws NotFoundException   transaction unknown (404)
-     * @throws com.zlecaf.escrow.web.ApiExceptions.ForbiddenException non-party (403)
+     * @throws NotFoundException   transaction unknown <em>or</em> the actor is not a
+     *                             party (404, one indistinguishable answer — Story 1.10)
      * @throws ConflictException   deposit window closed for the current state (409)
      * @throws BadRequestException empty batch, bad file type/size, or bad
      *                             {@code clientCapturedAt} (400)
@@ -101,10 +125,9 @@ public class EvidenceService {
         // transitions, so the window check below cannot be invalidated by a
         // RELEASE/REFUND committing between the read and this transaction's commit.
         EscrowTransaction tx = transactions.findByIdForUpdate(txId)
-                .orElseThrow(() -> new NotFoundException(ErrorCode.TRANSACTION_NOT_FOUND,
-                        "Transaction " + txId + " not found"));
+                .orElseThrow(ApiExceptions::transactionNotFound);
 
-        ParticipantRole role = access.resolveRole(actor, tx);   // 403 if not a party
+        ParticipantRole role = access.resolveRole(actor, tx);   // 404 (opaque) if not a party
         requireUploadWindow(tx.getState());                     // 409 if outside window
 
         // Human attribution: the acting user owns the row and the audit entry.
@@ -123,8 +146,8 @@ public class EvidenceService {
      * duplicated: validation, storage, rollback cleanup and the MANDATORY audit are
      * exactly those of the user path.
      *
-     * @throws NotFoundException   transaction unknown (404)
-     * @throws com.zlecaf.escrow.web.ApiExceptions.ForbiddenException company not a party (403)
+     * @throws NotFoundException   transaction unknown <em>or</em> the partner company
+     *                             is not a party (404, one indistinguishable answer)
      * @throws ConflictException   deposit window closed for the current state (409)
      * @throws BadRequestException empty batch, bad file type/size, or bad
      *                             {@code clientCapturedAt} (400)
@@ -134,10 +157,9 @@ public class EvidenceService {
                                                String comment, String clientCapturedAt) {
         requireDepositableBatch(files); // gate before the lock (PartnerEvidenceService also gates before hashing)
         EscrowTransaction tx = transactions.findByIdForUpdate(txId)
-                .orElseThrow(() -> new NotFoundException(ErrorCode.TRANSACTION_NOT_FOUND,
-                        "Transaction " + txId + " not found"));
+                .orElseThrow(ApiExceptions::transactionNotFound);
 
-        access.requireCompanyParticipant(tx, companyId);       // 403 if company not a party
+        access.requireCompanyParticipant(tx, companyId);       // 404 (opaque) if company not a party
         requireUploadWindow(tx.getState());                     // 409 if outside window
 
         Attribution attribution =
@@ -161,8 +183,9 @@ public class EvidenceService {
 
         String capturedAt = normalizeCapturedAt(clientCapturedAt); // 400 if not ISO-8601
 
-        // --- Pass 1: validate every file (type + size). No writes happen here,
-        // so any rejection aborts the whole batch before it can touch storage. ---
+        // --- Pass 1: validate every file (type + size + malware scan). No writes
+        // happen here, so any rejection aborts the whole batch before it can touch
+        // storage. ---
         List<byte[]> contents = new ArrayList<>(files.size());
         List<String> mimeTypes = new ArrayList<>(files.size());
         for (MultipartFile file : files) {
@@ -175,6 +198,7 @@ public class EvidenceService {
                         "File exceeds the maximum allowed size of " + MAX_FILE_SIZE + " bytes");
             }
             String mime = validator.validate(bytes, file.getOriginalFilename(), file.getContentType());
+            requireCleanContent(tx, file, bytes, attribution);
             contents.add(bytes);
             mimeTypes.add(mime);
         }
@@ -227,6 +251,101 @@ public class EvidenceService {
                                Long partnerCompanyId, Long auditActorId, ParticipantRole auditRole) {}
 
     /**
+     * Analyse un fichier déjà validé (non vide, sous la limite de taille, type réel
+     * sur la whitelist) et rejette le lot entier si le moteur déclenche
+     * (Story 1.8, NFR-P7).
+     *
+     * <p><b>Pourquoi ici, et nulle part ailleurs.</b> Les gardes qui précèdent
+     * coûtent quelques microsecondes et éliminent déjà le vide, l'oversize et les
+     * types hors whitelist : le scanner ne reçoit donc que des JPEG/PNG/PDF bien
+     * formés. La passe 1 est de plus le dernier endroit où RIEN n'est encore écrit,
+     * ce qui donne le tout-ou-rien du lot gratuitement. Et surtout on est en amont
+     * de {@link EvidenceStorage#store}, donc en amont de l'enveloppe AES-GCM de la
+     * Story 1.7 : après chiffrement, les octets ne sont plus analysables.
+     *
+     * <p>Le scan vit dans le tronc commun d'{@link #ingest} et non dans un
+     * controller : les trois routes d'upload existantes (preuve utilisateur, litige
+     * composite, dépôt partenaire signé) en héritent d'office — et toute brique
+     * d'upload créée plus tard aussi, sans rétrofit.
+     *
+     * @throws BadRequestException contenu malveillant détecté (400,
+     *                             {@code EVIDENCE_MALWARE_DETECTED})
+     * @throws com.zlecaf.escrow.service.scan.MalwareScanUnavailableException aucun
+     *                             verdict n'a pu être obtenu (502,
+     *                             {@code SCAN_UNAVAILABLE}) — jamais un repli
+     *                             « on stocke sans analyser »
+     */
+    private void requireCleanContent(EscrowTransaction tx, MultipartFile file, byte[] bytes,
+                                     Attribution attribution) {
+        ScanVerdict verdict = scanner.scan(bytes);
+        if (!verdict.infected()) {
+            return;
+        }
+        String safeName = sanitizeFilename(file.getOriginalFilename());
+        // Audité AVANT de lever : recordEvidenceRejectedByScan est en REQUIRES_NEW,
+        // donc l'entrée commite dans sa propre transaction et survit au rollback que
+        // l'exception ci-dessous déclenche. Une panne de scanner, elle, n'est PAS
+        // auditée (WARN seulement) : l'auditer inonderait une table append-only à
+        // rétention >= 5 ans (AD-25) au premier incident d'infrastructure.
+        //
+        // L'échec de l'audit ne doit PAS changer le verdict rendu au client (revue
+        // 1.8). Sans cette garde, une base indisponible faisait remonter l'exception
+        // d'audit à la place du rejet : elle sortait en 500 INTERNAL_ERROR, classé
+        // TRANSIENT, et la file offline rejouait le fichier infecté indéfiniment —
+        // l'exact contraire du classement PERMANENT d'EVIDENCE_MALWARE_DETECTED. On
+        // perd alors la trace, pas le refus : le fichier reste rejeté, et la perte de
+        // trace est criée dans les journaux.
+        try {
+            auditService.recordEvidenceRejectedByScan(tx.getId(), attribution.auditActorId(),
+                    attribution.auditRole(), tx.getState(), forLog(safeName), sha256Hex(bytes),
+                    forLog(verdict.signature()));
+        } catch (RuntimeException auditFailure) {
+            log.error("Malware detected on transaction {} but the audit entry could NOT be written "
+                            + "(file '{}', signature '{}') — the deposit is still refused, the trail is not",
+                    tx.getId(), forLog(safeName), forLog(verdict.signature()), auditFailure);
+        }
+        log.warn("Malware detected on evidence ingestion for transaction {} (file '{}', signature '{}'): "
+                        + "deposit rejected, nothing stored",
+                tx.getId(), forLog(safeName), forLog(verdict.signature()));
+        // Le message nomme le fichier — sans quoi le déposant d'un lot de vingt
+        // pièces ne saurait pas laquelle retirer — mais TAIT le nom de signature :
+        // le rendre transformerait l'endpoint en banc d'essai d'évasion.
+        //
+        // En anglais comme tous ses voisins de cette méthode (« Uploaded file is
+        // empty », « File exceeds the maximum allowed size ») : le backend n'émet pas
+        // de texte localisé, le libellé utilisateur est porté par le frontend (AD-23,
+        // même arbitrage qu'à la revue 1.6). Le message était en français alors que
+        // EvidenceDeposit.vue l'affiche brut, si bien qu'un déposant en ligne lisait
+        // du français quand la file offline montrait l'anglais pour le MÊME échec.
+        //
+        // Nom passé par forLog (revue 1.8) : sanitizeFilename borne le basename mais
+        // ne retire pas les caractères de contrôle, et ce nom part aussi dans le
+        // payload d'audit que le runbook invite l'opérateur à lire dans un terminal.
+        throw new BadRequestException(ErrorCode.EVIDENCE_MALWARE_DETECTED,
+                (safeName == null ? "A file in this deposit" : "File \"" + forLog(safeName) + "\"")
+                        + " was refused: malicious content detected.");
+    }
+
+    /**
+     * Neutralise les caractères de contrôle d'un nom de fichier avant de le faire
+     * entrer dans une ligne de journal. {@link #sanitizeFilename} garantit un
+     * basename borné, pas l'absence de retour chariot : sans ce filtre, un nom
+     * hostile fabriquerait de fausses lignes de log autour d'un rejet de sécurité,
+     * c'est-à-dire à l'endroit précis où l'on relira les traces après incident.
+     */
+    private static String forLog(String name) {
+        if (name == null) {
+            return null;
+        }
+        StringBuilder safe = new StringBuilder(name.length());
+        for (int i = 0; i < name.length(); i++) {
+            char c = name.charAt(i);
+            safe.append(c >= 0x20 && c != 0x7F ? c : '?');
+        }
+        return safe.toString();
+    }
+
+    /**
      * Rejects an empty batch or one over {@link PlatformLimits#MAX_FILES_PER_DEPOSIT}
      * BEFORE any byte buffering. Exposed so the partner path
      * ({@code PartnerEvidenceService}) can enforce the cap ahead of signature
@@ -250,18 +369,16 @@ public class EvidenceService {
      * Lists every evidence row of a transaction the actor is party to, sorted by
      * server-time {@code created_at} ascending. A pure, non-locking read: same
      * membership check as {@link #deposit} and {@code EscrowService.getDetail}
-     * (403 for non-parties, resolved role intentionally ignored), no storage
-     * access, WITHDRAWN rows included (AD-4).
+     * (an opaque 404 for non-parties, resolved role intentionally ignored), no
+     * storage access, WITHDRAWN rows included (AD-4).
      *
-     * @throws NotFoundException transaction unknown (404)
-     * @throws com.zlecaf.escrow.web.ApiExceptions.ForbiddenException non-party (403)
+     * @throws NotFoundException transaction unknown or the actor is not a party (404)
      */
     @Transactional(readOnly = true)
     public List<EvidenceDto> list(AuthPrincipal actor, Long txId) {
         EscrowTransaction tx = transactions.findById(txId)
-                .orElseThrow(() -> new NotFoundException(ErrorCode.TRANSACTION_NOT_FOUND,
-                        "Transaction " + txId + " not found"));
-        access.resolveRole(actor, tx);   // 403 if not a party; role ignored for a read
+                .orElseThrow(ApiExceptions::transactionNotFound);
+        access.resolveRole(actor, tx);   // 404 (opaque) if not a party; role ignored for a read
         // Hard cap the read (unsorted Pageable → LIMIT only; ordering stays from
         // the method name). Query DESC so the LIMIT keeps the MOST RECENT rows —
         // an ASC limit would keep the oldest and silently drop the recent tail —
@@ -277,14 +394,21 @@ public class EvidenceService {
     /**
      * Opens the original binary of one evidence piece for a party to download.
      * Server-authoritative, in strict order: load the transaction (404), resolve
-     * membership (403, before any piece lookup), then the <em>sealed</em>
-     * {@code findByIdAndTransactionId} query (404) so a foreign or unknown piece
-     * is indistinguishable — the anti-IDOR guard, never a manual comparison over
-     * an unsealed {@code findById}. No status filter: a WITHDRAWN piece is still
+     * membership (the same opaque 404, before any piece lookup), then the
+     * <em>sealed</em> {@code findByIdAndTransactionId} query (404) so a foreign or
+     * unknown piece is indistinguishable — the anti-IDOR guard, never a manual
+     * comparison over an unsealed {@code findById}. No status filter: a WITHDRAWN piece is still
      * downloadable (restitution is not masking). The stream comes only from the
      * {@link EvidenceStorage} port; a missing object translates to a 404. The
      * returned {@link InputStream} outlives this transaction and is consumed by
-     * the web layer, so it is never read into memory here.
+     * the web layer.
+     *
+     * <p><strong>Plus de streaming depuis la Story 1.7.</strong> L'adaptateur
+     * matérialise l'objet pour le déchiffrer : GCM n'authentifie qu'au tag final,
+     * un flux rendu au fil de l'eau serait du clair non authentifié. Le flux rendu
+     * ici est donc adossé à un tampon mémoire, borné par la limite métier de
+     * taille de pièce — d'où le maintien de la borne, et le report au ledger de la
+     * question du plafond mémoire sous téléchargements concurrents.
      *
      * <p><strong>Why writable.</strong> The download is audited ({@code
      * EVIDENCE_DOWNLOADED}) atomically with the access authorization, so the
@@ -293,18 +417,18 @@ public class EvidenceService {
      * successful {@code storage.load}, so a storage failure (502) rolls the whole
      * thing back and no phantom download-audit remains.
      *
-     * @throws NotFoundException transaction or piece unknown, or binary absent (404)
-     * @throws com.zlecaf.escrow.web.ApiExceptions.ForbiddenException non-party (403)
+     * @throws NotFoundException transaction unknown, actor not a party, piece unknown
+     *                           or foreign, or binary absent — all 404, and all
+     *                           indistinguishable from one another (Story 1.10)
      * @throws com.zlecaf.escrow.service.storage.EvidenceStorageException storage failure (502)
      */
     @Transactional
     public EvidenceDownload download(AuthPrincipal actor, Long txId, Long evidenceId) {
         EscrowTransaction tx = transactions.findById(txId)
-                .orElseThrow(() -> new NotFoundException(ErrorCode.TRANSACTION_NOT_FOUND,
-                        "Transaction " + txId + " not found"));
-        ParticipantRole role = access.resolveRole(actor, tx);   // 403 if not a party
+                .orElseThrow(ApiExceptions::transactionNotFound);
+        ParticipantRole role = access.resolveRole(actor, tx);   // 404 (opaque) if not a party
         EvidenceFile evidence = evidenceFiles.findByIdAndTransactionId(evidenceId, txId)
-                .orElseThrow(() -> new NotFoundException("Evidence " + evidenceId + " not found"));
+                .orElseThrow(ApiExceptions::evidenceNotFound);
         // Read every metadata field BEFORE opening the stream. size_bytes/mime_type
         // are nullable at the schema level, so size_bytes is kept boxed (Long) and
         // never unboxed here — a null size is a valid piece, carried through to the
@@ -316,7 +440,20 @@ public class EvidenceService {
         try {
             content = storage.load(evidence.getStorageKey());
         } catch (EvidenceNotFoundException e) {
-            throw new NotFoundException("Evidence binary not found for " + evidenceId);
+            // Story 1.10 : MÊME réponse que « pièce inconnue » et « pièce d'une autre
+            // transaction ». Le message d'origine, qui nommait le binaire absent,
+            // était distinct des deux autres, et cette distinction PROUVAIT au
+            // client que la ligne existe et appartient bien à cette transaction —
+            // un oracle au niveau pièce, sur le seul endpoint qui parle au stockage.
+            //
+            // L'incident (métadonnée orpheline : ligne présente, objet absent) reste
+            // parfaitement diagnosticable côté serveur, il cesse seulement d'être
+            // publié. La clé de stockage est journalisée ici, jamais renvoyée : c'est
+            // elle, et non l'id de pièce, qui permet de retrouver l'objet manquant.
+            log.warn("Evidence binary missing from storage for evidence {} of transaction {} "
+                            + "(storage key '{}') — served as an opaque 404",
+                    evidenceId, txId, evidence.getStorageKey());
+            throw ApiExceptions.evidenceNotFound();
         }
         // Audited only after a successful load: an EvidenceStorageException (502)
         // thrown above never reaches here, so no download audit is written and the
@@ -350,8 +487,8 @@ public class EvidenceService {
      * does not depend on object-store availability.
      *
      * <p>Server-authoritative, in strict order: take the transaction under a
-     * {@code PESSIMISTIC_WRITE} lock (404 if unknown), resolve membership (403 for
-     * a non-party, before any piece lookup), then the <em>sealed</em>
+     * {@code PESSIMISTIC_WRITE} lock (404 if unknown), resolve membership (the same
+     * opaque 404 for a non-party, before any piece lookup), then the <em>sealed</em>
      * {@code findByIdAndTransactionId} query (404) so a foreign or unknown piece is
      * indistinguishable — the anti-IDOR guard, never a manual comparison over an
      * unsealed {@code findById}. Only one's own piece may be withdrawn (403), the
@@ -366,8 +503,11 @@ public class EvidenceService {
      * invalidated by a TOCTOU window. The audit entry commits atomically with the
      * status flip.
      *
-     * @throws NotFoundException  transaction or piece unknown/foreign (404)
-     * @throws ForbiddenException non-party, or not the piece's owner (403)
+     * @throws NotFoundException  transaction unknown, actor not a party, or piece
+     *                            unknown/foreign (404, one opaque answer)
+     * @throws ForbiddenException the caller IS a party but is not the piece's owner
+     *                            (403 — the documented, tested exception of Story 1.10:
+     *                            they already see that piece through {@link #list})
      * @throws ConflictException  withdrawal window closed, piece already withdrawn,
      *                            or the dispute floor would be breached (409)
      */
@@ -377,16 +517,27 @@ public class EvidenceService {
         // state transitions) on the same transaction, so the floor count below is
         // read on committed state and cannot be undercut by a lost update.
         EscrowTransaction tx = transactions.findByIdForUpdate(txId)
-                .orElseThrow(() -> new NotFoundException(ErrorCode.TRANSACTION_NOT_FOUND,
-                        "Transaction " + txId + " not found"));
+                .orElseThrow(ApiExceptions::transactionNotFound);
 
-        ParticipantRole role = access.resolveRole(actor, tx);   // 403 if not a party
+        ParticipantRole role = access.resolveRole(actor, tx);   // 404 (opaque) if not a party
 
         // Sealed anti-IDOR lookup: a foreign or unknown piece is a 404, never a findById.
         EvidenceFile evidence = evidenceFiles.findByIdAndTransactionId(evidenceId, txId)
-                .orElseThrow(() -> new NotFoundException("Evidence " + evidenceId + " not found"));
+                .orElseThrow(ApiExceptions::evidenceNotFound);
 
         // Own-piece guard: a null uploader (partner upload) is never the actor's.
+        //
+        // Le SEUL 403 restant de la surface escrow, et c'est délibéré (Story 1.10).
+        // L'invariant anti-énumération n'est pas « tout refus devient 404 », c'est
+        // « ne jamais révéler ce que l'appelant n'a pas le droit de savoir ». Or ici
+        // l'appelant EST partie à la transaction : il voit déjà cette pièce, celles de
+        // la contrepartie comprises, dans GET /{id}/evidence. Lui répondre 404 sur une
+        // pièce qu'il vient de lire ne cacherait rien et dégraderait un message
+        // d'erreur légitime en énigme. La visibilité par list() est asservie par test
+        // (EvidenceServiceTest), sans quoi cette frontière serait déclarative.
+        //
+        // Noter que la garde d'appartenance (resolveRole, plus haut) a DÉJÀ répondu
+        // 404 au non-partie : on ne peut atteindre cette garde qu'en étant partie.
         if (evidence.getUploadedByUserId() == null
                 || !evidence.getUploadedByUserId().equals(actor.userId())) {
             throw new ForbiddenException("You can only withdraw your own evidence");
